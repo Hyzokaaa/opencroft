@@ -1,7 +1,8 @@
 # Arquitectura
 
-OpenCroft es un plano de control para servidores basados en LXC/LXD: contenedores aislados,
-dominios, certificados y — en fases posteriores — despliegue de aplicaciones.
+OpenCroft es un plano de control para servidores basados en contenedores de sistema
+(LXD o Incus): contenedores aislados, dominios, certificados y — en fases posteriores —
+despliegue de aplicaciones.
 
 Un único binario que funciona como CLI y como daemon HTTP, con la UI embebida.
 
@@ -9,8 +10,8 @@ Un único binario que funciona como CLI y como daemon HTTP, con la UI embebida.
 
 > **La fuente de verdad es el sistema operativo, no la base de datos de OpenCroft.**
 
-LXD sabe qué contenedores existen. nginx sabe qué rutas existen. certbot sabe qué
-certificados existen. OpenCroft **lee** ese estado y **escribe** sobre él, pero nunca lo posee.
+LXD sabe qué contenedores existen. nginx sabe qué rutas existen. Los ficheros de
+certificado dicen cuándo caducan. OpenCroft **lee** ese estado y **escribe** sobre él, pero nunca lo posee.
 
 Consecuencias que atraviesan todo el diseño:
 
@@ -30,7 +31,8 @@ sesiones, tokens, log de auditoría, cola de trabajos y ajustes. Nada más.
 | Daemon + CLI | Go | Binario estático, sin runtime en el host, instalable con un `curl` |
 | UI | React + Vite + Tailwind | Embebida en el binario vía `go:embed` |
 | Estado propio | SQLite | Fichero único, sin servidor de base de datos que administrar |
-| Infraestructura | LXD, nginx, certbot | Ya instalados en el host, gestionados vía sus propias interfaces |
+| Infraestructura | LXD o Incus, nginx | Ya instalados en el host, gestionados vía sus propias interfaces |
+| TLS | ACME embebido (`lego`) | Sin certbot ni plugins por proveedor DNS |
 
 Es el stack estándar de los planos de control de infraestructura (Portainer, Rancher,
 Traefik, Nomad, Caddy). La razón es operativa, no estética: el usuario objetivo es un
@@ -59,8 +61,10 @@ internal/
     infrastructure/
       http/                       # handlers HTTP  (equivale a nest/controllers)
       cli/                        # comandos cobra (equivale a nest/controllers)
-      lxd/                        # repositorios sobre LXD
-      nginx/                      # repositorios sobre ficheros de nginx
+      lxd/                        # driver de runtime: LXD
+      incus/                      # driver de runtime: Incus
+      nginx/                      # driver de proxy sobre ficheros de nginx
+      acme/                       # emisión de certificados (lego)
       sqlite/                     # repositorios sobre SQLite
   shared/
     id/                           # value object Id (ULID)
@@ -258,7 +262,7 @@ Conviven dos familias de implementaciones y la distinción es deliberada:
 |---|---|---|
 | `InstanceRepository` | `LXDInstanceRepository` | LXD |
 | `RouteRepository` | `NginxRouteRepository` | ficheros de nginx |
-| `CertificateRepository` | `CertbotCertificateRepository` | certbot |
+| `CertificateRepository` | `FileCertificateRepository` | los propios ficheros PEM |
 | `UserRepository` | `SQLiteUserRepository` | SQLite (dato propio de OpenCroft) |
 | `AuditRepository` | `SQLiteAuditRepository` | SQLite (dato propio de OpenCroft) |
 
@@ -299,6 +303,81 @@ POST /api/hosts/{hostId}/instances
 Con `hostId = "local"` por defecto. Es coste cero ahora y evita un refactor completo
 después.
 
+## Portabilidad entre distribuciones
+
+Coolify funciona en cualquier Linux porque lo mete todo en Docker: su única dependencia es
+"un Linux con Docker". Es elegante, y es precisamente la dependencia que no queremos. Sin
+ese truco no se alcanza el mismo grado de independencia — pero sí se puede reducir el
+acoplamiento a casi nada.
+
+El objetivo realista es **cualquier Linux con LXD o Incus**: Debian, Ubuntu, Fedora, Arch,
+Alpine, openSUSE. Se consigue con tres decisiones.
+
+### ACME embebido, sin certbot
+
+certbot es Python, su empaquetado varía por distribución y cada proveedor DNS es un
+paquete aparte (`python3-certbot-dns-ovh` y equivalentes). La biblioteca `lego` trae los
+proveedores dentro y compila en el binario.
+
+Elimina una dependencia del host, elimina el empaquetado por proveedor, y elimina el
+"instala este plugin" del manual de instalación. Es la mayor ganancia de las tres.
+
+Los certificados que ya gestione certbot en el host se siguen leyendo y mostrando: se
+adoptan como cualquier otro recurso `unmanaged`.
+
+### Driver de runtime: LXD e Incus
+
+Incus es el fork que crearon los desarrolladores originales de LXD, con la misma API y
+empaquetado nativo en Debian, Ubuntu, Alpine, Arch y Fedora — sin snap, que es incómodo
+fuera del mundo Ubuntu.
+
+```go
+type ContainerRuntime interface {
+    List(ctx context.Context) ([]*Instance, error)
+    Create(ctx context.Context, spec InstanceSpec) error
+    Annotate(ctx context.Context, name, key, value string) error
+    // ...
+}
+```
+
+Dos implementaciones, `LXDRuntime` e `IncusRuntime`, detectadas al arrancar. El dominio no
+sabe cuál está usando.
+
+### Driver de proxy, sin asumir el layout de Debian
+
+`/etc/nginx/sites-available` y `sites-enabled` son una convención de Debian y Ubuntu.
+Fedora, RHEL, Alpine y Arch usan `/etc/nginx/conf.d/*.conf` y no tienen esos directorios.
+Cualquier herramienta que los dé por sentados solo funciona en media familia de distros.
+
+La solución es además más limpia que el baile de symlinks: **un directorio propio y una
+sola línea gestionada** en la configuración de nginx.
+
+```nginx
+# /etc/nginx/nginx.conf — una única línea añadida por OpenCroft
+include /etc/nginx/croft.d/*.conf;
+```
+
+Todos los vhosts generados viven en `/etc/nginx/croft.d/`. Funciona igual en cualquier
+distribución, y desinstalar OpenCroft es borrar un directorio y una línea.
+
+```go
+type Proxy interface {
+    Routes(ctx context.Context) ([]*Route, error)
+    Write(ctx context.Context, route *Route) error
+    Remove(ctx context.Context, domain string) error
+    Reload(ctx context.Context) error
+}
+```
+
+Con `NginxProxy` como única implementación al principio. Un `CaddyProxy` posterior encaja
+sin tocar nada más — y Caddy resuelve TLS por su cuenta, lo que lo hace atractivo para
+quien no quiera gestionar certificados.
+
+### Lo que no se abstrae
+
+**systemd.** Todo lo que no sea Alpine lo usa, y abstraer el gestor de servicios por un
+caso minoritario no compensa. Si algún día importa, es otro driver más.
+
 ## Modelo de recursos
 
 ```
@@ -329,7 +408,7 @@ Es el corazón del producto y lo que lo diferencia. Vive en `shared/reconcile` y
 en dos conceptos:
 
 - **Estado observado** — lo que el sistema dice ahora mismo (`lxc list`, `nginx -T`,
-  `certbot certificates`).
+  los ficheros de certificado en disco).
 - **Estado deseado** — lo que OpenCroft cree que debería haber, derivado de las anotaciones
   del propio recurso.
 
@@ -442,7 +521,8 @@ trabajo sigue.
 
 ## Seguridad
 
-OpenCroft necesita root para hablar con LXD, escribir en `/etc/nginx` y ejecutar certbot.
+OpenCroft necesita root para hablar con LXD o Incus, escribir en `/etc/nginx` y leer los
+certificados.
 Darle root a un proceso que además sirve HTTP a internet es exactamente el fallo de diseño
 que arrastra Portainer.
 
@@ -455,7 +535,7 @@ que arrastra Portainer.
      |  unix socket, /run/croft.sock
   croft-agent      root, superficie mínima, solo ejecuta operaciones ya validadas
      |
-  LXD / nginx / certbot
+  LXD o Incus / nginx / ficheros TLS
 ```
 
 `croft-agent` expone un conjunto cerrado de operaciones tipadas. No acepta cadenas de

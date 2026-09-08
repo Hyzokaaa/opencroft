@@ -43,9 +43,12 @@ sin UI todavía.
 **Módulos**: `instance`, `route`, `certificate`, `host`, `shared/id`, `shared/host`
 
 - [ ] Esqueleto del proyecto y abstracción `Host` con implementación `LocalHost`
+- [ ] Driver `ContainerRuntime` con implementaciones para LXD e Incus, detectadas al arrancar
+- [ ] Driver `Proxy` sobre `/etc/nginx/croft.d/`, sin asumir el layout de Debian
 - [ ] Módulo `instance`: crear, listar, ver, arrancar, parar, destruir, editar límites
 - [ ] Módulo `route`: añadir dominio, listar, quitar, cambiar destino y puerto
 - [ ] Módulo `certificate`: emitir, renovar, revocar, listar con fecha de caducidad
+- [ ] ACME embebido con `lego`, sin dependencia de certbot
 - [ ] Proveedores DNS para el reto ACME: OVH y Cloudflare
 - [ ] Asignación de IP estática y validación de que las rutas apuntan a la IP real
 - [ ] Cabecera `managed-by: croft` con hash en todos los ficheros generados
@@ -98,7 +101,7 @@ un certificado que caduca en 9 días es exactamente lo que nadie detecta a tiemp
 **Regla de la fase**: cada acción de la UI llama al mismo Command que el CLI. Si aparece
 lógica de negocio en un handler HTTP, está mal puesta.
 
-**Entregable**: panel de control completo para LXD + nginx + certbot.
+**Entregable**: panel de control completo para LXD/Incus + nginx + TLS.
 **Valor**: producto v1 vendible. Aquí se puede cortar y tener algo coherente.
 
 ---
@@ -150,7 +153,7 @@ Módulos nuevos siguiendo las mismas capas. No requiere tocar los existentes.
 Solo cuando haya usuarios pidiéndolo. La preparación ya está hecha desde la fase 1.
 
 - [ ] Implementación `RemoteHost` sobre el protocolo nativo de LXD
-- [ ] Agente ligero para las operaciones de nginx y certbot
+- [ ] Agente ligero para las operaciones de nginx y TLS
 - [ ] Selector de servidor en la UI
 - [ ] Permisos por servidor
 
