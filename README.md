@@ -7,7 +7,7 @@ Every container is a full OS — its own init, cron, systemd and filesystem — 
 process.
 
 > **Status: design.** No implementation yet. The primitives were prototyped as shell
-> scripts in [forge-tools](https://github.com/Hyzokaaa/forge-tools); this repository
+> scripts in [croft-tools](https://github.com/Hyzokaaa/croft-tools); this repository
 > holds the design and will hold the Go implementation. See [ROADMAP.md](./ROADMAP.md).
 
 ## Why
