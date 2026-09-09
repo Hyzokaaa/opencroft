@@ -10,6 +10,7 @@ import (
 	"github.com/Hyzokaaa/opencroft/internal/instance/domain/entities"
 	"github.com/Hyzokaaa/opencroft/internal/instance/domain/enums"
 	"github.com/Hyzokaaa/opencroft/internal/shared/host"
+	"github.com/Hyzokaaa/opencroft/internal/shared/plan"
 )
 
 // CLIInstanceRepository drives LXD or Incus through their command line.
@@ -114,48 +115,65 @@ func firstIPv4(item cliInstance) string {
 
 // ── Writing ───────────────────────────────────────────────────────────────────
 
-func (r *CLIInstanceRepository) Create(ctx context.Context, instance *entities.Instance) error {
-	if _, err := r.host.Run(ctx, r.bin, "init", instance.Image, instance.Name); err != nil {
-		return err
+// CreatePlan is the single description of what creating a container does.
+// Create walks exactly this list, so what you were shown is what runs.
+func (r *CLIInstanceRepository) CreatePlan(instance *entities.Instance) plan.Plan {
+	steps := []plan.Step{
+		plan.Command("Create the container, stopped",
+			r.bin, "init", instance.Image, instance.Name),
+		plan.Command("Limit its CPU",
+			r.bin, "config", "set", instance.Name, "limits.cpu", strconv.Itoa(instance.CPULimit)),
+		plan.Command("Limit its memory",
+			r.bin, "config", "set", instance.Name, "limits.memory", instance.MemLimit),
+
+		// A DHCP lease changes when a container restarts, which silently
+		// breaks the proxy pointing at it. Pin the address before first boot.
+		plan.Optional("Take ownership of the network device inherited from the profile",
+			r.bin, "config", "device", "override", instance.Name, "eth0"),
+		plan.Command("Pin the address so a restart cannot move it",
+			r.bin, "config", "device", "set", instance.Name, "eth0", "ipv4.address", instance.Address),
 	}
 
-	settings := [][2]string{
-		{"limits.cpu", strconv.Itoa(instance.CPULimit)},
-		{"limits.memory", instance.MemLimit},
-	}
-	for _, s := range settings {
-		if _, err := r.host.Run(ctx, r.bin, "config", "set", instance.Name, s[0], s[1]); err != nil {
-			return err
-		}
-	}
-
-	// A DHCP lease changes when the container restarts, which silently breaks
-	// the proxy pointing at it. Pin the address before the first boot.
-	_, _ = r.host.Run(ctx, r.bin, "config", "device", "override", instance.Name, "eth0")
-	if _, err := r.host.Run(ctx, r.bin, "config", "device", "set", instance.Name, "eth0", "ipv4.address", instance.Address); err != nil {
-		return err
-	}
-
-	annotations := [][2]string{
+	// The desired state lives on the container itself, so losing our database
+	// costs nothing and migrating the container carries it along.
+	for _, a := range [][2]string{
 		{"id", instance.GetId()},
 		{"managed", "true"},
 		{"image", instance.Image},
 		{"port", strconv.Itoa(instance.Port)},
 		{"created", instance.Created},
-	}
-	for _, a := range annotations {
-		if err := r.Annotate(ctx, instance.Name, a[0], a[1]); err != nil {
-			return err
-		}
+	} {
+		steps = append(steps, plan.Command(
+			"Record "+a[0]+" on the container",
+			r.bin, "config", "set", instance.Name, AnnotationPrefix+"."+a[0], a[1]))
 	}
 
-	_, err := r.host.Run(ctx, r.bin, "start", instance.Name)
-	return err
+	return plan.New(append(steps, plan.Command("Start it", r.bin, "start", instance.Name))...)
+}
+
+func (r *CLIInstanceRepository) DeletePlan(name string) plan.Plan {
+	return plan.New(plan.Command("Delete the container and its disk",
+		r.bin, "delete", name, "--force"))
+}
+
+func (r *CLIInstanceRepository) Create(ctx context.Context, instance *entities.Instance) error {
+	return r.walk(ctx, r.CreatePlan(instance))
 }
 
 func (r *CLIInstanceRepository) Delete(ctx context.Context, name string) error {
-	_, err := r.host.Run(ctx, r.bin, "delete", name, "--force")
-	return err
+	return r.walk(ctx, r.DeletePlan(name))
+}
+
+func (r *CLIInstanceRepository) walk(ctx context.Context, p plan.Plan) error {
+	for _, step := range p.Steps {
+		if _, err := r.host.Run(ctx, step.Argv[0], step.Argv[1:]...); err != nil {
+			if step.Optional {
+				continue
+			}
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *CLIInstanceRepository) Start(ctx context.Context, name string) error {

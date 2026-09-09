@@ -3,11 +3,13 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/Hyzokaaa/opencroft/internal/instance/domain/entities"
 	"github.com/Hyzokaaa/opencroft/internal/instance/domain/enums"
+	"github.com/Hyzokaaa/opencroft/internal/shared/plan"
 )
 
 // MemoryInstanceRepository implements the same interface without a runtime.
@@ -49,6 +51,23 @@ func NewDemoInstanceRepository() *MemoryInstanceRepository {
 }
 
 func (r *MemoryInstanceRepository) DefaultImage() string { return "images:ubuntu/24.04" }
+
+// The demo plan says what the real driver would run, so the plan screen can be
+// shown and reviewed without a container runtime present.
+func (r *MemoryInstanceRepository) CreatePlan(instance *entities.Instance) plan.Plan {
+	return plan.New(
+		plan.Command("Create the container, stopped", "incus", "init", instance.Image, instance.Name),
+		plan.Command("Limit its CPU", "incus", "config", "set", instance.Name, "limits.cpu", strconv.Itoa(instance.CPULimit)),
+		plan.Command("Limit its memory", "incus", "config", "set", instance.Name, "limits.memory", instance.MemLimit),
+		plan.Command("Pin the address so a restart cannot move it", "incus", "config", "device", "set", instance.Name, "eth0", "ipv4.address", instance.Address),
+		plan.Command("Record it as managed", "incus", "config", "set", instance.Name, "user.croft.managed", "true"),
+		plan.Command("Start it", "incus", "start", instance.Name),
+	)
+}
+
+func (r *MemoryInstanceRepository) DeletePlan(name string) plan.Plan {
+	return plan.New(plan.Command("Delete the container and its disk", "incus", "delete", name, "--force"))
+}
 
 func (r *MemoryInstanceRepository) FindAll(_ context.Context) ([]*entities.Instance, error) {
 	r.mu.RLock()

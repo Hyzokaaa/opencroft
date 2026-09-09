@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Hyzokaaa/opencroft/internal/instance/domain/entities"
+	"github.com/Hyzokaaa/opencroft/internal/shared/plan"
 )
 
 // InstanceRepository talks to the container runtime, not to a database.
@@ -11,6 +12,12 @@ import (
 type InstanceRepository interface {
 	FindAll(ctx context.Context) ([]*entities.Instance, error)
 	FindByName(ctx context.Context, name string) (*entities.Instance, error)
+	// CreatePlan and DeletePlan return the steps that Create and Delete will
+	// walk. Showing a plan and running it are the same list, so they cannot
+	// disagree.
+	CreatePlan(instance *entities.Instance) plan.Plan
+	DeletePlan(name string) plan.Plan
+
 	Create(ctx context.Context, instance *entities.Instance) error
 	Delete(ctx context.Context, name string) error
 	Start(ctx context.Context, name string) error

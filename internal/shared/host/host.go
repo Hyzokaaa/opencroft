@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/Hyzokaaa/opencroft/internal/shared/plan"
 )
 
 type Output struct {
@@ -82,4 +84,16 @@ func (h *Local) ListDir(_ context.Context, path string) ([]string, error) {
 func (h *Local) Lookup(_ context.Context, name string) (string, bool) {
 	path, err := exec.LookPath(name)
 	return path, err == nil
+}
+
+// RunStep executes one step of a plan: a command, or a file to write.
+func RunStep(ctx context.Context, h Host, s plan.Step) error {
+	if s.IsFile() {
+		return h.WriteFile(ctx, s.File, []byte(s.Content), 0o644)
+	}
+	if len(s.Argv) == 0 {
+		return nil
+	}
+	_, err := h.Run(ctx, s.Argv[0], s.Argv[1:]...)
+	return err
 }
