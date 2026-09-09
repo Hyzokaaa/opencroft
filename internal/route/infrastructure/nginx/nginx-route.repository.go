@@ -11,8 +11,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/Hyzokaaa/opencroft/internal/route/domain/entities"
@@ -21,7 +19,7 @@ import (
 )
 
 const (
-	Marker = "# managed-by: croft"
+	Marker  = "# managed-by: croft"
 	hashKey = "# croft-hash: "
 )
 
@@ -36,31 +34,64 @@ func NewNginxRouteRepository(h host.Host, confDir string) *NginxRouteRepository 
 	return &NginxRouteRepository{host: h, confDir: confDir}
 }
 
-var (
-	serverNamePattern = regexp.MustCompile(`server_name\s+([^;]+);`)
-	proxyPassPattern  = regexp.MustCompile(`proxy_pass\s+https?://([0-9.]+):?(\d+)?`)
-)
-
+// FindAll reads the configuration nginx actually loaded, not our own
+// directory. A panel that only sees what it wrote itself cannot honestly claim
+// to list what it did not create.
 func (r *NginxRouteRepository) FindAll(ctx context.Context) ([]*entities.Route, error) {
-	names, err := r.host.ListDir(ctx, r.confDir)
+	out, err := r.host.Run(ctx, "nginx", "-T")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading the nginx configuration: %w", err)
 	}
 
-	routes := make([]*entities.Route, 0, len(names))
-	for _, name := range names {
-		if !strings.HasSuffix(name, ".conf") {
-			continue
-		}
+	// Several blocks share one domain: typically an http block that redirects
+	// and an https block that proxies. They are one route to a person.
+	merged := map[string]*entities.Route{}
+	order := []string{}
 
-		path := filepath.Join(r.confDir, name)
-		content, err := r.host.ReadFile(ctx, path)
-		if err != nil {
-			continue
+	for _, block := range scanServerBlocks(out.Stdout) {
+		target, port := upstream(block.Body)
+
+		for _, domain := range serverNames(block.Body) {
+			existing, seen := merged[domain]
+			if !seen {
+				existing = entities.NewRoute(entities.RouteProps{
+					Domain: domain,
+					File:   block.File,
+					State:  r.stateOfFile(ctx, block.File),
+				})
+				merged[domain] = existing
+				order = append(order, domain)
+			}
+
+			if target != "" && existing.Target == "" {
+				existing.Target = target
+				existing.Port = port
+			}
+			if servesTLS(block.Body) {
+				existing.SSL = true
+			}
 		}
-		routes = append(routes, parse(path, strings.TrimSuffix(name, ".conf"), string(content)))
+	}
+
+	routes := make([]*entities.Route, 0, len(order))
+	for _, domain := range order {
+		routes = append(routes, merged[domain])
 	}
 	return routes, nil
+}
+
+// stateOfFile decides how much authority we have over the file a block came
+// from. Anything outside our own directory is external by definition.
+func (r *NginxRouteRepository) stateOfFile(ctx context.Context, path string) enums.ManagedState {
+	if !strings.HasPrefix(filepath.ToSlash(path), filepath.ToSlash(r.confDir)+"/") {
+		return enums.StateUnmanaged
+	}
+
+	content, err := r.host.ReadFile(ctx, path)
+	if err != nil {
+		return enums.StateUnmanaged
+	}
+	return stateOf(string(content))
 }
 
 func (r *NginxRouteRepository) FindByDomain(ctx context.Context, domain string) (*entities.Route, error) {
@@ -74,33 +105,6 @@ func (r *NginxRouteRepository) FindByDomain(ctx context.Context, domain string) 
 		}
 	}
 	return nil, nil
-}
-
-func parse(path, fallbackDomain, content string) *entities.Route {
-	domain := fallbackDomain
-	if m := serverNamePattern.FindStringSubmatch(content); len(m) > 1 {
-		domain = strings.Fields(m[1])[0]
-	}
-
-	target, port := "", 0
-	if m := proxyPassPattern.FindStringSubmatch(content); len(m) > 1 {
-		target = m[1]
-		if len(m) > 2 && m[2] != "" {
-			port, _ = strconv.Atoi(m[2])
-		} else {
-			port = 80
-		}
-	}
-
-	return entities.NewRoute(entities.RouteProps{
-		Domain:  domain,
-		Target:  target,
-		Port:    port,
-		SSL:     strings.Contains(content, "ssl_certificate"),
-		State:   stateOf(content),
-		File:    path,
-		Content: content,
-	})
 }
 
 // stateOf compares the recorded hash with the body actually on disk.
