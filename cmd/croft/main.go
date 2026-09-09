@@ -30,6 +30,7 @@ import (
 	"github.com/Hyzokaaa/opencroft/internal/server"
 	"github.com/Hyzokaaa/opencroft/internal/shared/host"
 	"github.com/Hyzokaaa/opencroft/internal/shared/id"
+	"github.com/Hyzokaaa/opencroft/internal/shared/job"
 
 	instanceRepositories "github.com/Hyzokaaa/opencroft/internal/instance/domain/repositories"
 )
@@ -127,6 +128,7 @@ func serve(ctx context.Context, args []string) {
 
 	d := wire(ctx, *demo, *nginxDir)
 	auth := wireAuth(*dbPath)
+	jobs := job.NewRunner(id.NewULIDGenerator().Create)
 
 	handler := server.Handler(server.Deps{
 		Overview: overviewQueries.NewOverviewQuery(
@@ -139,6 +141,10 @@ func serve(ctx context.Context, args []string) {
 		DestroyInstance: instanceServices.NewDestroyInstance(d.instances),
 		ReadOnly:        *readOnly,
 		Auth:            auth.handler,
+		Instances:       d.instances,
+		Host:            host.NewLocal(),
+		Jobs:            jobs,
+		Simulated:       d.demo,
 	})
 
 	total, err := auth.users.Count(ctx)
