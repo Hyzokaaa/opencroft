@@ -4,8 +4,6 @@ Plan de construcción de OpenCroft. Cada fase es entregable y usable por sí sol
 fases que solo tengan sentido si se completa la siguiente.
 
 La arquitectura de referencia está en [ARCHITECTURE.md](./ARCHITECTURE.md).
-El posicionamiento y el modelo de sostenibilidad, en [POSITIONING.md](./POSITIONING.md) y
-[MONETIZATION.md](./MONETIZATION.md).
 
 ---
 
@@ -180,11 +178,3 @@ Cada feature nueva empuja hacia guardar estado propio en SQLite porque es más c
 Tratarlo como restricción dura, no como aspiración: si un repositorio de infraestructura
 necesita SQLite, la feature está mal diseñada.
 
-**Foco.** Este es el riesgo mayor y no es técnico. OpenCroft compite con proyectos maduros,
-gratuitos y con comunidad. Como complemento que reduce la fricción de autoalojar
-open-helpdesk, es una idea muy buena. Como segundo producto que compite por la misma
-atención, puede hundir a los dos. Ver [POSITIONING.md](./POSITIONING.md).
-
-**Perseguir la paridad con Coolify.** El 90% de su superficie son features que casi nadie
-usa. Cortar en la fase 3 y consolidar eso es mejor estrategia que llegar a la fase 6 sin
-usuarios.

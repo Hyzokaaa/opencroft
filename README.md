@@ -86,8 +86,6 @@ croft explain
 |---|---|
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | Layered design, reconciliation engine, security model |
 | [ROADMAP.md](./ROADMAP.md) | Build plan, phase by phase |
-| [POSITIONING.md](./POSITIONING.md) | What OpenCroft is, who it is for, how it is described |
-| [MONETIZATION.md](./MONETIZATION.md) | Sustainability model |
 
 ## Not in scope
 
