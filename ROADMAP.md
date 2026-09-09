@@ -68,16 +68,18 @@ que reimplementar la lógica, que es precisamente lo que no queremos.
 
 El 80% del valor percibido con el 0% del riesgo. Solo lectura.
 
-- [ ] `croft serve` — mismo binario, modo daemon
-- [ ] API HTTP con `hostId` en las rutas desde el principio
-- [ ] Autenticación: usuarios locales, sesiones, tokens de API
+- [x] `croft serve` — mismo binario, modo daemon
+- [x] API HTTP con `hostId` en las rutas desde el principio
+- [x] Autenticación: usuarios locales y sesiones
+- [ ] Tokens de API para automatización
 - [ ] SQLite para estado propio (usuarios, sesiones, tokens, auditoría, trabajos)
 - [ ] Separación `croft-api` (sin privilegios) / `croft-agent` (root) por unix socket
-- [ ] UI en React + Vite + Tailwind, embebida con `go:embed`
-- [ ] Dashboard: instancias, estado, CPU/RAM en uso, rutas, certificados
+- [x] UI en React + Vite + Tailwind, embebida con `go:embed`
+- [x] Dashboard: instancias, estado, rutas y hallazgos
 - [ ] **Avisos**: certificados que caducan pronto, rutas que apuntan a instancias caídas o
       inexistentes, instancias sin dominio, drift detectado
-- [ ] Vista de recursos `unmanaged` con opción de adoptar
+- [x] Los recursos externos se listan y se distinguen
+- [ ] Adoptarlos explícitamente
 - [ ] Log de auditoría consultable
 
 **Entregable**: un panel que te dice qué hay corriendo en tu servidor y qué está mal.
@@ -88,13 +90,13 @@ un certificado que caduca en 9 días es exactamente lo que nadie detecta a tiemp
 
 ## Fase 3 — Escritura desde la UI
 
-- [ ] Crear y destruir instancias desde el panel
+- [x] Crear y destruir instancias desde el panel
 - [ ] Editar límites de CPU y memoria
 - [ ] Gestión de dominios y certificados
-- [ ] Cola de trabajos con logs en streaming por SSE
-- [ ] Pantalla de confirmación con el plan: comandos exactos y diff de ficheros
-- [ ] Panel "equivalente CLI" en cada operación
-- [ ] Detección de drift en la UI con diff visible y decisión explícita del usuario
+- [x] Cola de trabajos con logs en streaming por SSE
+- [x] Pantalla de confirmación con el plan: los comandos exactos que se van a ejecutar
+- [x] Modo global de comandos en la barra superior
+- [x] Detección de drift en la UI
 
 **Regla de la fase**: cada acción de la UI llama al mismo Command que el CLI. Si aparece
 lógica de negocio en un handler HTTP, está mal puesta.
@@ -118,7 +120,28 @@ Lo que convierte un panel en una herramienta que se usa todos los días.
 
 ---
 
-## Fase 5 — Catálogo de aplicaciones
+## Fase 5 — Equipos
+
+Hoy un usuario es solo alguien que puede entrar. Cuando OpenCroft gestione servidores de
+terceros —el caso de un MSP— hace falta saber quién puede tocar qué.
+
+- [ ] Correo en el usuario, además del nombre
+- [ ] Organizaciones, y usuarios pertenecientes a ellas
+- [ ] Proyectos dentro de una organización, agrupando instancias y dominios
+- [ ] Roles por organización y por proyecto
+- [ ] Invitaciones por correo
+- [ ] Log de auditoría con el actor de cada operación
+
+**Cuidado con la fuente de verdad.** Las organizaciones y los roles son datos propios y
+viven en SQLite: no se pueden derivar del sistema. Pero la pertenencia de una instancia a
+un proyecto sí es una anotación del contenedor, como el resto de su estado deseado. Si
+acaba en una tabla, se pierde al migrar el contenedor y se rompe el principio.
+
+**El correo trae una dependencia nueva**: enviar invitaciones necesita SMTP. Eso convierte
+el binario sin dependencias en algo que requiere configuración de correo. Conviene que sea
+opcional y que exista siempre la vía de crear la cuenta desde el host.
+
+## Fase 6 — Catálogo de aplicaciones
 
 Antes que el PaaS genérico, porque da valor inmediato con mucho menos trabajo y conecta
 con el resto del ecosistema.
@@ -133,7 +156,7 @@ instancia a mano tiene que seguir funcionando.
 
 ---
 
-## Fase 6 — PaaS
+## Fase 7 — PaaS
 
 Módulos nuevos siguiendo las mismas capas. No requiere tocar los existentes.
 
@@ -146,7 +169,7 @@ Módulos nuevos siguiendo las mismas capas. No requiere tocar los existentes.
 
 ---
 
-## Fase 7 — Multi-host
+## Fase 8 — Multi-host
 
 Solo cuando haya usuarios pidiéndolo. La preparación ya está hecha desde la fase 1.
 
