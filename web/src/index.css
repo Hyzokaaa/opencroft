@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+@theme {
+  /* Surfaces */
+  --color-ground: #0b0d0e;
+  --color-panel: #141719;
+  --color-raised: #1a1e20;
+  --color-edge: #23282b;
+  --color-edge-strong: #333a3e;
+
+  /* Text */
+  --color-ink: #e8eaeb;
+  --color-muted: #8b9499;
+  --color-faint: #5d666b;
+
+  /* Resource state — green means running, and nothing else. */
+  --color-running: #7dd3a0;
+  --color-stopped: #6b757a;
+
+  /* Severity */
+  --color-problem: #f2777a;
+  --color-caution: #e0b354;
+
+  /* Being edited by hand is the product working, not a warning.
+     It gets its own calm tone, deliberately not amber. */
+  --color-yours: #a894e8;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-ground);
+  color: var(--color-ink);
+  font-feature-settings: "tnum";
+}
+
+/* Focus was missing everywhere. A control panel is driven from the keyboard. */
+:focus-visible {
+  outline: 2px solid var(--color-yours);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--color-edge-strong);
+  border: 3px solid var(--color-ground);
+  border-radius: 6px;
+}
