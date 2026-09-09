@@ -13,9 +13,11 @@ import (
 	"strings"
 
 	authHttp "github.com/Hyzokaaa/opencroft/internal/auth/infrastructure/http"
-	instanceCommands "github.com/Hyzokaaa/opencroft/internal/instance/application/commands"
+	instanceRepositories "github.com/Hyzokaaa/opencroft/internal/instance/domain/repositories"
 	instanceServices "github.com/Hyzokaaa/opencroft/internal/instance/domain/services"
 	overviewQueries "github.com/Hyzokaaa/opencroft/internal/overview/application/queries"
+	"github.com/Hyzokaaa/opencroft/internal/shared/host"
+	"github.com/Hyzokaaa/opencroft/internal/shared/job"
 )
 
 // Deps carries the concrete implementations chosen at startup.
@@ -24,6 +26,14 @@ type Deps struct {
 	CreateInstance  *instanceServices.CreateInstance
 	DestroyInstance *instanceServices.DestroyInstance
 	ReadOnly        bool
+
+	// Instances and Host are what a write actually touches; Jobs runs the
+	// plan in the background. Simulated swaps execution for a rehearsal, so
+	// the plan screen can be shown on a machine with no runtime.
+	Instances instanceRepositories.InstanceRepository
+	Host      host.Host
+	Jobs      *job.Runner
+	Simulated bool
 
 	// Auth guards every data endpoint. It is required: a nil here would
 	// serve the host to anyone who can reach the port.
@@ -48,41 +58,11 @@ func Handler(deps Deps) http.Handler {
 		writeJSON(w, http.StatusOK, response)
 	})
 
-	mux.HandleFunc("POST /api/hosts/{hostId}/instances", func(w http.ResponseWriter, r *http.Request) {
-		if deps.ReadOnly {
-			writeError(w, http.StatusForbidden, errors.New("this instance is read-only"))
-			return
-		}
+	mux.HandleFunc("POST /api/hosts/{hostId}/instances", deps.createInstance)
+	mux.HandleFunc("DELETE /api/hosts/{hostId}/instances/{name}", deps.destroyInstance)
 
-		var body instanceCommands.CreateInstanceRequest
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeError(w, http.StatusBadRequest, err)
-			return
-		}
-
-		command := instanceCommands.NewCreateInstanceCommand(deps.CreateInstance)
-		response, err := command.Execute(r.Context(), instanceCommands.CreateInstanceProps{Request: body})
-		if err != nil {
-			writeError(w, statusFor(err), err)
-			return
-		}
-		writeJSON(w, http.StatusCreated, response)
-	})
-
-	mux.HandleFunc("DELETE /api/hosts/{hostId}/instances/{name}", func(w http.ResponseWriter, r *http.Request) {
-		if deps.ReadOnly {
-			writeError(w, http.StatusForbidden, errors.New("this instance is read-only"))
-			return
-		}
-
-		command := instanceCommands.NewDestroyInstanceCommand(deps.DestroyInstance)
-		err := command.Execute(r.Context(), instanceCommands.DestroyInstanceProps{Name: r.PathValue("name")})
-		if err != nil {
-			writeError(w, statusFor(err), err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})
+	mux.HandleFunc("GET /api/jobs/{id}", deps.showJob)
+	mux.HandleFunc("GET /api/jobs/{id}/events", deps.streamJob)
 
 	deps.Auth.Register(mux)
 	mux.Handle("/", staticHandler())
