@@ -57,7 +57,19 @@ export default function InstanceTable({ instances, problems, highlighted, onHove
 
               {!compact && (
                 <td className="px-4 py-2.5 font-mono text-xs">
-                  {i.domain || <span className="text-faint">&mdash;</span>}
+                  {i.domain ? (
+                    <>
+                      {i.domain}
+                      {/* One container commonly answers on several names. */}
+                      {i.domains?.length > 1 && (
+                        <span className="text-faint" title={i.domains.join('\n')}>
+                          {' '}+{i.domains.length - 1}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-faint">&mdash;</span>
+                  )}
                 </td>
               )}
 

@@ -15,7 +15,8 @@ type InstanceView struct {
 	Image    string `json:"image"`
 	Address  string `json:"address"`
 	Port     int    `json:"port"`
-	Domain   string `json:"domain"`
+	Domain   string   `json:"domain"`
+	Domains  []string `json:"domains"`
 	CPULimit int    `json:"cpuLimit"`
 	MemLimit string `json:"memLimit"`
 	Status   string `json:"status"`
@@ -33,11 +34,11 @@ type RouteView struct {
 }
 
 type OverviewResponse struct {
-	Runtime   string               `json:"runtime"`
-	Demo      bool                 `json:"demo"`
-	Instances []InstanceView       `json:"instances"`
-	Routes    []RouteView          `json:"routes"`
-	Findings  []reconcile.Finding  `json:"findings"`
+	Runtime   string              `json:"runtime"`
+	Demo      bool                `json:"demo"`
+	Instances []InstanceView      `json:"instances"`
+	Routes    []RouteView         `json:"routes"`
+	Findings  []reconcile.Finding `json:"findings"`
 }
 
 type OverviewQuery struct {
@@ -76,9 +77,24 @@ func (q *OverviewQuery) Execute(ctx context.Context) (OverviewResponse, error) {
 	}
 
 	for _, i := range instances {
+		// A container does not have to be annotated to have a domain: whoever
+		// set up nginx already said so. Read it from the routes instead.
+		served := []string{}
+		for _, r := range routes {
+			if i.Address != "" && r.Target == i.Address {
+				served = append(served, r.Domain)
+			}
+		}
+
+		primary := i.Domain
+		if primary == "" && len(served) > 0 {
+			primary = served[0]
+		}
+
 		response.Instances = append(response.Instances, InstanceView{
 			Id: i.GetId(), Name: i.Name, Image: i.Image, Address: i.Address,
-			Port: i.Port, Domain: i.Domain, CPULimit: i.CPULimit, MemLimit: i.MemLimit,
+			Port: i.Port, Domain: primary, Domains: served,
+			CPULimit: i.CPULimit, MemLimit: i.MemLimit,
 			Status: string(i.Status), Created: i.Created, Managed: i.Managed,
 		})
 	}
