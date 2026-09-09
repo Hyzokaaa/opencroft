@@ -324,16 +324,21 @@ fi
 
 # There is no sign-up in the panel on purpose: an account is created by
 # somebody who already has a shell on this machine.
+echo ""
+echo "── Create the first user"
+
 if [ "$ASSUME_YES" = false ] && [ -t 0 ]; then
-  echo ""
-  echo "── Create the first user"
-  read -p "  Username (empty to skip): " FIRST_USER
+  read -p "  Username (empty for a generated admin account): " FIRST_USER
   if [ -n "$FIRST_USER" ]; then
     "$PREFIX/bin/croft" user add "$FIRST_USER" || true
   else
-    echo "[WARN] No users yet. Nobody can sign in until you run:"
-    echo "           sudo croft user add <name>"
+    "$PREFIX/bin/croft" user bootstrap || true
   fi
+else
+  # Unattended. A fixed default password is the most exploited weakness in
+  # self-hosted software, and "change it later" protects nobody, so this
+  # generates one and prints it once.
+  "$PREFIX/bin/croft" user bootstrap || true
 fi
 
 echo ""
