@@ -274,11 +274,24 @@ install -d "$NGINX_CONF_DIR"
 if grep -qF "$NGINX_CONF_DIR/*.conf" "$NGINX_CONF" 2>/dev/null; then
   echo "[OK] Already included"
 elif grep -qE '^[[:space:]]*http[[:space:]]*\{' "$NGINX_CONF" 2>/dev/null; then
+  # Back up before touching it. This host may already be serving something,
+  # and a broken nginx.conf takes that down with it.
+  BACKUP="$NGINX_CONF.croft-backup-$(date +%Y%m%d%H%M%S)"
+  cp -p "$NGINX_CONF" "$BACKUP"
+
   awk -v line="    include $NGINX_CONF_DIR/*.conf;" '
     !done && /^[[:space:]]*http[[:space:]]*\{/ { print; print line; done=1; next }
     { print }
   ' "$NGINX_CONF" > "$NGINX_CONF.croft-tmp" && mv "$NGINX_CONF.croft-tmp" "$NGINX_CONF"
-  nginx -t && echo "[OK] Included $NGINX_CONF_DIR"
+
+  if nginx -t 2>/dev/null; then
+    echo "[OK] Included $NGINX_CONF_DIR (previous file kept at $BACKUP)"
+  else
+    mv "$BACKUP" "$NGINX_CONF"
+    echo "[WARN] nginx rejected the change, so it was reverted. Nothing was left broken."
+    echo "       Add this line to the http block yourself:"
+    echo "           include $NGINX_CONF_DIR/*.conf;"
+  fi
 else
   echo "[WARN] No http block found in $NGINX_CONF. Add this line yourself:"
   echo "           include $NGINX_CONF_DIR/*.conf;"
