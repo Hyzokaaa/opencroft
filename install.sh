@@ -193,10 +193,12 @@ else
 fi
 
 if [ -n "$LOCAL_BINARY" ]; then
-  add_step "Install croft from $LOCAL_BINARY" "install -m 0755 '$LOCAL_BINARY' $PREFIX/bin/croft"
+  add_step "Install croft from $LOCAL_BINARY" "install -m 0755 '$LOCAL_BINARY' $PREFIX/bin/croft.new && mv $PREFIX/bin/croft.new $PREFIX/bin/croft"
 else
   RELEASE_URL="https://github.com/$REPO/releases/$([ "$VERSION" = latest ] && echo latest/download || echo "download/$VERSION")/croft-linux-$ARCH"
-  add_step "Download croft" "curl -fsSL '$RELEASE_URL' -o $PREFIX/bin/croft && chmod 0755 $PREFIX/bin/croft"
+  # Download beside the target and rename. Writing over a running binary fails
+  # with ETXTBSY; renaming replaces the directory entry and always works.
+  add_step "Download croft" "curl -fsSL '$RELEASE_URL' -o $PREFIX/bin/croft.new && chmod 0755 $PREFIX/bin/croft.new && mv $PREFIX/bin/croft.new $PREFIX/bin/croft"
 fi
 
 add_step "Create the vhost directory" "install -d $NGINX_CONF_DIR"

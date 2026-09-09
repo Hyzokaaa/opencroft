@@ -238,4 +238,3 @@ func yesNo(v bool) string {
 	}
 	return "no"
 }
-

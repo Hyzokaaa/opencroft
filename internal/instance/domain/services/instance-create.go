@@ -13,8 +13,8 @@ import (
 )
 
 var (
-	ErrNameRequired = errors.New("instance name is required")
-	ErrNameInvalid  = errors.New("instance name may only contain letters, digits and dashes")
+	ErrNameRequired  = errors.New("instance name is required")
+	ErrNameInvalid   = errors.New("instance name may only contain letters, digits and dashes")
 	ErrAlreadyExists = errors.New("an instance with that name already exists")
 )
 
