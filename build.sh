@@ -13,6 +13,11 @@ IMAGE="${IMAGE:-golang:1.25-alpine}"
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
+# Git Bash on Windows rewrites paths handed to docker, and reports a POSIX
+# working directory that the daemon does not understand.
+export MSYS_NO_PATHCONV=1
+SRC="$(pwd -W 2>/dev/null || pwd)"
+
 echo "── Building the interface"
 npm --prefix web run build
 
@@ -20,7 +25,7 @@ echo "── Building croft $VERSION"
 docker run --rm \
   -e GOTOOLCHAIN=auto \
   -e VERSION="$VERSION" \
-  -v "$PWD:/src" \
+  -v "$SRC:/src" \
   -v croft-gomod:/go/pkg/mod \
   -w /src \
   "$IMAGE" sh -c '
@@ -33,8 +38,12 @@ docker run --rm \
     done
   '
 
+# Published beside the binaries so `croft update` can tell a truncated
+# download from a good one.
+(cd bin && sha256sum croft-linux-amd64 croft-linux-arm64 > SHA256SUMS)
+
 echo ""
 ls -la bin/
 echo ""
 echo "  Release with:"
-echo "    gh release create v$VERSION bin/croft-linux-amd64 bin/croft-linux-arm64"
+echo "    gh release create v$VERSION bin/croft-linux-amd64 bin/croft-linux-arm64 bin/SHA256SUMS"

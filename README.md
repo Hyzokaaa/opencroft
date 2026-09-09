@@ -34,6 +34,16 @@ Accounts are created on the host — the panel has no sign-up:
 sudo croft user add <name>
 ```
 
+Updating later is one command:
+
+```bash
+sudo croft update
+```
+
+It checks the latest release, verifies the download against its published checksum,
+replaces the binary by renaming it into place, and restarts the service. `--check` reports
+without touching anything.
+
 To see the panel without a server at all:
 
 ```bash

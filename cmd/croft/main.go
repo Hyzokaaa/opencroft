@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -31,6 +33,7 @@ import (
 	"github.com/Hyzokaaa/opencroft/internal/shared/host"
 	"github.com/Hyzokaaa/opencroft/internal/shared/id"
 	"github.com/Hyzokaaa/opencroft/internal/shared/job"
+	"github.com/Hyzokaaa/opencroft/internal/update"
 
 	instanceRepositories "github.com/Hyzokaaa/opencroft/internal/instance/domain/repositories"
 )
@@ -60,6 +63,8 @@ func main() {
 		destroy(ctx, os.Args[2:])
 	case "user":
 		user(ctx, os.Args[2:])
+	case "update":
+		updateCommand(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println("croft " + version)
 	default:
@@ -76,6 +81,7 @@ Usage:
   croft list [--json]                   show every container and how it is routed
   croft create <name> [flags]           create a container
   croft destroy <name>                  remove a container
+  croft update [--check]                install the latest release
   croft version
 
   croft user add <name>                 create a user who can sign in
@@ -511,4 +517,63 @@ func reorder(fs *flag.FlagSet, args []string) []string {
 func isBoolFlag(f *flag.Flag) bool {
 	boolean, ok := f.Value.(interface{ IsBoolFlag() bool })
 	return ok && boolean.IsBoolFlag()
+}
+
+// ── Updating ──────────────────────────────────────────────────────────────────
+
+func updateCommand(args []string) {
+	fs := flag.NewFlagSet("update", flag.ExitOnError)
+	checkOnly := fs.Bool("check", false, "report what is available and exit")
+	restart := fs.Bool("restart", true, "restart the croft service afterwards")
+	_ = fs.Parse(reorder(fs, args))
+
+	release, err := update.Latest()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "[ERROR]", err)
+		os.Exit(1)
+	}
+
+	if !update.Newer(version, release) {
+		fmt.Printf("croft %s is already the latest release.\n", version)
+		return
+	}
+
+	fmt.Printf("  Running:   %s\n", version)
+	fmt.Printf("  Available: %s\n", release.Tag)
+
+	if *checkOnly {
+		fmt.Println("\n  Update with:  sudo croft update")
+		return
+	}
+
+	path, err := os.Executable()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "[ERROR]", err)
+		os.Exit(1)
+	}
+	// Follow a symlink so the real file is replaced, not the link.
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+
+	fmt.Printf("\n── Replacing %s\n", path)
+	if err := update.Apply(release.Tag, path); err != nil {
+		fmt.Fprintln(os.Stderr, "[ERROR]", err)
+		if os.IsPermission(err) {
+			fmt.Fprintln(os.Stderr, "        Updating the binary needs root. Try: sudo croft update")
+		}
+		os.Exit(1)
+	}
+	fmt.Printf("[OK] croft %s installed\n", release.Tag)
+
+	if *restart {
+		if _, err := exec.LookPath("systemctl"); err == nil {
+			if out, err := exec.Command("systemctl", "restart", "croft").CombinedOutput(); err != nil {
+				fmt.Fprintf(os.Stderr, "[WARN] Could not restart the service: %s\n", strings.TrimSpace(string(out)))
+				fmt.Fprintln(os.Stderr, "       Restart it yourself with: sudo systemctl restart croft")
+			} else {
+				fmt.Println("[OK] croft.service restarted")
+			}
+		}
+	}
 }
