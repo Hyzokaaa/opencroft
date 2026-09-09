@@ -73,7 +73,7 @@ El 80% del valor percibido con el 0% del riesgo. Solo lectura.
 - [x] Autenticación: usuarios locales y sesiones
 - [ ] Tokens de API para automatización
 - [ ] SQLite para estado propio (usuarios, sesiones, tokens, auditoría, trabajos)
-- [ ] Separación `croft-api` (sin privilegios) / `croft-agent` (root) por unix socket
+- [x] Separación en dos procesos: `croft agent` (root) y `croft serve` (sin privilegios), por unix socket
 - [x] UI en React + Vite + Tailwind, embebida con `go:embed`
 - [x] Dashboard: instancias, estado, rutas y hallazgos
 - [ ] **Avisos**: certificados que caducan pronto, rutas que apuntan a instancias caídas o

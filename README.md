@@ -6,9 +6,9 @@ OpenCroft manages LXC system containers, domains and TLS certificates on a singl
 Every container is a full OS — its own init, cron, systemd and filesystem — not a packaged
 process.
 
-> **Status: early.** The daemon, the CLI and a read-only panel work, behind a login.
-> Writing from the panel, certificates and snapshots are not built yet. See
-> [ROADMAP.md](./ROADMAP.md).
+> **Status: early.** Containers can be listed, created and destroyed from the panel,
+> behind a login, with the plan shown before anything runs. Domains, certificates and
+> snapshots are not built yet. See [ROADMAP.md](./ROADMAP.md).
 
 ## Install
 
@@ -49,6 +49,17 @@ To see the panel without a server at all:
 ```bash
 croft serve --demo
 ```
+
+## Two processes
+
+The half that serves HTTP to a browser runs as an ordinary user and holds no privileges.
+A second process, `croft agent`, runs as root and is the only thing that talks to the
+container runtime and nginx. They meet over a unix socket owned by the `croft` group.
+
+The agent exposes a closed set of typed operations. There is deliberately no "run this
+command" endpoint: the API describes *what* it wants, and the agent decides which commands
+that means, validating every field again on its side. A compromised panel cannot ask for
+anything the agent was not already willing to do.
 
 ## Why
 
