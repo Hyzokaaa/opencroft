@@ -6,8 +6,8 @@ OpenCroft manages LXC system containers, domains and TLS certificates on a singl
 Every container is a full OS — its own init, cron, systemd and filesystem — not a packaged
 process.
 
-> **Status: early.** The daemon, the CLI and a read-only panel work. There is no
-> authentication yet, so keep it on `127.0.0.1` and reach it over an SSH tunnel. See
+> **Status: early.** The daemon, the CLI and a read-only panel work, behind a login.
+> Writing from the panel, certificates and snapshots are not built yet. See
 > [ROADMAP.md](./ROADMAP.md).
 
 ## Install
@@ -21,11 +21,17 @@ Detects the distribution and installs what is missing — Incus (or LXD via snap
 Ubuntu), nginx, the `croft` binary and a systemd unit. `--dry-run` prints the exact
 commands and exits without touching anything.
 
-It listens on `127.0.0.1:8080` by default and warns you if you ask for anything else,
-because there is no authentication yet:
+It listens on `127.0.0.1:8080` by default. There is a login, but no TLS of its own yet,
+so reach it over an SSH tunnel rather than exposing the port:
 
 ```bash
 ssh -L 8080:127.0.0.1:8080 you@your-server
+```
+
+Accounts are created on the host — the panel has no sign-up:
+
+```bash
+sudo croft user add <name>
 ```
 
 To see the panel without a server at all:
