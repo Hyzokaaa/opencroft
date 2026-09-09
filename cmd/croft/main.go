@@ -202,7 +202,7 @@ func serve(ctx context.Context, args []string) {
 	if total == 0 {
 		fmt.Println("No users yet. Create the first one with:  croft user add <name>")
 	}
-	fmt.Printf("Listening on http://localhost%s\n", *addr)
+	fmt.Printf("Listening on %s\n", browsableURL(*addr))
 
 	if err := http.ListenAndServe(*addr, handler); err != nil {
 		fmt.Fprintln(os.Stderr, "[ERROR]", err)
@@ -373,6 +373,12 @@ func user(ctx context.Context, args []string) {
 	case "add":
 		if fs.NArg() < 1 {
 			fmt.Fprintln(os.Stderr, "[ERROR] A name is required: croft user add <name>")
+			os.Exit(1)
+		}
+
+		// Check the name before asking for a password twice.
+		if taken, _ := auth.users.FindByUsername(ctx, fs.Arg(0)); taken != nil {
+			fmt.Fprintln(os.Stderr, "[ERROR]", authServices.ErrUsernameTaken)
 			os.Exit(1)
 		}
 
@@ -659,4 +665,13 @@ func agentCommand(ctx context.Context, args []string) {
 func unitExists(unit string) bool {
 	err := exec.Command("systemctl", "cat", unit+".service").Run()
 	return err == nil
+}
+
+// browsableURL turns a listen address into something you can paste into a
+// browser. ":8080" means every interface; "127.0.0.1:8080" means itself.
+func browsableURL(addr string) string {
+	if strings.HasPrefix(addr, ":") {
+		return "http://localhost" + addr
+	}
+	return "http://" + addr
 }

@@ -405,6 +405,8 @@ case "$ADDR" in
     ;;
 esac
 echo ""
-echo "  Uninstall: systemctl disable --now croft; rm $PREFIX/bin/croft"
-echo "             /etc/systemd/system/croft.service; rm -rf $NGINX_CONF_DIR"
+echo "  Uninstall:"
+echo "    systemctl disable --now croft croft-agent"
+echo "    rm $PREFIX/bin/croft /etc/systemd/system/croft{,-agent}.service"
+echo "    rm -rf $NGINX_CONF_DIR /var/lib/croft && userdel croft"
 echo ""
