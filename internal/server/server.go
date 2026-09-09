@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 
+	authHttp "github.com/Hyzokaaa/opencroft/internal/auth/infrastructure/http"
 	instanceCommands "github.com/Hyzokaaa/opencroft/internal/instance/application/commands"
 	instanceServices "github.com/Hyzokaaa/opencroft/internal/instance/domain/services"
 	overviewQueries "github.com/Hyzokaaa/opencroft/internal/overview/application/queries"
@@ -23,6 +24,10 @@ type Deps struct {
 	CreateInstance  *instanceServices.CreateInstance
 	DestroyInstance *instanceServices.DestroyInstance
 	ReadOnly        bool
+
+	// Auth guards every data endpoint. It is required: a nil here would
+	// serve the host to anyone who can reach the port.
+	Auth *authHttp.Handler
 }
 
 func Handler(deps Deps) http.Handler {
@@ -79,8 +84,10 @@ func Handler(deps Deps) http.Handler {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
+	deps.Auth.Register(mux)
 	mux.Handle("/", staticHandler())
-	return logging(mux)
+
+	return logging(deps.Auth.Guard(mux))
 }
 
 func statusFor(err error) int {
