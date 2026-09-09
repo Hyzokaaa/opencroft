@@ -11,3 +11,10 @@ coverage.out
 *.swp
 .DS_Store
 Thumbs.db
+
+# Build artefacts
+bin/
+# The interface is built from web/; the directory must exist for go:embed,
+# so a fresh clone compiles and serves nothing until `npm run build`.
+internal/server/dist/*
+!internal/server/dist/.gitkeep
