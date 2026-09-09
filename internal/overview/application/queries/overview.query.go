@@ -10,18 +10,18 @@ import (
 )
 
 type InstanceView struct {
-	Id       string `json:"id"`
-	Name     string `json:"name"`
-	Image    string `json:"image"`
-	Address  string `json:"address"`
-	Port     int    `json:"port"`
+	Id       string   `json:"id"`
+	Name     string   `json:"name"`
+	Image    string   `json:"image"`
+	Address  string   `json:"address"`
+	Port     int      `json:"port"`
 	Domain   string   `json:"domain"`
 	Domains  []string `json:"domains"`
-	CPULimit int    `json:"cpuLimit"`
-	MemLimit string `json:"memLimit"`
-	Status   string `json:"status"`
-	Created  string `json:"created"`
-	Managed  bool   `json:"managed"`
+	CPULimit int      `json:"cpuLimit"`
+	MemLimit string   `json:"memLimit"`
+	Status   string   `json:"status"`
+	Created  string   `json:"created"`
+	Managed  bool     `json:"managed"`
 }
 
 type RouteView struct {
