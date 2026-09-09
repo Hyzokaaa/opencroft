@@ -9,8 +9,8 @@ import (
 	"time"
 
 	instanceCommands "github.com/Hyzokaaa/opencroft/internal/instance/application/commands"
+	instanceEntities "github.com/Hyzokaaa/opencroft/internal/instance/domain/entities"
 	instanceServices "github.com/Hyzokaaa/opencroft/internal/instance/domain/services"
-	"github.com/Hyzokaaa/opencroft/internal/shared/host"
 	"github.com/Hyzokaaa/opencroft/internal/shared/plan"
 )
 
@@ -54,15 +54,19 @@ func (d Deps) createInstance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	started := d.Jobs.Start("create", instance.Name, p, func(ctx context.Context, report func(int, string)) error {
-		if err := d.apply(ctx, p, report); err != nil {
-			return err
-		}
-		// In demo mode the plan is theatre, so the container has to be
-		// recorded separately for the panel to show it.
 		if d.Simulated {
+			// The plan is theatre here, so the container is recorded
+			// separately for the panel to show it.
+			if err := d.rehearse(p, report); err != nil {
+				return err
+			}
 			return d.Instances.Create(ctx, instance)
 		}
-		return nil
+
+		if narrator, ok := d.Instances.(progressWriter); ok {
+			return narrator.CreateWithProgress(ctx, instance, report)
+		}
+		return d.Instances.Create(ctx, instance)
 	})
 
 	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": instance.Name})
@@ -97,32 +101,35 @@ func (d Deps) destroyInstance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	started := d.Jobs.Start("destroy", name, p, func(ctx context.Context, report func(int, string)) error {
-		if err := d.apply(ctx, p, report); err != nil {
-			return err
-		}
 		if d.Simulated {
+			if err := d.rehearse(p, report); err != nil {
+				return err
+			}
 			return d.Instances.Delete(ctx, name)
 		}
-		return nil
+
+		if narrator, ok := d.Instances.(progressWriter); ok {
+			return narrator.DeleteWithProgress(ctx, name, report)
+		}
+		return d.Instances.Delete(ctx, name)
 	})
 
 	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": name})
 }
 
-// apply walks the plan, announcing each step before running it.
-func (d Deps) apply(ctx context.Context, p plan.Plan, report func(int, string)) error {
+// progressWriter is what a repository offers when it can narrate its work —
+// the agent client does, by forwarding what the privileged side reports.
+type progressWriter interface {
+	CreateWithProgress(ctx context.Context, instance *instanceEntities.Instance, report func(int, string)) error
+	DeleteWithProgress(ctx context.Context, name string, report func(int, string)) error
+}
+
+// rehearse walks the plan without doing anything, for demo mode.
+func (d Deps) rehearse(p plan.Plan, report func(int, string)) error {
 	for i, step := range p.Steps {
 		report(i+1, step.Describe)
-
-		if d.Simulated {
-			// Long enough to see the plan advance, short enough not to annoy.
-			time.Sleep(400 * time.Millisecond)
-			continue
-		}
-
-		if err := host.RunStep(ctx, d.Host, step); err != nil && !step.Optional {
-			return err
-		}
+		// Long enough to see the plan advance, short enough not to annoy.
+		time.Sleep(400 * time.Millisecond)
 	}
 	return nil
 }

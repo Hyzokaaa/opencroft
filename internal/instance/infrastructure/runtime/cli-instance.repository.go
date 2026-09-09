@@ -240,3 +240,28 @@ func (r *CLIInstanceRepository) bridgePrefix(ctx context.Context) (string, error
 	}
 	return strings.Join(octets[:3], "."), nil
 }
+
+// CreateWithProgress walks the plan announcing each step before running it.
+// Create is the same thing without an audience.
+func (r *CLIInstanceRepository) CreateWithProgress(ctx context.Context, instance *entities.Instance, report func(int, string)) error {
+	return r.walkReporting(ctx, r.CreatePlan(instance), report)
+}
+
+func (r *CLIInstanceRepository) DeleteWithProgress(ctx context.Context, name string, report func(int, string)) error {
+	return r.walkReporting(ctx, r.DeletePlan(name), report)
+}
+
+func (r *CLIInstanceRepository) walkReporting(ctx context.Context, p plan.Plan, report func(int, string)) error {
+	for i, step := range p.Steps {
+		if report != nil {
+			report(i+1, step.Describe)
+		}
+		if _, err := r.host.Run(ctx, step.Argv[0], step.Argv[1:]...); err != nil {
+			if step.Optional {
+				continue
+			}
+			return err
+		}
+	}
+	return nil
+}
