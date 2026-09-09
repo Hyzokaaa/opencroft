@@ -6,6 +6,7 @@ import InstanceTable from './components/InstanceTable.jsx'
 import RouteTable from './components/RouteTable.jsx'
 import Card from './components/Card.jsx'
 import Login from './components/Login.jsx'
+import PlanDialog from './components/PlanDialog.jsx'
 import { useOverview, useCommandMode, useAuth } from './lib/useOverview.js'
 
 export default function App() {
@@ -37,6 +38,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
   const [commandMode, toggleCommands] = useCommandMode()
   const [section, setSection] = useState('overview')
   const [highlighted, setHighlighted] = useState(null)
+  const [dialog, setDialog] = useState(null)
 
   // Subjects named by a problem, so the tables carry the same severity the
   // findings panel reports. Two truths on one screen is worse than none.
@@ -49,6 +51,31 @@ function Dashboard({ onSignOut, onSessionLost }) {
   }, [data])
 
   const problemCount = data?.findings.filter((f) => f.severity !== 'info').length ?? 0
+
+  function newContainer() {
+    setDialog({
+      title: "New container",
+      url: "/api/hosts/local/instances",
+      method: "POST",
+      defaults: { name: "", port: 80, cpuLimit: 4, memLimit: "4GB" },
+      fields: [
+        { name: "name", label: "Name", autoFocus: true, placeholder: "helpdesk" },
+        { name: "port", label: "Port inside the container", type: "number",
+          hint: "What the application listens on. The address is assigned for you." },
+        { name: "cpuLimit", label: "CPU limit", type: "number" },
+        { name: "memLimit", label: "Memory limit" },
+      ],
+    })
+  }
+
+  function destroyContainer(name) {
+    setDialog({
+      title: `Destroy ${name}`,
+      url: `/api/hosts/local/instances/${name}`,
+      method: "DELETE",
+      destructive: true,
+    })
+  }
 
   function focusSubject(subject) {
     const isDomain = data?.routes.some((r) => r.domain === subject)
@@ -82,6 +109,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
     highlighted,
     onHover: setHighlighted,
     onFocus: focusSubject,
+    onDestroy: destroyContainer,
     instances: data.instances,
   }
 
@@ -134,7 +162,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
               count={data.instances.length}
               commandMode={commandMode}
               commands={containerCommands}
-              action={<SeeAll onClick={() => setSection('containers')} />}
+              action={<NewButton onClick={newContainer} />}
             >
               <InstanceTable {...tableProps} compact />
             </Card>
@@ -158,6 +186,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
           count={data.instances.length}
           commandMode={commandMode}
           commands={containerCommands}
+          action={<NewButton onClick={newContainer} />}
         >
           <InstanceTable {...tableProps} />
         </Card>
@@ -174,8 +203,27 @@ function Dashboard({ onSignOut, onSessionLost }) {
         </Card>
       )}
 
-      {['certificates', 'activity', 'settings'].includes(section) && <NotBuilt section={section} />}
+      {["certificates", "activity", "settings"].includes(section) && <NotBuilt section={section} />}
+
+      {dialog && (
+        <PlanDialog
+          request={dialog}
+          onClose={() => { setDialog(null); reload() }}
+          onFinished={reload}
+        />
+      )}
     </Shell>
+  )
+}
+
+function NewButton({ onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="rounded border border-edge-strong bg-raised px-2 py-1 text-xs transition hover:border-ink/30"
+    >
+      New container
+    </button>
   )
 }
 
