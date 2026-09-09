@@ -14,6 +14,7 @@ type UserRepository interface {
 	FindByUsername(ctx context.Context, username string) (*entities.User, error)
 	FindAll(ctx context.Context) ([]*entities.User, error)
 	Count(ctx context.Context) (int, error)
+	UpdatePassword(ctx context.Context, username, hash string) error
 	Delete(ctx context.Context, username string) error
 }
 

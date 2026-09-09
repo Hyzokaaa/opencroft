@@ -78,6 +78,8 @@ Usage:
 
   croft user add <name>                 create a user who can sign in
   croft user list
+  croft user passwd <name>              change a password
+  croft user bootstrap                  create admin with a random password, once
   croft user rm <name>
 
 Every command works without a terminal: pass flags and read --json.
@@ -311,7 +313,7 @@ func wireAuth(dbPath string) authDeps {
 
 func user(ctx context.Context, args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: croft user add|list|rm <name>")
+		fmt.Fprintln(os.Stderr, "Usage: croft user add|list|passwd|rm <name>")
 		os.Exit(1)
 	}
 
@@ -363,6 +365,59 @@ func user(ctx context.Context, args []string) {
 		_ = w.Flush()
 		fmt.Println()
 
+	case "bootstrap":
+		// For unattended installs. Creates nothing if somebody already can
+		// sign in, so re-running the installer never resets access.
+		total, err := auth.users.Count(ctx)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "[ERROR]", err)
+			os.Exit(1)
+		}
+		if total > 0 {
+			fmt.Println("[OK] Users already exist; nothing to do.")
+			return
+		}
+
+		generated, err := authServices.GeneratePassword()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "[ERROR]", err)
+			os.Exit(1)
+		}
+
+		if _, err := auth.create.Execute(ctx, authServices.CreateUserProps{
+			Username: "admin",
+			Password: generated,
+		}); err != nil {
+			fmt.Fprintln(os.Stderr, "[ERROR]", err)
+			os.Exit(1)
+		}
+
+		fmt.Println()
+		fmt.Println("  Sign in as:  admin")
+		fmt.Println("  Password:    " + generated)
+		fmt.Println()
+		fmt.Println("  This is shown once and is not stored anywhere in readable form.")
+		fmt.Println("  Change it with:  croft user passwd admin")
+		fmt.Println()
+
+	case "passwd":
+		if fs.NArg() < 1 {
+			fmt.Fprintln(os.Stderr, "[ERROR] A name is required: croft user passwd <name>")
+			os.Exit(1)
+		}
+
+		secret := *password
+		if secret == "" {
+			secret = askForPassword()
+		}
+
+		change := authServices.NewChangePassword(auth.users, crypto.NewBcryptHasher())
+		if err := change.Execute(ctx, fs.Arg(0), secret); err != nil {
+			fmt.Fprintln(os.Stderr, "[ERROR]", err)
+			os.Exit(1)
+		}
+		fmt.Printf("[OK] password changed for %s\n", fs.Arg(0))
+
 	case "rm":
 		if fs.NArg() < 1 {
 			fmt.Fprintln(os.Stderr, "[ERROR] A name is required: croft user rm <name>")
@@ -375,7 +430,7 @@ func user(ctx context.Context, args []string) {
 		fmt.Printf("[OK] %s removed\n", fs.Arg(0))
 
 	default:
-		fmt.Fprintln(os.Stderr, "Usage: croft user add|list|rm <name>")
+		fmt.Fprintln(os.Stderr, "Usage: croft user add|list|passwd|rm <name>")
 		os.Exit(1)
 	}
 }

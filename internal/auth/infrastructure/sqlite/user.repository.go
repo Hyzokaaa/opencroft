@@ -67,3 +67,9 @@ func (r *SQLiteUserRepository) Delete(ctx context.Context, username string) erro
 	_, err := r.store.db.ExecContext(ctx, `DELETE FROM users WHERE username = ?`, username)
 	return err
 }
+
+func (r *SQLiteUserRepository) UpdatePassword(ctx context.Context, username, hash string) error {
+	_, err := r.store.db.ExecContext(ctx,
+		`UPDATE users SET password_hash = ? WHERE username = ?`, hash, username)
+	return err
+}
