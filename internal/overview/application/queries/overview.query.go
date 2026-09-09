@@ -35,6 +35,7 @@ type RouteView struct {
 
 type OverviewResponse struct {
 	Runtime   string              `json:"runtime"`
+	Version   string              `json:"version"`
 	Demo      bool                `json:"demo"`
 	Instances []InstanceView      `json:"instances"`
 	Routes    []RouteView         `json:"routes"`
@@ -45,6 +46,7 @@ type OverviewQuery struct {
 	listInstances *instanceServices.ListInstances
 	listRoutes    *routeServices.ListRoutes
 	runtime       string
+	version       string
 	demo          bool
 }
 
@@ -52,9 +54,10 @@ func NewOverviewQuery(
 	listInstances *instanceServices.ListInstances,
 	listRoutes *routeServices.ListRoutes,
 	runtime string,
+	version string,
 	demo bool,
 ) *OverviewQuery {
-	return &OverviewQuery{listInstances: listInstances, listRoutes: listRoutes, runtime: runtime, demo: demo}
+	return &OverviewQuery{listInstances: listInstances, listRoutes: listRoutes, runtime: runtime, version: version, demo: demo}
 }
 
 func (q *OverviewQuery) Execute(ctx context.Context) (OverviewResponse, error) {
@@ -70,6 +73,7 @@ func (q *OverviewQuery) Execute(ctx context.Context) (OverviewResponse, error) {
 
 	response := OverviewResponse{
 		Runtime:   q.runtime,
+		Version:   q.version,
 		Demo:      q.demo,
 		Instances: make([]InstanceView, 0, len(instances)),
 		Routes:    make([]RouteView, 0, len(routes)),

@@ -35,10 +35,12 @@ import (
 	instanceRepositories "github.com/Hyzokaaa/opencroft/internal/instance/domain/repositories"
 )
 
-const (
-	version       = "0.2.0-dev"
-	defaultDBPath = "/var/lib/croft/croft.db"
-)
+// version is stamped at build time with -ldflags "-X main.version=…".
+// A panel that misreports its own version is a problem the day something
+// needs debugging.
+var version = "dev"
+
+const defaultDBPath = "/var/lib/croft/croft.db"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -92,6 +94,7 @@ type deps struct {
 	instances instanceRepositories.InstanceRepository
 	routes    routeRepositories.RouteRepository
 	runtime   string
+	version   string
 	demo      bool
 }
 
@@ -101,6 +104,7 @@ func wire(ctx context.Context, demo bool, nginxDir string) deps {
 			instances: runtime.NewDemoInstanceRepository(),
 			routes:    routeMemory.NewDemoRouteRepository(),
 			runtime:   "demo",
+			version:   version,
 			demo:      true,
 		}
 	}
@@ -116,6 +120,7 @@ func wire(ctx context.Context, demo bool, nginxDir string) deps {
 		instances: runtime.NewCLIInstanceRepository(h, bin, flavor),
 		routes:    nginx.NewNginxRouteRepository(h, nginxDir),
 		runtime:   string(flavor),
+		version:   version,
 	}
 }
 
@@ -137,6 +142,7 @@ func serve(ctx context.Context, args []string) {
 			instanceServices.NewListInstances(d.instances),
 			routeServices.NewListRoutes(d.routes),
 			d.runtime,
+			d.version,
 			d.demo,
 		),
 		CreateInstance:  instanceServices.NewCreateInstance(id.NewULIDGenerator(), d.instances),
@@ -183,6 +189,7 @@ func list(ctx context.Context, args []string) {
 		instanceServices.NewListInstances(d.instances),
 		routeServices.NewListRoutes(d.routes),
 		d.runtime,
+		d.version,
 		d.demo,
 	)
 

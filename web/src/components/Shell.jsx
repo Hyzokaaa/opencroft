@@ -130,7 +130,7 @@ function Rail({ data, section, onSection, open }) {
             </span>
           )}
           <p className="font-mono">runtime: {data?.runtime ?? '—'}</p>
-          <p className="font-mono">croft 0.2.0-dev</p>
+          <p className="font-mono">croft {data?.version ?? 'dev'}</p>
         </div>
       </div>
     </nav>
