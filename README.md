@@ -6,9 +6,33 @@ OpenCroft manages LXC system containers, domains and TLS certificates on a singl
 Every container is a full OS — its own init, cron, systemd and filesystem — not a packaged
 process.
 
-> **Status: design.** No implementation yet. The primitives were prototyped as shell
-> scripts in [croft-tools](https://github.com/Hyzokaaa/croft-tools); this repository
-> holds the design and will hold the Go implementation. See [ROADMAP.md](./ROADMAP.md).
+> **Status: early.** The daemon, the CLI and a read-only panel work. There is no
+> authentication yet, so keep it on `127.0.0.1` and reach it over an SSH tunnel. See
+> [ROADMAP.md](./ROADMAP.md).
+
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Hyzokaaa/opencroft/main/install.sh -o install.sh
+sudo bash install.sh
+```
+
+Detects the distribution and installs what is missing — Incus (or LXD via snap on older
+Ubuntu), nginx, the `croft` binary and a systemd unit. `--dry-run` prints the exact
+commands and exits without touching anything.
+
+It listens on `127.0.0.1:8080` by default and warns you if you ask for anything else,
+because there is no authentication yet:
+
+```bash
+ssh -L 8080:127.0.0.1:8080 you@your-server
+```
+
+To see the panel without a server at all:
+
+```bash
+croft serve --demo
+```
 
 ## Why
 
