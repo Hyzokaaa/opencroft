@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"text/tabwriter"
 
+	"github.com/Hyzokaaa/opencroft/internal/agent"
 	authServices "github.com/Hyzokaaa/opencroft/internal/auth/domain/services"
 	"github.com/Hyzokaaa/opencroft/internal/auth/infrastructure/crypto"
 	authHttp "github.com/Hyzokaaa/opencroft/internal/auth/infrastructure/http"
@@ -65,6 +66,8 @@ func main() {
 		user(ctx, os.Args[2:])
 	case "update":
 		updateCommand(os.Args[2:])
+	case "agent":
+		agentCommand(ctx, os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println("croft " + version)
 	default:
@@ -82,6 +85,7 @@ Usage:
   croft create <name> [flags]           create a container
   croft destroy <name>                  remove a container
   croft update [--check]                install the latest release
+  croft agent                           the privileged half, over a unix socket
   croft version
 
   croft user add <name>                 create a user who can sign in
@@ -104,7 +108,7 @@ type deps struct {
 	demo      bool
 }
 
-func wire(ctx context.Context, demo bool, nginxDir string) deps {
+func wire(ctx context.Context, demo bool, nginxDir, socket string) deps {
 	if demo {
 		return deps{
 			instances: runtime.NewDemoInstanceRepository(),
@@ -115,11 +119,34 @@ func wire(ctx context.Context, demo bool, nginxDir string) deps {
 		}
 	}
 
+	// Prefer the agent: it is the half that holds the privileges, and this
+	// process then needs none of them.
+	if socket != "" {
+		if _, err := os.Stat(socket); err == nil {
+			client, err := agent.Dial(socket)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "[ERROR]", err)
+				os.Exit(1)
+			}
+			return deps{
+				instances: client,
+				routes:    client.Routing(),
+				runtime:   client.Flavor(),
+				version:   version,
+			}
+		}
+	}
+
 	h := host.NewLocal()
 	flavor, bin := runtime.Detect(ctx, h)
 	if flavor == runtime.FlavorNone {
 		fmt.Fprintln(os.Stderr, "[ERROR] No container runtime found. Install Incus or LXD, or run with --demo.")
 		os.Exit(1)
+	}
+
+	if os.Geteuid() == 0 {
+		fmt.Fprintln(os.Stderr, "[WARN] No agent on "+socket+", so this process talks to the runtime itself,")
+		fmt.Fprintln(os.Stderr, "       as root. Start croft-agent to keep the half that serves HTTP unprivileged.")
 	}
 
 	return deps{
@@ -137,9 +164,10 @@ func serve(ctx context.Context, args []string) {
 	nginxDir := fs.String("nginx-dir", "/etc/nginx/croft.d", "directory holding generated vhosts")
 	readOnly := fs.Bool("read-only", false, "refuse every write through the API")
 	dbPath := fs.String("db", defaultDBPath, "where users and sessions are kept")
+	agentSocket := fs.String("agent", agent.SocketPath, "socket of the privileged agent")
 	_ = fs.Parse(reorder(fs, args))
 
-	d := wire(ctx, *demo, *nginxDir)
+	d := wire(ctx, *demo, *nginxDir, *agentSocket)
 	auth := wireAuth(*dbPath)
 	jobs := job.NewRunner(id.NewULIDGenerator().Create)
 
@@ -187,9 +215,10 @@ func list(ctx context.Context, args []string) {
 	asJSON := fs.Bool("json", false, "print machine-readable output")
 	demo := fs.Bool("demo", false, "use sample data")
 	nginxDir := fs.String("nginx-dir", "/etc/nginx/croft.d", "directory holding generated vhosts")
+	agentSocket := fs.String("agent", agent.SocketPath, "socket of the privileged agent")
 	_ = fs.Parse(reorder(fs, args))
 
-	d := wire(ctx, *demo, *nginxDir)
+	d := wire(ctx, *demo, *nginxDir, *agentSocket)
 
 	query := overviewQueries.NewOverviewQuery(
 		instanceServices.NewListInstances(d.instances),
@@ -237,6 +266,7 @@ func create(ctx context.Context, args []string) {
 	mem := fs.String("memory", "4GB", "memory limit")
 	demo := fs.Bool("demo", false, "use sample data")
 	nginxDir := fs.String("nginx-dir", "/etc/nginx/croft.d", "directory holding generated vhosts")
+	agentSocket := fs.String("agent", agent.SocketPath, "socket of the privileged agent")
 	_ = fs.Parse(reorder(fs, args))
 
 	if fs.NArg() < 1 {
@@ -244,7 +274,7 @@ func create(ctx context.Context, args []string) {
 		os.Exit(1)
 	}
 
-	d := wire(ctx, *demo, *nginxDir)
+	d := wire(ctx, *demo, *nginxDir, *agentSocket)
 	service := instanceServices.NewCreateInstance(id.NewULIDGenerator(), d.instances)
 
 	instance, err := service.Execute(ctx, instanceServices.CreateInstanceProps{
@@ -261,6 +291,7 @@ func destroy(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("destroy", flag.ExitOnError)
 	demo := fs.Bool("demo", false, "use sample data")
 	nginxDir := fs.String("nginx-dir", "/etc/nginx/croft.d", "directory holding generated vhosts")
+	agentSocket := fs.String("agent", agent.SocketPath, "socket of the privileged agent")
 	_ = fs.Parse(reorder(fs, args))
 
 	if fs.NArg() < 1 {
@@ -268,7 +299,7 @@ func destroy(ctx context.Context, args []string) {
 		os.Exit(1)
 	}
 
-	d := wire(ctx, *demo, *nginxDir)
+	d := wire(ctx, *demo, *nginxDir, *agentSocket)
 	if err := instanceServices.NewDestroyInstance(d.instances).Execute(ctx, fs.Arg(0)); err != nil {
 		fmt.Fprintln(os.Stderr, "[ERROR]", err)
 		os.Exit(1)
@@ -576,4 +607,56 @@ func updateCommand(args []string) {
 			}
 		}
 	}
+}
+
+// ── The privileged half ───────────────────────────────────────────────────────
+
+func agentCommand(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("agent", flag.ExitOnError)
+	socket := fs.String("socket", agent.SocketPath, "unix socket to listen on")
+	group := fs.String("group", "croft", "group allowed to reach the socket")
+	nginxDir := fs.String("nginx-dir", "/etc/nginx/croft.d", "directory holding generated vhosts")
+	_ = fs.Parse(reorder(fs, args))
+
+	if os.Geteuid() != 0 {
+		fmt.Fprintln(os.Stderr, "[ERROR] The agent is the privileged half; it must run as root.")
+		os.Exit(1)
+	}
+
+	h := host.NewLocal()
+	flavor, bin := runtime.Detect(ctx, h)
+	if flavor == runtime.FlavorNone {
+		fmt.Fprintln(os.Stderr, "[ERROR] No container runtime found. Install Incus or LXD.")
+		os.Exit(1)
+	}
+
+	server := agent.NewServer(
+		runtime.NewCLIInstanceRepository(h, bin, flavor),
+		nginx.NewNginxRouteRepository(h, *nginxDir),
+		h,
+		string(flavor),
+	)
+
+	listener, err := agent.Listen(*socket, *group)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "[ERROR]", err)
+		if strings.Contains(err.Error(), "no group") {
+			fmt.Fprintf(os.Stderr, "        Create it with:  groupadd --system %s\n", *group)
+		}
+		os.Exit(1)
+	}
+	defer listener.Close()
+
+	fmt.Printf("croft agent %s — runtime: %s\n", version, flavor)
+	fmt.Printf("Listening on %s, reachable by group %s\n", *socket, *group)
+
+	if err := http.Serve(listener, server.Handler()); err != nil {
+		fmt.Fprintln(os.Stderr, "[ERROR]", err)
+		os.Exit(1)
+	}
+}
+
+func unitExists(unit string) bool {
+	err := exec.Command("systemctl", "cat", unit+".service").Run()
+	return err == nil
 }

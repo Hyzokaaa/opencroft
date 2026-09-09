@@ -202,11 +202,12 @@ else
   add_step "Download croft" "curl -fsSL '$RELEASE_URL' -o $PREFIX/bin/croft.new && chmod 0755 $PREFIX/bin/croft.new && mv $PREFIX/bin/croft.new $PREFIX/bin/croft"
 fi
 
+add_step "Create the croft system user" "groupadd --system croft; useradd --system -g croft -d /var/lib/croft -s /usr/sbin/nologin croft"
 add_step "Create the vhost directory" "install -d $NGINX_CONF_DIR"
 add_step "Wire it into nginx" "include $NGINX_CONF_DIR/*.conf; → the http block of $NGINX_CONF"
 
 if [ "$(service_manager)" = "systemd" ]; then
-  add_step "Install the croft service" "write /etc/systemd/system/croft.service, then systemctl enable --now croft"
+  add_step "Install two services" "croft-agent (root, talks to the runtime) and croft (unprivileged, serves HTTP)"
 fi
 
 echo ""
@@ -266,7 +267,7 @@ run_step() {
 
 for i in "${!STEPS[@]}"; do
   case "${STEPS[$i]}" in
-    "Wire it into nginx"*|"Install the croft service"*) continue ;;
+    "Wire it into nginx"*|"Install two services"*|"Create the croft system user"*) continue ;;
   esac
   run_step "${STEPS[$i]}" "${COMMANDS[$i]}"
 done
@@ -300,26 +301,67 @@ else
   echo "           include $NGINX_CONF_DIR/*.conf;"
 fi
 
+# The half that serves HTTP to a browser has no business being root. The
+# agent holds the privileges; the API reaches it over a socket its group owns.
+echo "── Create the croft system user"
+getent group croft >/dev/null || groupadd --system croft
+getent passwd croft >/dev/null || useradd --system -g croft -d /var/lib/croft -s /usr/sbin/nologin croft
+install -d -o croft -g croft -m 0750 /var/lib/croft
+echo "[OK] user croft"
+
 if [ "$(service_manager)" = "systemd" ]; then
-  echo "── Install the croft service"
-  cat > /etc/systemd/system/croft.service <<EOF
+  echo "── Install two services"
+
+  cat > /etc/systemd/system/croft-agent.service <<EOF
 [Unit]
-Description=croft — container control plane
+Description=croft agent — the only half that talks to the container runtime
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=$PREFIX/bin/croft serve --addr $ADDR
+RuntimeDirectory=croft
+RuntimeDirectoryMode=0755
+ExecStart=$PREFIX/bin/croft agent --socket /run/croft/agent.sock --group croft
 Restart=on-failure
 RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
 EOF
+
+  cat > /etc/systemd/system/croft.service <<EOF
+[Unit]
+Description=croft — container control plane
+After=croft-agent.service
+Requires=croft-agent.service
+
+[Service]
+Type=simple
+User=croft
+Group=croft
+StateDirectory=croft
+ExecStart=$PREFIX/bin/croft serve --addr $ADDR
+Restart=on-failure
+RestartSec=3
+
+# It needs no privileges, so it is given none.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
   systemctl daemon-reload
+  systemctl enable --now croft-agent
   systemctl enable --now croft
-  echo "[OK] croft.service running"
+  echo "[OK] croft-agent.service (root) and croft.service (unprivileged) running"
 fi
 
 # There is no sign-up in the panel on purpose: an account is created by
@@ -340,6 +382,10 @@ else
   # generates one and prints it once.
   "$PREFIX/bin/croft" user bootstrap || true
 fi
+
+# The account was created by root, so the database belongs to root. The
+# unprivileged half has to be able to read and write it.
+chown -R croft:croft /var/lib/croft 2>/dev/null || true
 
 echo ""
 echo "  ╔══════════════════════════════════════════════════════╗"
