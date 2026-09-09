@@ -20,8 +20,9 @@ PREFIX="${PREFIX:-/usr/local}"
 NGINX_CONF="${NGINX_CONF:-/etc/nginx/nginx.conf}"
 NGINX_CONF_DIR="${NGINX_CONF_DIR:-/etc/nginx/croft.d}"
 
-# Until authentication lands, the daemon must not be reachable from the network.
-# Reach it over an SSH tunnel: ssh -L 8080:127.0.0.1:8080 you@server
+# There is a login, but no TLS of its own yet. Serving plain http on a public
+# interface would put a password on the wire, so default to localhost and let
+# an SSH tunnel do the encryption.
 ADDR="${ADDR:-127.0.0.1:8080}"
 
 DRY_RUN=false
@@ -224,9 +225,9 @@ echo ""
 case "$ADDR" in
   127.0.0.1:*|localhost:*) ;;
   *)
-    echo "  [WARNING] $ADDR is reachable from the network, and croft has no"
-    echo "            authentication yet. Anyone who can reach that port can"
-    echo "            create and destroy containers. Use an SSH tunnel instead:"
+    echo "  [WARNING] $ADDR is reachable from the network, and croft serves"
+    echo "            plain http. Signing in would send the password in the"
+    echo "            clear. Put a TLS proxy in front, or use an SSH tunnel:"
     echo "                ssh -L 8080:127.0.0.1:8080 you@this-host"
     echo ""
     ;;
@@ -321,11 +322,26 @@ EOF
   echo "[OK] croft.service running"
 fi
 
+# There is no sign-up in the panel on purpose: an account is created by
+# somebody who already has a shell on this machine.
+if [ "$ASSUME_YES" = false ] && [ -t 0 ]; then
+  echo ""
+  echo "── Create the first user"
+  read -p "  Username (empty to skip): " FIRST_USER
+  if [ -n "$FIRST_USER" ]; then
+    "$PREFIX/bin/croft" user add "$FIRST_USER" || true
+  else
+    echo "[WARN] No users yet. Nobody can sign in until you run:"
+    echo "           sudo croft user add <name>"
+  fi
+fi
+
 echo ""
 echo "  ╔══════════════════════════════════════════════════════╗"
 echo "  ║           Installed                                  ║"
 echo "  ╚══════════════════════════════════════════════════════╝"
 echo ""
+echo "    croft user add <name>      let somebody sign in"
 echo "    croft list                 show what is running"
 echo "    croft create <name>        create a container"
 echo "    croft destroy <name>       remove one"
