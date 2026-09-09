@@ -11,7 +11,7 @@ const SECTIONS = [
 
 export { SECTIONS }
 
-export default function Shell({ data, section, onSection, commandMode, onToggleCommands, freshness, onReload, stale, children }) {
+export default function Shell({ data, section, onSection, commandMode, onToggleCommands, freshness, onReload, stale, onSignOut, children }) {
   const [navOpen, setNavOpen] = useState(false)
   const current = SECTIONS.find((s) => s.id === section)
 
@@ -55,8 +55,15 @@ export default function Shell({ data, section, onSection, commandMode, onToggleC
               className="flex items-center gap-1.5 rounded border border-edge px-2 py-1 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
               title="Refresh now"
             >
-              <span className={`size-1.5 rounded-full ${stale ? 'bg-caution' : 'bg-running'}`} />
+              <span className={`size-1.5 rounded-full ${stale ? "bg-caution" : "bg-running"}`} />
               <span className="hidden sm:inline">{freshness}</span>
+            </button>
+
+            <button
+              onClick={onSignOut}
+              className="rounded border border-edge px-2 py-1 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
+            >
+              Sign out
             </button>
           </div>
         </header>
@@ -123,7 +130,7 @@ function Rail({ data, section, onSection, open }) {
             </span>
           )}
           <p className="font-mono">runtime: {data?.runtime ?? '—'}</p>
-          <p className="font-mono">croft 0.1.0-dev</p>
+          <p className="font-mono">croft 0.2.0-dev</p>
         </div>
       </div>
     </nav>

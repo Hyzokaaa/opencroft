@@ -1,14 +1,39 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from "react"
 import Shell from './components/Shell.jsx'
 import Verdict from './components/Verdict.jsx'
 import Findings from './components/Findings.jsx'
 import InstanceTable from './components/InstanceTable.jsx'
 import RouteTable from './components/RouteTable.jsx'
 import Card from './components/Card.jsx'
-import { useOverview, useCommandMode } from './lib/useOverview.js'
+import Login from './components/Login.jsx'
+import { useOverview, useCommandMode, useAuth } from './lib/useOverview.js'
 
 export default function App() {
-  const { data, error, fetchedAt, loading, reload } = useOverview()
+  const { auth, refreshAuth, signOut } = useAuth()
+
+  if (!auth) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-sm text-muted">Checking your session&hellip;</p>
+      </div>
+    )
+  }
+
+  // There is no sign-up: users are created on the host with `croft user add`.
+  if (!auth.authenticated) {
+    return <Login hasUsers={auth.hasUsers} onSignedIn={refreshAuth} />
+  }
+
+  return <Dashboard onSignOut={signOut} onSessionLost={refreshAuth} />
+}
+
+function Dashboard({ onSignOut, onSessionLost }) {
+  const { data, error, fetchedAt, loading, unauthorized, reload } = useOverview()
+
+  // The session can expire while the panel sits open.
+  useEffect(() => {
+    if (unauthorized) onSessionLost()
+  }, [unauthorized, onSessionLost])
   const [commandMode, toggleCommands] = useCommandMode()
   const [section, setSection] = useState('overview')
   const [highlighted, setHighlighted] = useState(null)
@@ -74,6 +99,7 @@ export default function App() {
       freshness={freshness(fetchedAt, loading)}
       onReload={reload}
       stale={Boolean(error)}
+      onSignOut={onSignOut}
     >
       {/* A failed poll must not blank the panel: the moment the daemon is
           shaky is the moment you most need the last known state. */}
