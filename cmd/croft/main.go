@@ -8,10 +8,12 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -116,6 +118,7 @@ Every command works without a terminal: pass flags and read --json.
 // there is only ever one path into the domain.
 type deps struct {
 	dns          server.DNSConfig
+	expose       any
 	instances    instanceRepositories.InstanceRepository
 	routes       routeRepositories.RouteRepository
 	certificates certificateRepositories.CertificateRepository
@@ -150,6 +153,7 @@ func wire(ctx context.Context, demo bool, nginxDir, socket string) deps {
 				routes:       client.Routing(),
 				certificates: client.Certificates(),
 				dns:          agentDNS{client: client},
+				expose:       client,
 				runtime:      client.Flavor(),
 				version:      version,
 			}
@@ -212,6 +216,8 @@ func serve(ctx context.Context, args []string) {
 		Host:            host.NewLocal(),
 		Jobs:            jobs,
 		DNS:             d.dns,
+		Expose:          d.expose,
+		PanelPort:       portOf(*addr),
 		Simulated:       d.demo,
 	})
 
@@ -917,4 +923,18 @@ func expose(ctx context.Context, args []string) {
 	fmt.Println("  The panel still listens on localhost only — nginx is what the internet")
 	fmt.Println("  reaches, and it terminates TLS. You can close the SSH tunnel.")
 	fmt.Println()
+}
+
+// portOf reads the port out of a listen address so the panel can tell the
+// agent where to proxy to.
+func portOf(addr string) int {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 8080
+	}
+	number, err := strconv.Atoi(port)
+	if err != nil {
+		return 8080
+	}
+	return number
 }

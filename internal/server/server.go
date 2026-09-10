@@ -39,6 +39,8 @@ type Deps struct {
 	Host      host.Host
 	Jobs      *job.Runner
 	DNS       DNSConfig
+	Expose    any
+	PanelPort int
 	Simulated bool
 
 	// Auth guards every data endpoint. It is required: a nil here would
@@ -74,6 +76,8 @@ func Handler(deps Deps) http.Handler {
 
 	mux.HandleFunc("PUT /api/hosts/{hostId}/routes/{domain}", deps.editRoute)
 	mux.HandleFunc("POST /api/hosts/{hostId}/routes/{domain}/tls", deps.enableTLS)
+
+	mux.HandleFunc("POST /api/hosts/{hostId}/expose", deps.exposePanel)
 
 	mux.HandleFunc("GET /api/hosts/{hostId}/dns", deps.showDNS)
 	mux.HandleFunc("POST /api/hosts/{hostId}/dns", deps.saveDNS)

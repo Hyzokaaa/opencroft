@@ -9,7 +9,7 @@ const PROVIDERS = [
 // Credentials go one way only. They travel through the unprivileged half in
 // memory and are written by the agent, root-only, mode 0600. Nothing here can
 // read them back — the panel only ever learns *that* they exist.
-export default function Settings() {
+export default function Settings({ onExpose }) {
   const [status, setStatus] = useState(null)
   const [provider, setProvider] = useState('ovh')
   const [values, setValues] = useState({})
@@ -63,6 +63,8 @@ export default function Settings() {
 
   return (
     <div className="max-w-2xl space-y-4">
+      <PanelAddress onExpose={onExpose} />
+
       <section className="rounded-lg border border-edge bg-panel">
         <header className="border-b border-edge px-4 py-3">
           <h2 className="text-sm font-medium">DNS credentials</h2>
@@ -157,4 +159,56 @@ function keysFor(provider, status) {
   return provider === 'cloudflare'
     ? ['cloudflare_api_token']
     : ['ovh_endpoint', 'ovh_application_key', 'ovh_application_secret', 'ovh_consumer_key']
+}
+
+// Exposing the panel from the panel is worth a word of warning: if the vhost
+// were rejected, the thing you are using to do this is what would break. It
+// is removed again in that case, so the worst outcome is that nothing changed.
+function PanelAddress({ onExpose }) {
+  const [domain, setDomain] = useState('')
+
+  return (
+    <section className="rounded-lg border border-edge bg-panel">
+      <header className="border-b border-edge px-4 py-3">
+        <h2 className="text-sm font-medium">Panel address</h2>
+        <p className="mt-1 text-xs text-muted">
+          Give this panel a domain and reach it over https, instead of an SSH tunnel.
+        </p>
+      </header>
+
+      <div className="space-y-3 px-4 py-4">
+        <p className="text-xs text-muted">
+          The domain must already point at this server. The panel keeps listening on
+          localhost — nginx is what the internet reaches, and it terminates TLS.
+        </p>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            onExpose?.(domain.trim())
+          }}
+          className="flex gap-2"
+        >
+          <input
+            value={domain}
+            onChange={(e) => setDomain(e.target.value)}
+            placeholder="panel.example.com"
+            className="min-w-0 flex-1 rounded border border-edge bg-ground px-3 py-2 font-mono text-sm outline-none transition focus:border-edge-strong"
+          />
+          <button
+            type="submit"
+            disabled={!domain.trim()}
+            className="shrink-0 rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30 disabled:opacity-40"
+          >
+            Show me the plan
+          </button>
+        </form>
+      </div>
+
+      <footer className="border-t border-edge px-4 py-3">
+        <p className="mb-2 text-[11px] uppercase tracking-wide text-faint">The same thing, by hand</p>
+        <Command lines={['sudo croft expose panel.example.com']} />
+      </footer>
+    </section>
+  )
 }

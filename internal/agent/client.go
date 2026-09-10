@@ -404,3 +404,10 @@ func (c *Client) Expose(ctx context.Context, domain string, port int, report fun
 	return c.streamed(ctx, http.MethodPost, "/expose",
 		exposeRequest{Domain: domain, Port: port}, report)
 }
+
+func (c *Client) ExposePlan(ctx context.Context, domain string, port int) (plan.Plan, error) {
+	var response PlanResponse
+	err := c.call(ctx, http.MethodPost, "/expose/plan",
+		exposeRequest{Domain: domain, Port: port}, &response)
+	return response.Plan, err
+}

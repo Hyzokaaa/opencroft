@@ -99,6 +99,15 @@ function Dashboard({ onSignOut, onSessionLost }) {
     })
   }
 
+  function exposePanel(domain) {
+    setDialog({
+      title: `Serve this panel at ${domain}`,
+      url: '/api/hosts/local/expose',
+      method: 'POST',
+      defaults: { domain },
+    })
+  }
+
   function enableTLS(domain) {
     setDialog({
       title: `Serve ${domain} over https`,
@@ -276,7 +285,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
         </Card>
       )}
 
-      {section === 'settings' && <Settings />}
+      {section === 'settings' && <Settings onExpose={exposePanel} />}
 
       {section === 'activity' && <NotBuilt section={section} />}
 

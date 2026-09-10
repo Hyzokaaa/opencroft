@@ -135,11 +135,36 @@ func (r *NginxRouteRepository) Write(ctx context.Context, route *entities.Route)
 	return r.walk(ctx, r.WritePlan(route))
 }
 
+// walk undoes the files it wrote if a later step fails.
+//
+// Leaving a rejected vhost on disk is worse than it sounds: nginx keeps
+// running on its old configuration, so nothing looks broken — until the next
+// reload, by anybody, for any reason, fails and takes every site with it. The
+// blast radius belongs to whoever wrote the bad file, not to the next person
+// who restarts nginx.
 func (r *NginxRouteRepository) walk(ctx context.Context, p plan.Plan) error {
+	written := []string{}
+
 	for _, step := range p.Steps {
-		if err := host.RunStep(ctx, r.host, step); err != nil && !step.Optional {
-			return err
+		err := host.RunStep(ctx, r.host, step)
+		if err == nil {
+			if step.IsFile() {
+				written = append(written, step.File)
+			}
+			continue
 		}
+
+		if step.Optional {
+			continue
+		}
+
+		for _, path := range written {
+			_ = r.host.RemoveFile(ctx, path)
+		}
+		if len(written) > 0 {
+			return fmt.Errorf("%w (the file was removed again, so nginx is unchanged)", err)
+		}
+		return err
 	}
 	return nil
 }
