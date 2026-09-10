@@ -15,6 +15,7 @@ import (
 	"strings"
 	"syscall"
 	"text/tabwriter"
+	"time"
 
 	"github.com/Hyzokaaa/opencroft/internal/agent"
 	authServices "github.com/Hyzokaaa/opencroft/internal/auth/domain/services"
@@ -23,6 +24,7 @@ import (
 	"github.com/Hyzokaaa/opencroft/internal/auth/infrastructure/sqlite"
 	certificateRepositories "github.com/Hyzokaaa/opencroft/internal/certificate/domain/repositories"
 	certificateServices "github.com/Hyzokaaa/opencroft/internal/certificate/domain/services"
+	"github.com/Hyzokaaa/opencroft/internal/certificate/infrastructure/acme"
 	pemCertificates "github.com/Hyzokaaa/opencroft/internal/certificate/infrastructure/pem"
 	"golang.org/x/term"
 
@@ -71,6 +73,8 @@ func main() {
 		updateCommand(os.Args[2:])
 	case "agent":
 		agentCommand(ctx, os.Args[2:])
+	case "cert":
+		cert(ctx, os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println("croft " + version)
 	default:
@@ -89,6 +93,7 @@ Usage:
   croft destroy <name>                  remove a container
   croft update [--check]                install the latest release
   croft agent                           the privileged half, over a unix socket
+  croft cert issue <domain>             obtain a TLS certificate
   croft version
 
   croft user add <name>                 create a user who can sign in
@@ -691,4 +696,63 @@ func browsableURL(addr string) string {
 		return "http://localhost" + addr
 	}
 	return "http://" + addr
+}
+
+// ── Certificates ──────────────────────────────────────────────────────────────
+
+func cert(ctx context.Context, args []string) {
+	if len(args) == 0 || args[0] != "issue" {
+		fmt.Fprintln(os.Stderr, "Usage: croft cert issue <domain> [--staging] [--email you@example.com]")
+		os.Exit(1)
+	}
+
+	fs := flag.NewFlagSet("cert", flag.ExitOnError)
+	staging := fs.Bool("staging", false, "use Let's Encrypt's test environment, whose certificates browsers reject")
+	email := fs.String("email", "", "address the authority uses for expiry warnings")
+	useDNS := fs.Bool("dns", false, "prove control with a DNS record instead of a file over port 80")
+	_ = fs.Parse(reorder(fs, args[1:]))
+
+	if fs.NArg() < 1 {
+		fmt.Fprintln(os.Stderr, "[ERROR] A domain is required: croft cert issue <domain>")
+		os.Exit(1)
+	}
+
+	if os.Geteuid() != 0 {
+		fmt.Fprintln(os.Stderr, "[ERROR] Issuing writes to /var/lib/croft and needs root. Try: sudo croft cert issue …")
+		os.Exit(1)
+	}
+
+	challenge := certificateServices.ChallengeHTTP
+	if *useDNS {
+		challenge = certificateServices.ChallengeDNS
+	}
+
+	if !*staging {
+		// Production allows five failed validations per hour and five
+		// duplicate certificates per week. Burning those locks a real domain
+		// out for days, so the warning is worth the line.
+		fmt.Println("  Using Let's Encrypt production. Prove the flow with --staging first.")
+	}
+
+	service := certificateServices.NewIssueCertificate(acme.NewIssuer())
+	issued, err := service.Execute(ctx, certificateServices.IssueRequest{
+		Domain:    fs.Arg(0),
+		Email:     *email,
+		Challenge: challenge,
+		Staging:   *staging,
+	}, func(text string) {
+		fmt.Println("  " + text)
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "[ERROR]", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("\n[OK] %s — issued by %s, expires in %d days\n",
+		issued.Domain, issued.Issuer, issued.DaysLeft(time.Now()))
+	fmt.Println("     " + issued.Path)
+	if *staging {
+		fmt.Println("\n  This is a staging certificate. Browsers will reject it — that is expected.")
+		fmt.Println("  Re-run without --staging for one they accept.")
+	}
 }

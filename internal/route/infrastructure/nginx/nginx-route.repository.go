@@ -160,12 +160,20 @@ func (r *NginxRouteRepository) Reload(ctx context.Context) error {
 	return err
 }
 
+// acmeChallenge lets Let's Encrypt reach the token over port 80 without
+// anything having to take the port away from nginx.
+const acmeChallenge = `    location /.well-known/acme-challenge/ {
+        root /var/lib/croft/acme;
+    }
+`
+
 func render(route *entities.Route) string {
 	if !route.SSL {
 		return fmt.Sprintf(`server {
     listen 80;
     server_name %s;
 
+%s
     location / {
         proxy_pass http://%s:%d;
         proxy_set_header Host $host;
@@ -174,12 +182,14 @@ func render(route *entities.Route) string {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
-`, route.Domain, route.Target, route.Port)
+`, route.Domain, acmeChallenge, route.Target, route.Port)
 	}
 
 	return fmt.Sprintf(`server {
     listen 80;
     server_name %s;
+
+%s
     return 301 https://$host$request_uri;
 }
 
@@ -187,8 +197,8 @@ server {
     listen 443 ssl;
     server_name %s;
 
-    ssl_certificate /etc/letsencrypt/live/%s/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/%s/privkey.pem;
+    ssl_certificate %s/fullchain.pem;
+    ssl_certificate_key %s/privkey.pem;
 
     location / {
         proxy_pass http://%s:%d;
@@ -198,7 +208,7 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
-`, route.Domain, route.Domain, route.Domain, route.Domain, route.Target, route.Port)
+`, route.Domain, acmeChallenge, route.Domain, route.CertDir(), route.CertDir(), route.Target, route.Port)
 }
 
 // WritePlan is what adding a domain does, in the order it happens. Validating
