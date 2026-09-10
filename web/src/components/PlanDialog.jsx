@@ -218,7 +218,10 @@ function StepList({ steps }) {
 }
 
 function Progress({ steps, events, error, done }) {
-  const current = events.filter((e) => e.step > 0).length
+  // How far along, not how much was said. A single step can narrate several
+  // times — obtaining a certificate talks to the authority, waits for DNS to
+  // propagate, and stores the result, all as step one.
+  const current = events.reduce((furthest, e) => Math.max(furthest, e.step ?? 0), 0)
 
   return (
     <div>

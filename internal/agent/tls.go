@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -17,13 +18,41 @@ import (
 // be serving before the authority is asked, because that is what answers the
 // challenge. Once the certificate is in hand, the same file is rewritten to
 // serve TLS and redirect http to it.
-func (s *Server) tlsPlan(domain string, challenge certificateServices.Challenge) plan.Plan {
+// The route is built once and used for both the plan and the work. Building
+// it twice is how the plan came to show `proxy_pass http://:0` while the file
+// written was correct — the one divergence this whole design exists to make
+// impossible.
+func (s *Server) tlsRouteFor(ctx context.Context, domain string) (*routeEntities.Route, error) {
+	existing, err := s.routes.FindByDomain(ctx, domain)
+	if err != nil {
+		return nil, err
+	}
+	if existing == nil {
+		return nil, errors.New("no route for that domain; add it first")
+	}
+	if existing.State == routeEnums.StateUnmanaged {
+		return nil, errors.New("that vhost was not created by croft, so croft will not rewrite it: " + existing.File)
+	}
+	if existing.Target == "" {
+		return nil, errors.New("that route has no target to serve; remove it and add it again")
+	}
+
+	return routeEntities.NewRoute(routeEntities.RouteProps{
+		Domain: domain,
+		Target: existing.Target,
+		Port:   existing.Port,
+		SSL:    true,
+		State:  routeEnums.StateManaged,
+	}), nil
+}
+
+func (s *Server) tlsPlan(route *routeEntities.Route, challenge certificateServices.Challenge) plan.Plan {
 	issue := plan.Command(
 		"Obtain a certificate from Let's Encrypt ("+string(challenge)+")",
-		"croft", "cert", "issue", domain, challengeFlag(challenge))
+		"croft", "cert", "issue", route.Domain, challengeFlag(challenge))
 
 	steps := []plan.Step{issue}
-	steps = append(steps, s.routes.WritePlan(tlsRoute(domain)).Steps...)
+	steps = append(steps, s.routes.WritePlan(route).Steps...)
 	return plan.New(steps...)
 }
 
@@ -50,7 +79,13 @@ func (s *Server) planTLS(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("that is not a domain name"))
 		return
 	}
-	writeJSON(w, http.StatusOK, PlanResponse{Plan: s.tlsPlan(domain, chooseChallenge())})
+
+	route, err := s.tlsRouteFor(r.Context(), domain)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, PlanResponse{Plan: s.tlsPlan(route, chooseChallenge())})
 }
 
 func (s *Server) enableTLS(w http.ResponseWriter, r *http.Request) {
@@ -60,23 +95,13 @@ func (s *Server) enableTLS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := s.routes.FindByDomain(r.Context(), domain)
+	route, err := s.tlsRouteFor(r.Context(), domain)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	if existing == nil {
-		writeError(w, http.StatusNotFound, errors.New("no route for that domain; add it first"))
-		return
-	}
-	if existing.State == routeEnums.StateUnmanaged {
-		writeError(w, http.StatusForbidden,
-			errors.New("that vhost was not created by croft, so croft will not rewrite it: "+existing.File))
+		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 
 	challenge := chooseChallenge()
-	p := s.tlsPlan(domain, challenge)
 
 	s.stream(w, func(report func(int, string)) error {
 		report(1, "Obtaining a certificate")
@@ -89,24 +114,9 @@ func (s *Server) enableTLS(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 
-		// The route keeps its target and port; only TLS changes.
-		route := tlsRoute(domain)
-		route.Target = existing.Target
-		route.Port = existing.Port
-
 		for i, step := range s.routes.WritePlan(route).Steps {
 			report(i+2, step.Describe)
 		}
 		return s.routes.Write(r.Context(), route)
-	})
-
-	_ = p
-}
-
-func tlsRoute(domain string) *routeEntities.Route {
-	return routeEntities.NewRoute(routeEntities.RouteProps{
-		Domain: domain,
-		SSL:    true,
-		State:  routeEnums.StateManaged,
 	})
 }
