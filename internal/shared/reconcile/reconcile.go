@@ -5,6 +5,7 @@ package reconcile
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	certificates "github.com/Hyzokaaa/opencroft/internal/certificate/domain/entities"
@@ -64,6 +65,12 @@ func Inspect(is []*instances.Instance, rs []*routes.Route, cs []*certificates.Ce
 				Message:  "This route was not created by OpenCroft.",
 				Hint:     "Adopt it to manage it from here, or leave it alone.",
 			})
+		}
+
+		// A route to the loopback is the panel itself, not a container that
+		// went missing. Without this the panel accuses itself.
+		if strings.HasPrefix(route.Target, "127.") {
+			continue
 		}
 
 		target, known := byAddress[route.Target]

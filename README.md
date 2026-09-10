@@ -21,12 +21,21 @@ Detects the distribution and installs what is missing — Incus (or LXD via snap
 Ubuntu), nginx, the `croft` binary and a systemd unit. `--dry-run` prints the exact
 commands and exits without touching anything.
 
-It listens on `127.0.0.1:8080` by default. There is a login, but no TLS of its own yet,
-so reach it over an SSH tunnel rather than exposing the port:
+It listens on `127.0.0.1:8080`. Reach it over an SSH tunnel:
 
 ```bash
 ssh -L 8080:127.0.0.1:8080 you@your-server
 ```
+
+Or give it a domain of its own and stop tunnelling:
+
+```bash
+sudo croft expose panel.example.com
+```
+
+That obtains a certificate and writes a vhost — the same path a user's own domain
+takes, because a path only the panel uses is a path that rots. It keeps listening on
+localhost; nginx is what the internet reaches, and it terminates TLS.
 
 Accounts are created on the host — the panel has no sign-up:
 

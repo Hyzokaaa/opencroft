@@ -398,3 +398,9 @@ func (c *Client) StartWithProgress(ctx context.Context, name string, report func
 func (c *Client) StopWithProgress(ctx context.Context, name string, report func(int, string)) error {
 	return c.streamed(ctx, http.MethodPost, "/instances/"+url.PathEscape(name)+"/stop", nil, report)
 }
+
+// Expose puts the panel behind a domain of its own.
+func (c *Client) Expose(ctx context.Context, domain string, port int, report func(int, string)) error {
+	return c.streamed(ctx, http.MethodPost, "/expose",
+		exposeRequest{Domain: domain, Port: port}, report)
+}

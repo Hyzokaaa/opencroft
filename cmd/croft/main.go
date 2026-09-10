@@ -77,6 +77,8 @@ func main() {
 		cert(ctx, os.Args[2:])
 	case "dns":
 		dnsCommand(os.Args[2:])
+	case "expose":
+		expose(ctx, os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println("croft " + version)
 	default:
@@ -96,6 +98,7 @@ Usage:
   croft update [--check]                install the latest release
   croft agent                           the privileged half, over a unix socket
   croft cert issue <domain>             obtain a TLS certificate
+  croft expose <domain>                 put the panel on a domain, over https
   croft dns show | set <provider>        DNS credentials, for the dns-01 challenge
   croft version
 
@@ -877,4 +880,41 @@ func (localDNS) Show(context.Context) (server.DNSStatus, error) {
 
 func (localDNS) Save(_ context.Context, provider string, values map[string]string) error {
 	return acme.Save(provider, values)
+}
+
+// ── Putting the panel on a domain ─────────────────────────────────────────────
+
+func expose(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("expose", flag.ExitOnError)
+	port := fs.Int("port", 8080, "the port the panel listens on")
+	socket := fs.String("agent", agent.SocketPath, "socket of the privileged agent")
+	_ = fs.Parse(reorder(fs, args))
+
+	if fs.NArg() < 1 {
+		fmt.Fprintln(os.Stderr, "[ERROR] A domain is required: croft expose panel.example.com")
+		os.Exit(1)
+	}
+	domain := fs.Arg(0)
+
+	client, err := agent.Dial(*socket, version)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "[ERROR]", err)
+		fmt.Fprintln(os.Stderr, "        The agent does the work here; start it with: sudo systemctl start croft-agent")
+		os.Exit(1)
+	}
+
+	fmt.Printf("\n  %s will serve the panel over https, proxied to %s:%d.\n\n",
+		domain, agent.Loopback, *port)
+
+	if err := client.Expose(ctx, domain, *port, func(_ int, text string) {
+		fmt.Println("  " + text)
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, "[ERROR]", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("\n[OK] https://%s\n\n", domain)
+	fmt.Println("  The panel still listens on localhost only — nginx is what the internet")
+	fmt.Println("  reaches, and it terminates TLS. You can close the SSH tunnel.")
+	fmt.Println()
 }

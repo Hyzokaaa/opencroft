@@ -4,7 +4,10 @@ package http
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,10 +18,11 @@ import (
 const CookieName = "croft_session"
 
 type Handler struct {
-	users  repositories.UserRepository
-	open   *services.OpenSession
-	verify *services.VerifySession
-	close  *services.CloseSession
+	users    repositories.UserRepository
+	open     *services.OpenSession
+	verify   *services.VerifySession
+	close    *services.CloseSession
+	attempts *services.Attempts
 }
 
 func NewHandler(
@@ -27,7 +31,10 @@ func NewHandler(
 	verify *services.VerifySession,
 	closeSession *services.CloseSession,
 ) *Handler {
-	return &Handler{users: users, open: open, verify: verify, close: closeSession}
+	return &Handler{
+		users: users, open: open, verify: verify, close: closeSession,
+		attempts: services.NewAttempts(),
+	}
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
@@ -48,12 +55,32 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Counted per username and per source, so one account being hammered
+	// cannot lock out everybody, and one source cannot work through a list of
+	// usernames either.
+	keys := []string{"user:" + body.Username, "from:" + sourceOf(r)}
+	for _, key := range keys {
+		if wait, blocked := h.attempts.Blocked(key); blocked {
+			w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())))
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{
+				"error": fmt.Sprintf("Too many attempts. Try again in %d minutes.",
+					int(wait.Minutes())+1),
+			})
+			return
+		}
+	}
+
 	token, expires, err := h.open.Execute(r.Context(), services.OpenSessionProps{
 		Username: body.Username,
 		Password: body.Password,
 	})
 	if err != nil {
 		if errors.Is(err, services.ErrCredentialsRejected) {
+			for _, key := range keys {
+				h.attempts.Failed(key)
+			}
+			h.attempts.Forget()
+
 			// Never say which half was wrong.
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "Wrong username or password."})
 			return
@@ -74,6 +101,10 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		// cookie there would simply never be sent back.
 		Secure: overTLS(r),
 	})
+
+	for _, key := range keys {
+		h.attempts.Succeeded(key)
+	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"username": body.Username})
 }
@@ -163,4 +194,20 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+// sourceOf is the address the request came from. Behind our own nginx that is
+// the forwarded one; the header is only trusted because nothing but the local
+// proxy can reach the panel's port.
+func sourceOf(r *http.Request) string {
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		first, _, _ := strings.Cut(forwarded, ",")
+		return strings.TrimSpace(first)
+	}
+
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
