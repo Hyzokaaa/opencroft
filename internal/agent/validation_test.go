@@ -25,6 +25,7 @@ func testServer() (*Server, *host.Fake) {
 		fake,
 		"lxd",
 		"test",
+		"lxc",
 	), fake
 }
 

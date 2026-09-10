@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 //
 // The plan is the dialog — not a "details" disclosure tucked under an OK
 // button. Approving a write means approving a list of commands you have read.
-export default function PlanDialog({ request, onClose, onFinished }) {
+export default function PlanDialog({ request, onClose, onFinished, onResult }) {
   const [stage, setStage] = useState(request.fields ? 'form' : 'loading')
   const [values, setValues] = useState(request.defaults ?? {})
   const [plan, setPlan] = useState(null)
@@ -43,7 +43,10 @@ export default function PlanDialog({ request, onClose, onFinished }) {
   }
 
   async function run() {
-    setStage('running')
+    // A few steps that answer with something — inspecting a repository — are
+    // waited for rather than watched. There is nothing useful to narrate, and
+    // what comes back is the point.
+    setStage(request.immediate ? 'immediate' : 'running')
     setEvents([])
     try {
       const res = await fetch(request.url, {
@@ -55,6 +58,11 @@ export default function PlanDialog({ request, onClose, onFinished }) {
       if (!res.ok) {
         setError(payload.error ?? `The daemon answered ${res.status}`)
         setStage('error')
+        return
+      }
+
+      if (request.immediate) {
+        onResult?.(payload)
         return
       }
 
@@ -102,7 +110,13 @@ export default function PlanDialog({ request, onClose, onFinished }) {
             />
           )}
 
-          {stage === 'loading' && <p className="py-6 text-sm text-muted">Working out what this would do…</p>}
+          {stage === "loading" && (
+            <p className="py-6 text-sm text-muted">Working out what this would do…</p>
+          )}
+
+          {stage === "immediate" && (
+            <p className="py-6 text-sm text-muted">{request.working ?? "Working…"}</p>
+          )}
 
           {stage === 'plan' && (
             <>

@@ -40,6 +40,9 @@ type Deps struct {
 	Jobs      *job.Runner
 	DNS       DNSConfig
 	Expose    any
+	// Apps is the deploy side of the agent, held as any for the same reason
+	// Expose is: a host with no runtime has none, and says so.
+	Apps      any
 	PanelPort int
 	Simulated bool
 
@@ -76,6 +79,11 @@ func Handler(deps Deps) http.Handler {
 
 	mux.HandleFunc("PUT /api/hosts/{hostId}/routes/{domain}", deps.editRoute)
 	mux.HandleFunc("POST /api/hosts/{hostId}/routes/{domain}/tls", deps.enableTLS)
+
+	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/inspect", deps.inspectProject)
+	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/deploy", deps.deployProject)
+	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/app", deps.showApp)
+	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/app/logs", deps.showAppLogs)
 
 	mux.HandleFunc("POST /api/hosts/{hostId}/expose", deps.exposePanel)
 

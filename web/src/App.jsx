@@ -9,6 +9,7 @@ import CertificateTable from './components/CertificateTable.jsx'
 import Settings from './components/Settings.jsx'
 import Login from './components/Login.jsx'
 import PlanDialog from './components/PlanDialog.jsx'
+import DeployDialog from './components/DeployDialog.jsx'
 import { useOverview, useCommandMode, useAuth } from './lib/useOverview.js'
 
 export default function App() {
@@ -41,6 +42,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
   const [section, setSection] = useState('overview')
   const [highlighted, setHighlighted] = useState(null)
   const [dialog, setDialog] = useState(null)
+  const [deploying, setDeploying] = useState(null)
 
   // Subjects named by a problem, so the tables carry the same severity the
   // findings panel reports. Two truths on one screen is worse than none.
@@ -178,6 +180,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
     onDestroy: destroyContainer,
     onAddDomain: addDomain,
     onPower: powerContainer,
+    onDeploy: setDeploying,
     onRemoveDomain: removeDomain,
     onEnableTLS: enableTLS,
     onEditDomain: editDomain,
@@ -288,6 +291,17 @@ function Dashboard({ onSignOut, onSessionLost }) {
       {section === 'settings' && <Settings onExpose={exposePanel} />}
 
       {section === 'activity' && <NotBuilt section={section} />}
+
+      {/* Deploying has a step in the middle — look at the repository, then
+          decide — so it runs its own flow and hands off to the same plan
+          dialog for each half. */}
+      {deploying && (
+        <DeployDialog
+          container={deploying}
+          onClose={() => { setDeploying(null); reload() }}
+          onFinished={reload}
+        />
+      )}
 
       {dialog && (
         <PlanDialog

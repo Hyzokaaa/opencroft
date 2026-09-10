@@ -81,6 +81,8 @@ func main() {
 		dnsCommand(os.Args[2:])
 	case "expose":
 		expose(ctx, os.Args[2:])
+	case "deploy":
+		deployCommand(ctx, os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println("croft " + version)
 	default:
@@ -101,6 +103,7 @@ Usage:
   croft agent                           the privileged half, over a unix socket
   croft cert issue <domain>             obtain a TLS certificate
   croft expose <domain>                 put the panel on a domain, over https
+  croft deploy <container> --repo <url>  fetch a project, then build and run it
   croft dns show | set <provider>        DNS credentials, for the dns-01 challenge
   croft version
 
@@ -119,6 +122,7 @@ Every command works without a terminal: pass flags and read --json.
 type deps struct {
 	dns          server.DNSConfig
 	expose       any
+	apps         any
 	instances    instanceRepositories.InstanceRepository
 	routes       routeRepositories.RouteRepository
 	certificates certificateRepositories.CertificateRepository
@@ -154,6 +158,7 @@ func wire(ctx context.Context, demo bool, nginxDir, socket string) deps {
 				certificates: client.Certificates(),
 				dns:          agentDNS{client: client},
 				expose:       client,
+				apps:         client.Apps(),
 				runtime:      client.Flavor(),
 				version:      version,
 			}
@@ -217,6 +222,7 @@ func serve(ctx context.Context, args []string) {
 		Jobs:            jobs,
 		DNS:             d.dns,
 		Expose:          d.expose,
+		Apps:            d.apps,
 		PanelPort:       portOf(*addr),
 		Simulated:       d.demo,
 	})
@@ -693,6 +699,7 @@ func agentCommand(ctx context.Context, args []string) {
 		h,
 		string(flavor),
 		version,
+		bin,
 	)
 
 	listener, err := agent.Listen(*socket, *group)

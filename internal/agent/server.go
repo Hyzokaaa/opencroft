@@ -29,6 +29,10 @@ type Server struct {
 	flavor       string
 	version      string
 	defaultImage string
+
+	// bin is the runtime command, lxc or incus. The agent is the only half
+	// that knows it, because it is the only half allowed to run it.
+	bin string
 }
 
 func NewServer(
@@ -38,6 +42,7 @@ func NewServer(
 	h host.Host,
 	flavor string,
 	version string,
+	bin string,
 ) *Server {
 	return &Server{
 		instances:    instances,
@@ -47,6 +52,7 @@ func NewServer(
 		flavor:       flavor,
 		version:      version,
 		defaultImage: instances.DefaultImage(),
+		bin:          bin,
 	}
 }
 
@@ -106,6 +112,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /routes/{domain}/tls", s.enableTLS)
 	mux.HandleFunc("POST /expose/plan", s.planExpose)
 	mux.HandleFunc("POST /expose", s.expose)
+	mux.HandleFunc("POST /apps/{name}/inspect/plan", s.planInspect)
+	mux.HandleFunc("POST /apps/{name}/inspect", s.inspect)
+	mux.HandleFunc("POST /apps/{name}/deploy/plan", s.planDeploy)
+	mux.HandleFunc("POST /apps/{name}/deploy", s.deploy)
+	mux.HandleFunc("GET /apps/{name}", s.showApp)
+	mux.HandleFunc("GET /apps/{name}/logs", s.appLogs)
 	mux.HandleFunc("GET /dns", s.showDNS)
 	mux.HandleFunc("POST /dns", s.saveDNS)
 

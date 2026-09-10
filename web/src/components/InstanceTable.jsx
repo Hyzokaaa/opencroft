@@ -4,7 +4,7 @@ import { OWNERSHIP } from '../lib/vocabulary.js'
 // A stopped container is normal. A stopped container with a domain pointing at
 // it is an incident — so the row inherits the severity of whatever finding
 // names it. Two truths on one screen is worse than none.
-export default function InstanceTable({ instances, problems, highlighted, onHover, onFocus, onDestroy, onAddDomain, onPower, compact }) {
+export default function InstanceTable({ instances, problems, highlighted, onHover, onFocus, onDestroy, onAddDomain, onPower, onDeploy, compact }) {
   if (!instances.length) {
     return <p className="px-4 py-8 text-center text-sm text-muted">No containers on this host yet.</p>
   }
@@ -91,6 +91,12 @@ export default function InstanceTable({ instances, problems, highlighted, onHove
                       className="rounded border border-edge px-2 py-0.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
                     >
                       {i.status === 'running' ? 'Stop' : 'Start'}
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onDeploy?.(i) }}
+                      className="rounded border border-edge px-2 py-0.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
+                    >
+                      Deploy
                     </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); onAddDomain?.(i) }}
