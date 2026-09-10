@@ -21,6 +21,9 @@ import (
 	"github.com/Hyzokaaa/opencroft/internal/auth/infrastructure/crypto"
 	authHttp "github.com/Hyzokaaa/opencroft/internal/auth/infrastructure/http"
 	"github.com/Hyzokaaa/opencroft/internal/auth/infrastructure/sqlite"
+	certificateRepositories "github.com/Hyzokaaa/opencroft/internal/certificate/domain/repositories"
+	certificateServices "github.com/Hyzokaaa/opencroft/internal/certificate/domain/services"
+	pemCertificates "github.com/Hyzokaaa/opencroft/internal/certificate/infrastructure/pem"
 	"golang.org/x/term"
 
 	instanceServices "github.com/Hyzokaaa/opencroft/internal/instance/domain/services"
@@ -101,21 +104,23 @@ Every command works without a terminal: pass flags and read --json.
 // deps wires concrete implementations. The CLI and the HTTP API share it, so
 // there is only ever one path into the domain.
 type deps struct {
-	instances instanceRepositories.InstanceRepository
-	routes    routeRepositories.RouteRepository
-	runtime   string
-	version   string
-	demo      bool
+	instances    instanceRepositories.InstanceRepository
+	routes       routeRepositories.RouteRepository
+	certificates certificateRepositories.CertificateRepository
+	runtime      string
+	version      string
+	demo         bool
 }
 
 func wire(ctx context.Context, demo bool, nginxDir, socket string) deps {
 	if demo {
 		return deps{
-			instances: runtime.NewDemoInstanceRepository(),
-			routes:    routeMemory.NewDemoRouteRepository(),
-			runtime:   "demo",
-			version:   version,
-			demo:      true,
+			instances:    runtime.NewDemoInstanceRepository(),
+			routes:       routeMemory.NewDemoRouteRepository(),
+			certificates: pemCertificates.NewDemoCertificateRepository(),
+			runtime:      "demo",
+			version:      version,
+			demo:         true,
 		}
 	}
 
@@ -129,10 +134,11 @@ func wire(ctx context.Context, demo bool, nginxDir, socket string) deps {
 				os.Exit(1)
 			}
 			return deps{
-				instances: client,
-				routes:    client.Routing(),
-				runtime:   client.Flavor(),
-				version:   version,
+				instances:    client,
+				routes:       client.Routing(),
+				certificates: client.Certificates(),
+				runtime:      client.Flavor(),
+				version:      version,
 			}
 		}
 	}
@@ -150,10 +156,11 @@ func wire(ctx context.Context, demo bool, nginxDir, socket string) deps {
 	}
 
 	return deps{
-		instances: runtime.NewCLIInstanceRepository(h, bin, flavor),
-		routes:    nginx.NewNginxRouteRepository(h, nginxDir),
-		runtime:   string(flavor),
-		version:   version,
+		instances:    runtime.NewCLIInstanceRepository(h, bin, flavor),
+		routes:       nginx.NewNginxRouteRepository(h, nginxDir),
+		certificates: pemCertificates.NewPEMCertificateRepository(h),
+		runtime:      string(flavor),
+		version:      version,
 	}
 }
 
@@ -175,6 +182,7 @@ func serve(ctx context.Context, args []string) {
 		Overview: overviewQueries.NewOverviewQuery(
 			instanceServices.NewListInstances(d.instances),
 			routeServices.NewListRoutes(d.routes),
+			certificateServices.NewListCertificates(d.certificates),
 			d.runtime,
 			d.version,
 			d.demo,
@@ -223,6 +231,7 @@ func list(ctx context.Context, args []string) {
 	query := overviewQueries.NewOverviewQuery(
 		instanceServices.NewListInstances(d.instances),
 		routeServices.NewListRoutes(d.routes),
+		certificateServices.NewListCertificates(d.certificates),
 		d.runtime,
 		d.version,
 		d.demo,
@@ -639,6 +648,7 @@ func agentCommand(ctx context.Context, args []string) {
 	server := agent.NewServer(
 		runtime.NewCLIInstanceRepository(h, bin, flavor),
 		nginx.NewNginxRouteRepository(h, *nginxDir),
+		pemCertificates.NewPEMCertificateRepository(h),
 		h,
 		string(flavor),
 	)

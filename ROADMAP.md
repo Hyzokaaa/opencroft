@@ -76,7 +76,7 @@ El 80% del valor percibido con el 0% del riesgo. Solo lectura.
 - [x] Separación en dos procesos: `croft agent` (root) y `croft serve` (sin privilegios), por unix socket
 - [x] UI en React + Vite + Tailwind, embebida con `go:embed`
 - [x] Dashboard: instancias, estado, rutas y hallazgos
-- [ ] **Avisos**: certificados que caducan pronto, rutas que apuntan a instancias caídas o
+- [x] **Avisos**: certificados que caducan pronto, rutas que apuntan a instancias caídas o
       inexistentes, instancias sin dominio, drift detectado
 - [x] Los recursos externos se listan y se distinguen
 - [ ] Adoptarlos explícitamente
@@ -115,7 +115,7 @@ Lo que convierte un panel en una herramienta que se usa todos los días.
 - [ ] Snapshots: crear, listar, restaurar, programar (`lxc snapshot`)
 - [ ] Métricas históricas de CPU, memoria y disco
 - [ ] Explorador de ficheros del contenedor
-- [ ] Renovación automática de certificados con notificación
+- [ ] Renovación automática de certificados
 - [ ] Notificaciones por correo o webhook ante avisos
 
 ---

@@ -4,7 +4,7 @@ const SECTIONS = [
   { id: 'overview', label: 'Overview' },
   { id: 'containers', label: 'Containers', count: (d) => d?.instances.length },
   { id: 'domains', label: 'Domains', count: (d) => d?.routes.length },
-  { id: 'certificates', label: 'Certificates' },
+  { id: "certificates", label: "Certificates", count: (d) => d?.certificates?.length },
   { id: 'activity', label: 'Activity' },
   { id: 'settings', label: 'Settings' },
 ]

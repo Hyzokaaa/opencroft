@@ -5,6 +5,7 @@ import Findings from './components/Findings.jsx'
 import InstanceTable from './components/InstanceTable.jsx'
 import RouteTable from './components/RouteTable.jsx'
 import Card from './components/Card.jsx'
+import CertificateTable from './components/CertificateTable.jsx'
 import Login from './components/Login.jsx'
 import PlanDialog from './components/PlanDialog.jsx'
 import { useOverview, useCommandMode, useAuth } from './lib/useOverview.js'
@@ -203,7 +204,18 @@ function Dashboard({ onSignOut, onSessionLost }) {
         </Card>
       )}
 
-      {["certificates", "activity", "settings"].includes(section) && <NotBuilt section={section} />}
+      {section === "certificates" && (
+        <Card
+          title="Certificates"
+          count={data.certificates?.length ?? 0}
+          commandMode={commandMode}
+          commands={["ls /etc/letsencrypt/live/", "openssl x509 -enddate -noout -in <file>"]}
+        >
+          <CertificateTable certificates={data.certificates ?? []} onFocus={focusSubject} />
+        </Card>
+      )}
+
+      {["activity", "settings"].includes(section) && <NotBuilt section={section} />}
 
       {dialog && (
         <PlanDialog
