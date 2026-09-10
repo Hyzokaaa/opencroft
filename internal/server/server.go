@@ -35,6 +35,7 @@ type Deps struct {
 	Instances instanceRepositories.InstanceRepository
 	Routes    routeRepositories.RouteRepository
 	AddRoute  *routeServices.AddRoute
+	EditRoute *routeServices.EditRoute
 	Host      host.Host
 	Jobs      *job.Runner
 	DNS       DNSConfig
@@ -65,10 +66,13 @@ func Handler(deps Deps) http.Handler {
 
 	mux.HandleFunc("POST /api/hosts/{hostId}/instances", deps.createInstance)
 	mux.HandleFunc("DELETE /api/hosts/{hostId}/instances/{name}", deps.destroyInstance)
+	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/start", deps.startInstance)
+	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/stop", deps.stopInstance)
 
 	mux.HandleFunc("POST /api/hosts/{hostId}/routes", deps.addRoute)
 	mux.HandleFunc("DELETE /api/hosts/{hostId}/routes/{domain}", deps.removeRoute)
 
+	mux.HandleFunc("PUT /api/hosts/{hostId}/routes/{domain}", deps.editRoute)
 	mux.HandleFunc("POST /api/hosts/{hostId}/routes/{domain}/tls", deps.enableTLS)
 
 	mux.HandleFunc("GET /api/hosts/{hostId}/dns", deps.showDNS)

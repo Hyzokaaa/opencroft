@@ -4,7 +4,7 @@ import { OWNERSHIP } from '../lib/vocabulary.js'
 // A stopped container is normal. A stopped container with a domain pointing at
 // it is an incident — so the row inherits the severity of whatever finding
 // names it. Two truths on one screen is worse than none.
-export default function InstanceTable({ instances, problems, highlighted, onHover, onFocus, onDestroy, onAddDomain, compact }) {
+export default function InstanceTable({ instances, problems, highlighted, onHover, onFocus, onDestroy, onAddDomain, onPower, compact }) {
   if (!instances.length) {
     return <p className="px-4 py-8 text-center text-sm text-muted">No containers on this host yet.</p>
   }
@@ -84,6 +84,14 @@ export default function InstanceTable({ instances, problems, highlighted, onHove
                   {/* Destroying something we did not create is allowed, but it
                       is the user's call and the plan says so plainly. */}
                   <div className="flex justify-end gap-1.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
+                    {/* A stopped container cannot serve anything, so starting
+                        it is the only thing worth offering. */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onPower?.(i, i.status === 'running') }}
+                      className="rounded border border-edge px-2 py-0.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
+                    >
+                      {i.status === 'running' ? 'Stop' : 'Start'}
+                    </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); onAddDomain?.(i) }}
                       className="rounded border border-edge px-2 py-0.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink"

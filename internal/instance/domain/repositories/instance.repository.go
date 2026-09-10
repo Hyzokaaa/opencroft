@@ -17,6 +17,8 @@ type InstanceRepository interface {
 	// disagree.
 	CreatePlan(instance *entities.Instance) plan.Plan
 	DeletePlan(name string) plan.Plan
+	StartPlan(name string) plan.Plan
+	StopPlan(name string) plan.Plan
 
 	Create(ctx context.Context, instance *entities.Instance) error
 	Delete(ctx context.Context, name string) error

@@ -1,7 +1,7 @@
 import Chip from './Chip.jsx'
 import { OWNERSHIP } from '../lib/vocabulary.js'
 
-export default function RouteTable({ routes, instances, problems, highlighted, onHover, onFocus, onRemoveDomain, onEnableTLS, compact }) {
+export default function RouteTable({ routes, instances, problems, highlighted, onHover, onFocus, onRemoveDomain, onEnableTLS, onEditDomain, compact }) {
   if (!routes.length) {
     return <p className="px-4 py-8 text-center text-sm text-muted">No domains routed yet.</p>
   }
@@ -70,6 +70,12 @@ export default function RouteTable({ routes, instances, problems, highlighted, o
                     <div className="flex justify-end gap-1.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
                       {/* Only offered where it is missing: a domain already
                           on https has nothing to turn on. */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onEditDomain?.(r) }}
+                        className="rounded border border-edge px-2 py-0.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
+                      >
+                        Edit
+                      </button>
                       {!r.ssl && (
                         <button
                           onClick={(e) => { e.stopPropagation(); onEnableTLS?.(r.domain) }}

@@ -166,11 +166,11 @@ func (c *Client) Delete(ctx context.Context, name string) error {
 }
 
 func (c *Client) Start(ctx context.Context, name string) error {
-	return errors.New("starting a container from the panel is not implemented yet")
+	return c.StartWithProgress(ctx, name, nil)
 }
 
 func (c *Client) Stop(ctx context.Context, name string) error {
-	return errors.New("stopping a container from the panel is not implemented yet")
+	return c.StopWithProgress(ctx, name, nil)
 }
 
 func (c *Client) Annotate(ctx context.Context, name, key, value string) error {
@@ -370,4 +370,31 @@ func (r *RouteClient) TLSPlan(ctx context.Context, domain string) (plan.Plan, er
 func (r *RouteClient) EnableTLS(ctx context.Context, domain string, report func(int, string)) error {
 	return r.client.streamed(ctx, http.MethodPost,
 		"/routes/"+url.PathEscape(domain)+"/tls", nil, report)
+}
+
+func (c *Client) StartPlan(name string) plan.Plan {
+	return c.powerPlan(name, "start")
+}
+
+func (c *Client) StopPlan(name string) plan.Plan {
+	return c.powerPlan(name, "stop")
+}
+
+func (c *Client) powerPlan(name, action string) plan.Plan {
+	var response PlanResponse
+	path := "/instances/" + url.PathEscape(name) + "/" + action + "/plan"
+	if err := c.call(context.Background(), http.MethodGet, path, nil, &response); err != nil {
+		return plan.New(plan.Command("The agent could not describe this: " + err.Error()))
+	}
+	return response.Plan
+}
+
+// StartWithProgress and StopWithProgress exist for the same reason as the
+// create pair: the panel shows what the privileged side is doing, as it does it.
+func (c *Client) StartWithProgress(ctx context.Context, name string, report func(int, string)) error {
+	return c.streamed(ctx, http.MethodPost, "/instances/"+url.PathEscape(name)+"/start", nil, report)
+}
+
+func (c *Client) StopWithProgress(ctx context.Context, name string, report func(int, string)) error {
+	return c.streamed(ctx, http.MethodPost, "/instances/"+url.PathEscape(name)+"/stop", nil, report)
 }

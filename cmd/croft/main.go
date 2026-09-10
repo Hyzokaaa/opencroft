@@ -205,6 +205,7 @@ func serve(ctx context.Context, args []string) {
 		Instances:       d.instances,
 		Routes:          d.routes,
 		AddRoute:        routeServices.NewAddRoute(d.routes, d.instances),
+		EditRoute:       routeServices.NewEditRoute(d.routes, d.instances),
 		Host:            host.NewLocal(),
 		Jobs:            jobs,
 		DNS:             d.dns,
@@ -687,8 +688,14 @@ func agentCommand(ctx context.Context, args []string) {
 	}
 	defer listener.Close()
 
+	// Certificates outlive attention spans, and nothing else on this host
+	// will renew the ones croft issued.
+	go server.Renew(ctx)
+
 	fmt.Printf("croft agent %s — runtime: %s\n", version, flavor)
 	fmt.Printf("Listening on %s, reachable by group %s\n", *socket, *group)
+	fmt.Printf("Renewing croft's certificates below %d days, every %s\n",
+		agent.RenewBelowDays, agent.RenewEvery)
 
 	if err := http.Serve(listener, server.Handler()); err != nil {
 		fmt.Fprintln(os.Stderr, "[ERROR]", err)

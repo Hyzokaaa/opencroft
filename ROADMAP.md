@@ -91,6 +91,7 @@ un certificado que caduca en 9 días es exactamente lo que nadie detecta a tiemp
 ## Fase 3 — Escritura desde la UI
 
 - [x] Crear y destruir instancias desde el panel
+- [x] Editar el destino y el puerto de una ruta
 - [ ] Editar límites de CPU y memoria
 - [x] Añadir y quitar dominios desde el panel
 - [x] Emitir certificados con ACME embebido (HTTP-01 y DNS-01)
@@ -116,7 +117,7 @@ Lo que convierte un panel en una herramienta que se usa todos los días.
 - [ ] Snapshots: crear, listar, restaurar, programar (`lxc snapshot`)
 - [ ] Métricas históricas de CPU, memoria y disco
 - [ ] Explorador de ficheros del contenedor
-- [ ] Renovación automática de certificados
+- [x] Renovación automática de certificados
 - [ ] Notificaciones por correo o webhook ante avisos
 
 ---

@@ -84,6 +84,21 @@ function Dashboard({ onSignOut, onSessionLost }) {
     })
   }
 
+  function editDomain(route) {
+    const current = data.instances.find((i) => i.address === route.target)
+    setDialog({
+      title: `Where ${route.domain} points`,
+      url: `/api/hosts/local/routes/${route.domain}`,
+      method: 'PUT',
+      defaults: { target: current?.name ?? '', port: route.port },
+      fields: [
+        { name: 'target', label: 'Container', options: data.instances.map((i) => i.name) },
+        { name: 'port', label: 'Port inside the container', type: 'number',
+          hint: 'The certificate is untouched — only where the traffic goes changes.' },
+      ],
+    })
+  }
+
   function enableTLS(domain) {
     setDialog({
       title: `Serve ${domain} over https`,
@@ -98,6 +113,15 @@ function Dashboard({ onSignOut, onSessionLost }) {
       url: `/api/hosts/local/routes/${domain}`,
       method: "DELETE",
       destructive: true,
+    })
+  }
+
+  function powerContainer(instance, stop) {
+    setDialog({
+      title: `${stop ? 'Stop' : 'Start'} ${instance.name}`,
+      url: `/api/hosts/local/instances/${instance.name}/${stop ? 'stop' : 'start'}`,
+      method: 'POST',
+      destructive: stop,
     })
   }
 
@@ -144,8 +168,10 @@ function Dashboard({ onSignOut, onSessionLost }) {
     onFocus: focusSubject,
     onDestroy: destroyContainer,
     onAddDomain: addDomain,
+    onPower: powerContainer,
     onRemoveDomain: removeDomain,
     onEnableTLS: enableTLS,
+    onEditDomain: editDomain,
     instances: data.instances,
   }
 

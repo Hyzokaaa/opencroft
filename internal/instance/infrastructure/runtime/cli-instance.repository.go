@@ -265,3 +265,13 @@ func (r *CLIInstanceRepository) walkReporting(ctx context.Context, p plan.Plan, 
 	}
 	return nil
 }
+
+func (r *CLIInstanceRepository) StartPlan(name string) plan.Plan {
+	return plan.New(plan.Command("Start the container", r.bin, "start", name))
+}
+
+// Stopping is graceful: the runtime asks the container's init to shut down.
+// Anything running inside gets to close its files.
+func (r *CLIInstanceRepository) StopPlan(name string) plan.Plan {
+	return plan.New(plan.Command("Stop the container", r.bin, "stop", name))
+}

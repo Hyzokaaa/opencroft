@@ -173,6 +173,19 @@ function Form({ fields, values, onChange, error, onSubmit }) {
       {fields.map((field) => (
         <label key={field.name} className="block">
           <span className="mb-1 block text-xs text-muted">{field.label}</span>
+          {field.options ? (
+            <select
+              value={values[field.name] ?? ''}
+              onChange={(e) => onChange({ ...values, [field.name]: e.target.value })}
+              className="w-full rounded border border-edge bg-ground px-3 py-2 text-sm outline-none transition focus:border-edge-strong"
+            >
+              {field.options.map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </select>
+          ) : (
           <input
             type={field.type ?? 'text'}
             value={values[field.name] ?? ''}
@@ -186,6 +199,7 @@ function Form({ fields, values, onChange, error, onSubmit }) {
             }
             className="w-full rounded border border-edge bg-ground px-3 py-2 text-sm outline-none transition focus:border-edge-strong"
           />
+          )}
           {field.hint && <span className="mt-1 block text-xs text-faint">{field.hint}</span>}
         </label>
       ))}

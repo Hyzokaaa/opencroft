@@ -163,3 +163,11 @@ func (r *MemoryInstanceRepository) AllocateAddress(_ context.Context) (string, e
 	}
 	return "", fmt.Errorf("no free address in the static range")
 }
+
+func (r *MemoryInstanceRepository) StartPlan(name string) plan.Plan {
+	return plan.New(plan.Command("Start the container", "incus", "start", name))
+}
+
+func (r *MemoryInstanceRepository) StopPlan(name string) plan.Plan {
+	return plan.New(plan.Command("Stop the container", "incus", "stop", name))
+}
