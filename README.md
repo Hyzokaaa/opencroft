@@ -6,9 +6,9 @@ OpenCroft manages LXC system containers, domains and TLS certificates on a singl
 Every container is a full OS — its own init, cron, systemd and filesystem — not a packaged
 process.
 
-> **Status: early.** Containers can be listed, created and destroyed from the panel,
-> behind a login, with the plan shown before anything runs. Domains, certificates and
-> snapshots are not built yet. See [ROADMAP.md](./ROADMAP.md).
+> **Status: early but usable.** Containers, domains and TLS certificates are managed from
+> the panel, behind a login, with the plan shown before anything runs. Certificates renew
+> themselves. Snapshots, logs and a console are not built yet. See [ROADMAP.md](./ROADMAP.md).
 
 ## Install
 
@@ -70,12 +70,13 @@ your changes.
 OpenCroft inverts that:
 
 - **The operating system is the source of truth.** LXD knows which containers exist. nginx
-  knows which routes exist. certbot knows which certificates exist. OpenCroft reads and writes
+  knows which routes exist. The certificate files say when they expire. OpenCroft reads and writes
   that state, but never owns it.
 - **Manual work is a first-class path.** Edit an nginx vhost by hand and OpenCroft detects it,
   shows you the diff, and stops managing that file. It won't fight you.
-- **Nothing is hidden.** Every operation can print the exact commands it runs. Use
-  `--explain` and learn your system instead of depending on a panel.
+- **Nothing is hidden.** Every write shows the exact commands first, and the panel has a
+  mode that prints the command behind everything on screen. Learn your system instead of
+  depending on a panel.
 
 ```bash
 rm /var/lib/croft/croft.db && systemctl restart croft
@@ -97,14 +98,15 @@ Internet (all traffic hits the host IP on port 443)
     +-- ...             --> container-n (10.x.x.N)
 ```
 
-A single static binary — `croft` — is both the CLI and the daemon, with the web UI
-embedded. It runs on the server it manages. Requirements on the host: LXD, nginx, and
-certbot for TLS.
+A single static binary — `croft` — is the CLI, the daemon and the privileged agent, with
+the web UI embedded. Requirements on the host: LXD or Incus, and nginx. ACME is built in,
+so certbot is not needed.
 
 ```bash
-croft create app1 --os ubuntu:24.04 --domain app.example.com
 croft list
-croft explain
+croft create app1 --port 3000
+croft cert issue app.example.com
+croft dns show
 ```
 
 ## Documentation
@@ -113,6 +115,21 @@ croft explain
 |---|---|
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | Layered design, reconciliation engine, security model |
 | [ROADMAP.md](./ROADMAP.md) | Build plan, phase by phase |
+
+## Tests
+
+```bash
+docker run --rm -v "$PWD:/src" -w /src golang:1.25-alpine go test ./...
+```
+
+`build.sh` runs them before it builds, so a release cannot ship with a failing
+test.
+
+They do not need a server, LXD or root. `host.Fake` records the commands a
+driver would run instead of running them, which is what makes the interesting
+assertions possible: that **the plan shown is the work performed**, that the
+address is pinned before the container boots, and that a field the agent should
+refuse never reaches a command line.
 
 ## Not in scope
 

@@ -572,7 +572,15 @@ func reorder(fs *flag.FlagSet, args []string) []string {
 		}
 	}
 
-	return append(flags, positional...)
+	if len(positional) == 0 {
+		return flags
+	}
+
+	// Every flag is already at the front, so everything left is a name. The
+	// separator says so — without it, a container called `--force` would be
+	// read as a flag again, which is the bug this whole function exists to
+	// avoid.
+	return append(flags, append([]string{"--"}, positional...)...)
 }
 
 func isBoolFlag(f *flag.Flag) bool {
