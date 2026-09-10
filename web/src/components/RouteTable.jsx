@@ -1,7 +1,7 @@
 import Chip from './Chip.jsx'
 import { OWNERSHIP } from '../lib/vocabulary.js'
 
-export default function RouteTable({ routes, instances, problems, highlighted, onHover, onFocus, compact }) {
+export default function RouteTable({ routes, instances, problems, highlighted, onHover, onFocus, onRemoveDomain, compact }) {
   if (!routes.length) {
     return <p className="px-4 py-8 text-center text-sm text-muted">No domains routed yet.</p>
   }
@@ -15,6 +15,7 @@ export default function RouteTable({ routes, instances, problems, highlighted, o
           <th className="px-4 py-2 font-medium">Domain</th>
           <th className="px-4 py-2 font-medium">Serves</th>
           {!compact && <th className="px-4 py-2 font-medium">File</th>}
+          {!compact && <th className="px-4 py-2" />}
         </tr>
       </thead>
       <tbody>
@@ -30,7 +31,7 @@ export default function RouteTable({ routes, instances, problems, highlighted, o
               onMouseEnter={() => onHover(target ?? r.domain)}
               onMouseLeave={() => onHover(null)}
               onClick={() => onFocus(r.domain)}
-              className={`cursor-pointer border-b border-edge/50 transition-colors last:border-0 ${
+              className={`group cursor-pointer border-b border-edge/50 transition-colors last:border-0 ${
                 lit ? 'bg-white/[0.05]' : 'hover:bg-white/[0.03]'
               }`}
             >
@@ -52,6 +53,23 @@ export default function RouteTable({ routes, instances, problems, highlighted, o
 
               {!compact && (
                 <td className="px-4 py-2.5 font-mono text-xs text-faint">{r.file}</td>
+              )}
+
+              {!compact && (
+                <td className="px-4 py-2.5 text-right">
+                  {/* A vhost we did not write is not ours to remove, and the
+                      button says so instead of failing when pressed. */}
+                  {r.state === "unmanaged" ? (
+                    <span className="text-xs text-faint">not ours</span>
+                  ) : (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onRemoveDomain?.(r.domain) }}
+                      className="rounded border border-edge px-2 py-0.5 text-xs text-muted opacity-0 transition hover:border-problem/50 hover:text-problem focus-visible:opacity-100 group-hover:opacity-100"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </td>
               )}
             </tr>
           )

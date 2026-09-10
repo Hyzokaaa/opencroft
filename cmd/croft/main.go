@@ -192,6 +192,8 @@ func serve(ctx context.Context, args []string) {
 		ReadOnly:        *readOnly,
 		Auth:            auth.handler,
 		Instances:       d.instances,
+		Routes:          d.routes,
+		AddRoute:        routeServices.NewAddRoute(d.routes, d.instances),
 		Host:            host.NewLocal(),
 		Jobs:            jobs,
 		Simulated:       d.demo,

@@ -135,7 +135,7 @@ export default function PlanDialog({ request, onClose, onFinished }) {
             {stage === 'form' && (
               <button
                 onClick={() => askForPlan(values)}
-                disabled={!values.name}
+                disabled={request.fields?.some((f) => !values[f.name])}
                 className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30 disabled:opacity-40"
               >
                 Show me the plan

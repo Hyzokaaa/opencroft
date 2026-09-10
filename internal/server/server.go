@@ -16,6 +16,8 @@ import (
 	instanceRepositories "github.com/Hyzokaaa/opencroft/internal/instance/domain/repositories"
 	instanceServices "github.com/Hyzokaaa/opencroft/internal/instance/domain/services"
 	overviewQueries "github.com/Hyzokaaa/opencroft/internal/overview/application/queries"
+	routeRepositories "github.com/Hyzokaaa/opencroft/internal/route/domain/repositories"
+	routeServices "github.com/Hyzokaaa/opencroft/internal/route/domain/services"
 	"github.com/Hyzokaaa/opencroft/internal/shared/host"
 	"github.com/Hyzokaaa/opencroft/internal/shared/job"
 )
@@ -31,6 +33,8 @@ type Deps struct {
 	// plan in the background. Simulated swaps execution for a rehearsal, so
 	// the plan screen can be shown on a machine with no runtime.
 	Instances instanceRepositories.InstanceRepository
+	Routes    routeRepositories.RouteRepository
+	AddRoute  *routeServices.AddRoute
 	Host      host.Host
 	Jobs      *job.Runner
 	Simulated bool
@@ -60,6 +64,9 @@ func Handler(deps Deps) http.Handler {
 
 	mux.HandleFunc("POST /api/hosts/{hostId}/instances", deps.createInstance)
 	mux.HandleFunc("DELETE /api/hosts/{hostId}/instances/{name}", deps.destroyInstance)
+
+	mux.HandleFunc("POST /api/hosts/{hostId}/routes", deps.addRoute)
+	mux.HandleFunc("DELETE /api/hosts/{hostId}/routes/{domain}", deps.removeRoute)
 
 	mux.HandleFunc("GET /api/jobs/{id}", deps.showJob)
 	mux.HandleFunc("GET /api/jobs/{id}/events", deps.streamJob)

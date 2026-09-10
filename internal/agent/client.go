@@ -231,16 +231,43 @@ func (r *RouteClient) FindByDomain(ctx context.Context, domain string) (*routeEn
 	return nil, nil
 }
 
+// WritePlan asks the agent what writing this route would do. As with
+// containers, the commands come from the privileged side as a description.
+func (r *RouteClient) WritePlan(route *routeEntities.Route) plan.Plan {
+	var response PlanResponse
+	if err := r.client.call(context.Background(), http.MethodPost, "/routes/plan", toRouteDTO(route), &response); err != nil {
+		return plan.New(plan.Command("The agent could not describe this: " + err.Error()))
+	}
+	return response.Plan
+}
+
+func (r *RouteClient) RemovePlan(domain string) plan.Plan {
+	var response PlanResponse
+	path := "/routes/" + url.PathEscape(domain) + "/remove/plan"
+	if err := r.client.call(context.Background(), http.MethodGet, path, nil, &response); err != nil {
+		return plan.New(plan.Command("The agent could not describe this: " + err.Error()))
+	}
+	return response.Plan
+}
+
 func (r *RouteClient) Write(ctx context.Context, route *routeEntities.Route) error {
-	return errors.New("managing domains from the panel is not implemented yet")
+	return r.client.call(ctx, http.MethodPost, "/routes", toRouteDTO(route), nil)
 }
 
 func (r *RouteClient) Remove(ctx context.Context, domain string) error {
-	return errors.New("managing domains from the panel is not implemented yet")
+	return r.client.call(ctx, http.MethodDelete, "/routes/"+url.PathEscape(domain), nil, nil)
 }
 
+// Reload is part of the write plans; there is nothing separate to ask for.
 func (r *RouteClient) Reload(ctx context.Context) error {
-	return errors.New("managing domains from the panel is not implemented yet")
+	return nil
+}
+
+func toRouteDTO(route *routeEntities.Route) RouteDTO {
+	return RouteDTO{
+		Domain: route.Domain, Target: route.Target, Port: route.Port,
+		SSL: route.SSL, State: string(route.State), File: route.File,
+	}
 }
 
 // CreateWithProgress forwards the agent's narration as it arrives, so the

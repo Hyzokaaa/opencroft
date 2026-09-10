@@ -92,7 +92,8 @@ un certificado que caduca en 9 días es exactamente lo que nadie detecta a tiemp
 
 - [x] Crear y destruir instancias desde el panel
 - [ ] Editar límites de CPU y memoria
-- [ ] Gestión de dominios y certificados
+- [x] Añadir y quitar dominios desde el panel
+- [ ] Emitir certificados
 - [x] Cola de trabajos con logs en streaming por SSE
 - [x] Pantalla de confirmación con el plan: los comandos exactos que se van a ejecutar
 - [x] Modo global de comandos en la barra superior

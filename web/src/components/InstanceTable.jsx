@@ -4,7 +4,7 @@ import { OWNERSHIP } from '../lib/vocabulary.js'
 // A stopped container is normal. A stopped container with a domain pointing at
 // it is an incident — so the row inherits the severity of whatever finding
 // names it. Two truths on one screen is worse than none.
-export default function InstanceTable({ instances, problems, highlighted, onHover, onFocus, onDestroy, compact }) {
+export default function InstanceTable({ instances, problems, highlighted, onHover, onFocus, onDestroy, onAddDomain, compact }) {
   if (!instances.length) {
     return <p className="px-4 py-8 text-center text-sm text-muted">No containers on this host yet.</p>
   }
@@ -83,12 +83,20 @@ export default function InstanceTable({ instances, problems, highlighted, onHove
                 <td className="px-4 py-2.5 text-right">
                   {/* Destroying something we did not create is allowed, but it
                       is the user's call and the plan says so plainly. */}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onDestroy?.(i.name) }}
-                    className="rounded border border-edge px-2 py-0.5 text-xs text-muted opacity-0 transition hover:border-problem/50 hover:text-problem focus-visible:opacity-100 group-hover:opacity-100"
-                  >
-                    Destroy
-                  </button>
+                  <div className="flex justify-end gap-1.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onAddDomain?.(i) }}
+                      className="rounded border border-edge px-2 py-0.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
+                    >
+                      Add domain
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onDestroy?.(i.name) }}
+                      className="rounded border border-edge px-2 py-0.5 text-xs text-muted transition hover:border-problem/50 hover:text-problem"
+                    >
+                      Destroy
+                    </button>
+                  </div>
                 </td>
               )}
             </tr>

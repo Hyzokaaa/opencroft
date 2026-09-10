@@ -11,6 +11,8 @@ import (
 	instanceCommands "github.com/Hyzokaaa/opencroft/internal/instance/application/commands"
 	instanceEntities "github.com/Hyzokaaa/opencroft/internal/instance/domain/entities"
 	instanceServices "github.com/Hyzokaaa/opencroft/internal/instance/domain/services"
+	routeEnums "github.com/Hyzokaaa/opencroft/internal/route/domain/enums"
+	routeServices "github.com/Hyzokaaa/opencroft/internal/route/domain/services"
 	"github.com/Hyzokaaa/opencroft/internal/shared/plan"
 )
 
@@ -179,5 +181,130 @@ func (d Deps) streamJob(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "data: %s\n\n", payload)
 			flusher.Flush()
 		}
+	}
+}
+
+// ── Domains ───────────────────────────────────────────────────────────────────
+
+type addRouteRequest struct {
+	Domain string `json:"domain"`
+	Target string `json:"target"`
+	Port   int    `json:"port"`
+}
+
+func (d Deps) addRoute(w http.ResponseWriter, r *http.Request) {
+	if d.ReadOnly {
+		writeError(w, http.StatusForbidden, errors.New("this instance is read-only"))
+		return
+	}
+
+	var body addRouteRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	route, p, err := d.AddRoute.Prepare(r.Context(), routeServices.AddRouteProps{
+		Domain: body.Domain,
+		Target: body.Target,
+		Port:   body.Port,
+	})
+	if err != nil {
+		writeError(w, routeStatusFor(err), err)
+		return
+	}
+
+	if wantsPlan(r) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"summary": fmt.Sprintf("Serve %s from %s:%d over http", route.Domain, route.Target, route.Port),
+			"plan":    p,
+		})
+		return
+	}
+
+	started := d.Jobs.Start("route", route.Domain, p, func(ctx context.Context, report func(int, string)) error {
+		if d.Simulated {
+			if err := d.rehearse(p, report); err != nil {
+				return err
+			}
+			return d.Routes.Write(ctx, route)
+		}
+
+		// Writing a vhost is quick; there is no progress worth streaming, so
+		// the steps are announced as they are handed over.
+		for i, step := range p.Steps {
+			report(i+1, step.Describe)
+		}
+		return d.Routes.Write(ctx, route)
+	})
+
+	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "domain": route.Domain})
+}
+
+func (d Deps) removeRoute(w http.ResponseWriter, r *http.Request) {
+	if d.ReadOnly {
+		writeError(w, http.StatusForbidden, errors.New("this instance is read-only"))
+		return
+	}
+
+	domain := r.PathValue("domain")
+	existing, err := d.Routes.FindByDomain(r.Context(), domain)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if existing == nil {
+		writeError(w, http.StatusNotFound, errors.New("no route for that domain"))
+		return
+	}
+
+	// A vhost somebody else wrote is somebody else's business. Say so plainly
+	// rather than offering a button that will fail.
+	if existing.State == routeEnums.StateUnmanaged {
+		writeError(w, http.StatusForbidden,
+			errors.New("that vhost was not created here, so croft will not remove it: "+existing.File))
+		return
+	}
+
+	p := d.Routes.RemovePlan(domain)
+
+	if wantsPlan(r) {
+		summary := fmt.Sprintf("Stop serving %s. The container stays.", domain)
+		if existing.State == routeEnums.StateAdopted {
+			summary = fmt.Sprintf("Stop serving %s — you edited this file by hand. The container stays.", domain)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"summary": summary, "plan": p})
+		return
+	}
+
+	started := d.Jobs.Start("route-remove", domain, p, func(ctx context.Context, report func(int, string)) error {
+		if d.Simulated {
+			if err := d.rehearse(p, report); err != nil {
+				return err
+			}
+			return d.Routes.Remove(ctx, domain)
+		}
+
+		for i, step := range p.Steps {
+			report(i+1, step.Describe)
+		}
+		return d.Routes.Remove(ctx, domain)
+	})
+
+	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "domain": domain})
+}
+
+func routeStatusFor(err error) int {
+	switch {
+	case errors.Is(err, routeServices.ErrDomainTaken):
+		return http.StatusConflict
+	case errors.Is(err, routeServices.ErrTargetUnknown):
+		return http.StatusNotFound
+	case errors.Is(err, routeServices.ErrDomainRequired),
+		errors.Is(err, routeServices.ErrDomainInvalid),
+		errors.Is(err, routeServices.ErrTargetNoAddress):
+		return http.StatusBadRequest
+	default:
+		return http.StatusInternalServerError
 	}
 }

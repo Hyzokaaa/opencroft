@@ -15,6 +15,8 @@ import (
 	certificateRepositories "github.com/Hyzokaaa/opencroft/internal/certificate/domain/repositories"
 	instanceEntities "github.com/Hyzokaaa/opencroft/internal/instance/domain/entities"
 	instanceRepositories "github.com/Hyzokaaa/opencroft/internal/instance/domain/repositories"
+	routeEntities "github.com/Hyzokaaa/opencroft/internal/route/domain/entities"
+	routeEnums "github.com/Hyzokaaa/opencroft/internal/route/domain/enums"
 	routeRepositories "github.com/Hyzokaaa/opencroft/internal/route/domain/repositories"
 	"github.com/Hyzokaaa/opencroft/internal/shared/host"
 )
@@ -92,6 +94,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /instances/{name}", s.destroy)
 	mux.HandleFunc("GET /routes", s.listRoutes)
 	mux.HandleFunc("GET /certificates", s.listCertificates)
+	mux.HandleFunc("POST /routes/plan", s.planRoute)
+	mux.HandleFunc("POST /routes", s.writeRoute)
+	mux.HandleFunc("GET /routes/{domain}/remove/plan", s.planRemoveRoute)
+	mux.HandleFunc("DELETE /routes/{domain}", s.removeRoute)
 
 	return mux
 }
@@ -194,6 +200,10 @@ var (
 	imagePattern   = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$`)
 	addressPattern = regexp.MustCompile(`^\d{1,3}(\.\d{1,3}){3}$`)
 	memoryPattern  = regexp.MustCompile(`^\d{1,6}(B|KB|MB|GB|TB|KiB|MiB|GiB|TiB)?$`)
+
+	// Loose on purpose: this rejects obvious mistakes, not unusual but valid
+	// names. Whether a domain resolves is a question only DNS can answer.
+	domainPattern = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$`)
 )
 
 func validName(name string) error {
@@ -277,4 +287,90 @@ func (s *Server) listCertificates(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// ── Routes ────────────────────────────────────────────────────────────────────
+
+func (s *Server) acceptRoute(r *http.Request) (*routeEntities.Route, error) {
+	var dto RouteDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		return nil, err
+	}
+
+	if !domainPattern.MatchString(dto.Domain) {
+		return nil, errors.New("that is not a domain name")
+	}
+	if !addressPattern.MatchString(dto.Target) {
+		return nil, errors.New("a route must point at an IPv4 address")
+	}
+	if dto.Port < 1 || dto.Port > 65535 {
+		return nil, errors.New("the port must be between 1 and 65535")
+	}
+
+	return routeEntities.NewRoute(routeEntities.RouteProps{
+		Domain: dto.Domain, Target: dto.Target, Port: dto.Port, SSL: dto.SSL,
+	}), nil
+}
+
+func (s *Server) planRoute(w http.ResponseWriter, r *http.Request) {
+	route, err := s.acceptRoute(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, PlanResponse{Plan: s.routes.WritePlan(route)})
+}
+
+func (s *Server) writeRoute(w http.ResponseWriter, r *http.Request) {
+	route, err := s.acceptRoute(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.routes.Write(r.Context(), route); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) planRemoveRoute(w http.ResponseWriter, r *http.Request) {
+	domain := r.PathValue("domain")
+	if !domainPattern.MatchString(domain) {
+		writeError(w, http.StatusBadRequest, errors.New("that is not a domain name"))
+		return
+	}
+	writeJSON(w, http.StatusOK, PlanResponse{Plan: s.routes.RemovePlan(domain)})
+}
+
+// removeRoute refuses to delete a file it did not write. Somebody else's vhost
+// is somebody else's business, and the panel says so rather than silently
+// declining.
+func (s *Server) removeRoute(w http.ResponseWriter, r *http.Request) {
+	domain := r.PathValue("domain")
+	if !domainPattern.MatchString(domain) {
+		writeError(w, http.StatusBadRequest, errors.New("that is not a domain name"))
+		return
+	}
+
+	existing, err := s.routes.FindByDomain(r.Context(), domain)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if existing == nil {
+		writeError(w, http.StatusNotFound, errors.New("no route for that domain"))
+		return
+	}
+	if existing.State == routeEnums.StateUnmanaged {
+		writeError(w, http.StatusForbidden,
+			errors.New("that vhost was not created by croft, so croft will not remove it: "+existing.File))
+		return
+	}
+
+	if err := s.routes.Remove(r.Context(), domain); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

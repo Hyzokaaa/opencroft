@@ -69,6 +69,29 @@ function Dashboard({ onSignOut, onSessionLost }) {
     })
   }
 
+  function addDomain(container) {
+    setDialog({
+      title: `Serve a domain from ${container.name}`,
+      url: "/api/hosts/local/routes",
+      method: "POST",
+      defaults: { domain: "", target: container.name, port: container.port || 80 },
+      fields: [
+        { name: "domain", label: "Domain", autoFocus: true, placeholder: "app.example.com",
+          hint: "It has to already point at this server. DNS is not ours to change." },
+        { name: "port", label: "Port inside the container", type: "number" },
+      ],
+    })
+  }
+
+  function removeDomain(domain) {
+    setDialog({
+      title: `Stop serving ${domain}`,
+      url: `/api/hosts/local/routes/${domain}`,
+      method: "DELETE",
+      destructive: true,
+    })
+  }
+
   function destroyContainer(name) {
     setDialog({
       title: `Destroy ${name}`,
@@ -111,6 +134,8 @@ function Dashboard({ onSignOut, onSessionLost }) {
     onHover: setHighlighted,
     onFocus: focusSubject,
     onDestroy: destroyContainer,
+    onAddDomain: addDomain,
+    onRemoveDomain: removeDomain,
     instances: data.instances,
   }
 

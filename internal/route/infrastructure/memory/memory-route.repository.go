@@ -6,6 +6,7 @@ import (
 
 	"github.com/Hyzokaaa/opencroft/internal/route/domain/entities"
 	"github.com/Hyzokaaa/opencroft/internal/route/domain/enums"
+	"github.com/Hyzokaaa/opencroft/internal/shared/plan"
 )
 
 // MemoryRouteRepository backs the demo mode and the tests.
@@ -79,3 +80,24 @@ func (r *MemoryRouteRepository) Remove(_ context.Context, domain string) error {
 }
 
 func (r *MemoryRouteRepository) Reload(_ context.Context) error { return nil }
+
+// The demo plan says what the real driver would run, so the plan screen can be
+// shown without nginx present.
+func (r *MemoryRouteRepository) WritePlan(route *entities.Route) plan.Plan {
+	path := "/etc/nginx/croft.d/" + route.Domain + ".conf"
+
+	return plan.New(
+		plan.WriteFile("Write the vhost, with a hash of its own contents", path,
+			"server {\n    listen 80;\n    server_name "+route.Domain+";\n    …\n}\n"),
+		plan.Command("Check nginx accepts it", "nginx", "-t"),
+		plan.Command("Reload nginx", "systemctl", "reload", "nginx"),
+	)
+}
+
+func (r *MemoryRouteRepository) RemovePlan(domain string) plan.Plan {
+	return plan.New(
+		plan.Command("Remove the vhost", "rm", "-f", "/etc/nginx/croft.d/"+domain+".conf"),
+		plan.Command("Check nginx accepts it", "nginx", "-t"),
+		plan.Command("Reload nginx", "systemctl", "reload", "nginx"),
+	)
+}

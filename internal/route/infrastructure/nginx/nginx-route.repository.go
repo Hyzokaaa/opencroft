@@ -16,6 +16,7 @@ import (
 	"github.com/Hyzokaaa/opencroft/internal/route/domain/entities"
 	"github.com/Hyzokaaa/opencroft/internal/route/domain/enums"
 	"github.com/Hyzokaaa/opencroft/internal/shared/host"
+	"github.com/Hyzokaaa/opencroft/internal/shared/plan"
 )
 
 const (
@@ -131,16 +132,20 @@ func bodyHash(body string) string {
 }
 
 func (r *NginxRouteRepository) Write(ctx context.Context, route *entities.Route) error {
-	body := render(route)
-	content := fmt.Sprintf("%s\n%s%s\n# Edited by hand? This file will no longer be managed automatically.\n%s",
-		Marker, hashKey, bodyHash(body), body)
+	return r.walk(ctx, r.WritePlan(route))
+}
 
-	path := filepath.Join(r.confDir, route.Domain+".conf")
-	return r.host.WriteFile(ctx, path, []byte(content), 0o644)
+func (r *NginxRouteRepository) walk(ctx context.Context, p plan.Plan) error {
+	for _, step := range p.Steps {
+		if err := host.RunStep(ctx, r.host, step); err != nil && !step.Optional {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *NginxRouteRepository) Remove(ctx context.Context, domain string) error {
-	return r.host.RemoveFile(ctx, filepath.Join(r.confDir, domain+".conf"))
+	return r.walk(ctx, r.RemovePlan(domain))
 }
 
 func (r *NginxRouteRepository) Reload(ctx context.Context) error {
@@ -194,4 +199,35 @@ server {
     }
 }
 `, route.Domain, route.Domain, route.Domain, route.Domain, route.Target, route.Port)
+}
+
+// WritePlan is what adding a domain does, in the order it happens. Validating
+// before reloading matters: a bad file that nginx accepts is a bug, a bad file
+// that nginx rejects would take every other site down with it.
+func (r *NginxRouteRepository) WritePlan(route *entities.Route) plan.Plan {
+	path := filepath.Join(r.confDir, route.Domain+".conf")
+
+	return plan.New(
+		plan.WriteFile("Write the vhost, with a hash of its own contents", path, marked(route)),
+		plan.Command("Check nginx accepts it", "nginx", "-t"),
+		plan.Command("Reload nginx", "systemctl", "reload", "nginx"),
+	)
+}
+
+func (r *NginxRouteRepository) RemovePlan(domain string) plan.Plan {
+	path := filepath.Join(r.confDir, domain+".conf")
+
+	return plan.New(
+		plan.Command("Remove the vhost", "rm", "-f", path),
+		plan.Command("Check nginx accepts it", "nginx", "-t"),
+		plan.Command("Reload nginx", "systemctl", "reload", "nginx"),
+	)
+}
+
+// marked renders the file with the header that lets us tell later whether
+// somebody edited it by hand.
+func marked(route *entities.Route) string {
+	body := render(route)
+	return fmt.Sprintf("%s\n%s%s\n# Edited by hand? This file will no longer be managed automatically.\n%s",
+		Marker, hashKey, bodyHash(body), body)
 }
