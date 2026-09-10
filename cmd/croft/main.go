@@ -128,7 +128,7 @@ func wire(ctx context.Context, demo bool, nginxDir, socket string) deps {
 	// process then needs none of them.
 	if socket != "" {
 		if _, err := os.Stat(socket); err == nil {
-			client, err := agent.Dial(socket)
+			client, err := agent.Dial(socket, version)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "[ERROR]", err)
 				os.Exit(1)
@@ -614,11 +614,20 @@ func updateCommand(args []string) {
 
 	if *restart {
 		if _, err := exec.LookPath("systemctl"); err == nil {
-			if out, err := exec.Command("systemctl", "restart", "croft").CombinedOutput(); err != nil {
-				fmt.Fprintf(os.Stderr, "[WARN] Could not restart the service: %s\n", strings.TrimSpace(string(out)))
-				fmt.Fprintln(os.Stderr, "       Restart it yourself with: sudo systemctl restart croft")
-			} else {
-				fmt.Println("[OK] croft.service restarted")
+			// The agent first. Both halves are the same binary, and a pair
+			// left half-updated speaks two different protocols to each other.
+			for _, unit := range []string{"croft-agent", "croft"} {
+				out, err := exec.Command("systemctl", "restart", unit).CombinedOutput()
+				switch {
+				case err == nil:
+					fmt.Printf("[OK] %s.service restarted\n", unit)
+				case strings.Contains(string(out), "not found"),
+					strings.Contains(string(out), "could not be found"):
+					// Not installed on this host; nothing to restart.
+				default:
+					fmt.Fprintf(os.Stderr, "[WARN] Could not restart %s: %s\n", unit, strings.TrimSpace(string(out)))
+					fmt.Fprintf(os.Stderr, "       Restart it yourself with: sudo systemctl restart %s\n", unit)
+				}
 			}
 		}
 	}
@@ -651,6 +660,7 @@ func agentCommand(ctx context.Context, args []string) {
 		pemCertificates.NewPEMCertificateRepository(h),
 		h,
 		string(flavor),
+		version,
 	)
 
 	listener, err := agent.Listen(*socket, *group)
@@ -670,11 +680,6 @@ func agentCommand(ctx context.Context, args []string) {
 		fmt.Fprintln(os.Stderr, "[ERROR]", err)
 		os.Exit(1)
 	}
-}
-
-func unitExists(unit string) bool {
-	err := exec.Command("systemctl", "cat", unit+".service").Run()
-	return err == nil
 }
 
 // browsableURL turns a listen address into something you can paste into a

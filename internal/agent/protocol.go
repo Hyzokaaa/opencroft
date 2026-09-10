@@ -55,6 +55,7 @@ type AddressResponse struct {
 type RuntimeResponse struct {
 	Flavor       string `json:"flavor"`
 	DefaultImage string `json:"defaultImage"`
+	Version      string `json:"version"`
 }
 
 type ErrorResponse struct {

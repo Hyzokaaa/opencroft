@@ -25,6 +25,7 @@ type Server struct {
 	certificates certificateRepositories.CertificateRepository
 	host         host.Host
 	flavor       string
+	version      string
 	defaultImage string
 }
 
@@ -34,6 +35,7 @@ func NewServer(
 	certificates certificateRepositories.CertificateRepository,
 	h host.Host,
 	flavor string,
+	version string,
 ) *Server {
 	return &Server{
 		instances:    instances,
@@ -41,6 +43,7 @@ func NewServer(
 		certificates: certificates,
 		host:         h,
 		flavor:       flavor,
+		version:      version,
 		defaultImage: instances.DefaultImage(),
 	}
 }
@@ -78,7 +81,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /runtime", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, RuntimeResponse{Flavor: s.flavor, DefaultImage: s.defaultImage})
+		writeJSON(w, http.StatusOK, RuntimeResponse{Flavor: s.flavor, DefaultImage: s.defaultImage, Version: s.version})
 	})
 
 	mux.HandleFunc("GET /instances", s.listInstances)

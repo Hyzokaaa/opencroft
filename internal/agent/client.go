@@ -29,7 +29,10 @@ type Client struct {
 	defaultImage string
 }
 
-func Dial(socket string) (*Client, error) {
+// Dial refuses a version mismatch outright. Two halves of the same binary
+// speaking different protocols produces errors like a bare 404, which tells
+// nobody anything.
+func Dial(socket, version string) (*Client, error) {
 	c := &Client{
 		http: &http.Client{
 			Timeout: 10 * time.Minute, // creating a container is not quick
@@ -46,6 +49,14 @@ func Dial(socket string) (*Client, error) {
 	if err := c.call(context.Background(), http.MethodGet, "/runtime", nil, &runtime); err != nil {
 		return nil, fmt.Errorf("reaching the agent on %s: %w", socket, err)
 	}
+	if runtime.Version != "" && runtime.Version != version {
+		return nil, fmt.Errorf(
+			"the agent is running %s and this half is %s.\n"+
+				"        Both are the same binary, so restart the one left behind:\n"+
+				"            sudo systemctl restart croft-agent croft",
+			runtime.Version, version)
+	}
+
 	c.flavor = runtime.Flavor
 	c.defaultImage = runtime.DefaultImage
 	return c, nil
