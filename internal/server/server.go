@@ -69,6 +69,8 @@ func Handler(deps Deps) http.Handler {
 	mux.HandleFunc("POST /api/hosts/{hostId}/routes", deps.addRoute)
 	mux.HandleFunc("DELETE /api/hosts/{hostId}/routes/{domain}", deps.removeRoute)
 
+	mux.HandleFunc("POST /api/hosts/{hostId}/routes/{domain}/tls", deps.enableTLS)
+
 	mux.HandleFunc("GET /api/hosts/{hostId}/dns", deps.showDNS)
 	mux.HandleFunc("POST /api/hosts/{hostId}/dns", deps.saveDNS)
 

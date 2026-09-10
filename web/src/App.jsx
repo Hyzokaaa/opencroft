@@ -84,6 +84,14 @@ function Dashboard({ onSignOut, onSessionLost }) {
     })
   }
 
+  function enableTLS(domain) {
+    setDialog({
+      title: `Serve ${domain} over https`,
+      url: `/api/hosts/local/routes/${domain}/tls`,
+      method: 'POST',
+    })
+  }
+
   function removeDomain(domain) {
     setDialog({
       title: `Stop serving ${domain}`,
@@ -137,6 +145,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
     onDestroy: destroyContainer,
     onAddDomain: addDomain,
     onRemoveDomain: removeDomain,
+    onEnableTLS: enableTLS,
     instances: data.instances,
   }
 

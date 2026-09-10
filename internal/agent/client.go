@@ -357,3 +357,17 @@ func (c *Client) SaveDNS(ctx context.Context, provider string, values map[string
 	return c.call(ctx, http.MethodPost, "/dns",
 		DNSCredentialsDTO{Provider: provider, Values: values}, nil)
 }
+
+// ── Turning on HTTPS ──────────────────────────────────────────────────────────
+
+func (r *RouteClient) TLSPlan(ctx context.Context, domain string) (plan.Plan, error) {
+	var response PlanResponse
+	path := "/routes/" + url.PathEscape(domain) + "/tls/plan"
+	err := r.client.call(ctx, http.MethodGet, path, nil, &response)
+	return response.Plan, err
+}
+
+func (r *RouteClient) EnableTLS(ctx context.Context, domain string, report func(int, string)) error {
+	return r.client.streamed(ctx, http.MethodPost,
+		"/routes/"+url.PathEscape(domain)+"/tls", nil, report)
+}
