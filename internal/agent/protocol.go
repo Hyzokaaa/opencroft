@@ -60,3 +60,13 @@ type RuntimeResponse struct {
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
+
+type CertificateDTO struct {
+	Domain     string   `json:"domain"`
+	Names      []string `json:"names"`
+	Issuer     string   `json:"issuer"`
+	NotAfter   string   `json:"notAfter"`
+	Path       string   `json:"path"`
+	Managed    bool     `json:"managed"`
+	SelfSigned bool     `json:"selfSigned"`
+}

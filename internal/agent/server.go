@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
+	certificateRepositories "github.com/Hyzokaaa/opencroft/internal/certificate/domain/repositories"
 	instanceEntities "github.com/Hyzokaaa/opencroft/internal/instance/domain/entities"
 	instanceRepositories "github.com/Hyzokaaa/opencroft/internal/instance/domain/repositories"
 	routeRepositories "github.com/Hyzokaaa/opencroft/internal/route/domain/repositories"
@@ -20,6 +22,7 @@ import (
 type Server struct {
 	instances    instanceRepositories.InstanceRepository
 	routes       routeRepositories.RouteRepository
+	certificates certificateRepositories.CertificateRepository
 	host         host.Host
 	flavor       string
 	defaultImage string
@@ -28,12 +31,14 @@ type Server struct {
 func NewServer(
 	instances instanceRepositories.InstanceRepository,
 	routes routeRepositories.RouteRepository,
+	certificates certificateRepositories.CertificateRepository,
 	h host.Host,
 	flavor string,
 ) *Server {
 	return &Server{
 		instances:    instances,
 		routes:       routes,
+		certificates: certificates,
 		host:         h,
 		flavor:       flavor,
 		defaultImage: instances.DefaultImage(),
@@ -83,6 +88,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /instances/{name}/destroy/plan", s.planDestroy)
 	mux.HandleFunc("DELETE /instances/{name}", s.destroy)
 	mux.HandleFunc("GET /routes", s.listRoutes)
+	mux.HandleFunc("GET /certificates", s.listCertificates)
 
 	return mux
 }
@@ -250,4 +256,22 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 
 func writeError(w http.ResponseWriter, status int, err error) {
 	writeJSON(w, status, ErrorResponse{Error: err.Error()})
+}
+
+func (s *Server) listCertificates(w http.ResponseWriter, r *http.Request) {
+	found, err := s.certificates.FindAll(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	out := make([]CertificateDTO, 0, len(found))
+	for _, c := range found {
+		out = append(out, CertificateDTO{
+			Domain: c.Domain, Names: c.Names, Issuer: c.Issuer,
+			NotAfter: c.NotAfter.Format(time.RFC3339), Path: c.Path,
+			Managed: c.Managed, SelfSigned: c.SelfSigned,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
 }

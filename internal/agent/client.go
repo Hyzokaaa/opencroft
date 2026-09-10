@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"time"
 
+	certificateEntities "github.com/Hyzokaaa/opencroft/internal/certificate/domain/entities"
 	instanceEntities "github.com/Hyzokaaa/opencroft/internal/instance/domain/entities"
 	routeEntities "github.com/Hyzokaaa/opencroft/internal/route/domain/entities"
 	routeEnums "github.com/Hyzokaaa/opencroft/internal/route/domain/enums"
@@ -274,4 +275,33 @@ func (c *Client) streamed(ctx context.Context, method, path string, body any, re
 		return errors.New(failure.Error)
 	}
 	return readProgress(bufio.NewReader(res.Body), report)
+}
+
+// CertificateClient reads the certificates the agent can see. They live in
+// root-owned directories, which is exactly why the unprivileged half cannot
+// read them itself.
+type CertificateClient struct {
+	client *Client
+}
+
+func (c *Client) Certificates() *CertificateClient {
+	return &CertificateClient{client: c}
+}
+
+func (r *CertificateClient) FindAll(ctx context.Context) ([]*certificateEntities.Certificate, error) {
+	var dtos []CertificateDTO
+	if err := r.client.call(ctx, http.MethodGet, "/certificates", nil, &dtos); err != nil {
+		return nil, err
+	}
+
+	out := make([]*certificateEntities.Certificate, 0, len(dtos))
+	for _, dto := range dtos {
+		expires, _ := time.Parse(time.RFC3339, dto.NotAfter)
+		out = append(out, certificateEntities.NewCertificate(certificateEntities.CertificateProps{
+			Domain: dto.Domain, Names: dto.Names, Issuer: dto.Issuer,
+			NotAfter: expires, Path: dto.Path, Managed: dto.Managed,
+			SelfSigned: dto.SelfSigned,
+		}))
+	}
+	return out, nil
 }

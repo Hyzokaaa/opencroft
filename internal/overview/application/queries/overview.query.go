@@ -3,7 +3,9 @@ package queries
 
 import (
 	"context"
+	"time"
 
+	certificateServices "github.com/Hyzokaaa/opencroft/internal/certificate/domain/services"
 	instanceServices "github.com/Hyzokaaa/opencroft/internal/instance/domain/services"
 	routeServices "github.com/Hyzokaaa/opencroft/internal/route/domain/services"
 	"github.com/Hyzokaaa/opencroft/internal/shared/reconcile"
@@ -24,6 +26,17 @@ type InstanceView struct {
 	Managed  bool     `json:"managed"`
 }
 
+type CertificateView struct {
+	Domain     string   `json:"domain"`
+	Names      []string `json:"names"`
+	Issuer     string   `json:"issuer"`
+	Expires    string   `json:"expires"`
+	DaysLeft   int      `json:"daysLeft"`
+	Path       string   `json:"path"`
+	Managed    bool     `json:"managed"`
+	SelfSigned bool     `json:"selfSigned"`
+}
+
 type RouteView struct {
 	Domain string `json:"domain"`
 	Target string `json:"target"`
@@ -34,30 +47,40 @@ type RouteView struct {
 }
 
 type OverviewResponse struct {
-	Runtime   string              `json:"runtime"`
-	Version   string              `json:"version"`
-	Demo      bool                `json:"demo"`
-	Instances []InstanceView      `json:"instances"`
-	Routes    []RouteView         `json:"routes"`
-	Findings  []reconcile.Finding `json:"findings"`
+	Runtime      string              `json:"runtime"`
+	Version      string              `json:"version"`
+	Demo         bool                `json:"demo"`
+	Instances    []InstanceView      `json:"instances"`
+	Routes       []RouteView         `json:"routes"`
+	Certificates []CertificateView   `json:"certificates"`
+	Findings     []reconcile.Finding `json:"findings"`
 }
 
 type OverviewQuery struct {
-	listInstances *instanceServices.ListInstances
-	listRoutes    *routeServices.ListRoutes
-	runtime       string
-	version       string
-	demo          bool
+	listInstances    *instanceServices.ListInstances
+	listRoutes       *routeServices.ListRoutes
+	listCertificates *certificateServices.ListCertificates
+	runtime          string
+	version          string
+	demo             bool
 }
 
 func NewOverviewQuery(
 	listInstances *instanceServices.ListInstances,
 	listRoutes *routeServices.ListRoutes,
+	listCertificates *certificateServices.ListCertificates,
 	runtime string,
 	version string,
 	demo bool,
 ) *OverviewQuery {
-	return &OverviewQuery{listInstances: listInstances, listRoutes: listRoutes, runtime: runtime, version: version, demo: demo}
+	return &OverviewQuery{
+		listInstances:    listInstances,
+		listRoutes:       listRoutes,
+		listCertificates: listCertificates,
+		runtime:          runtime,
+		version:          version,
+		demo:             demo,
+	}
 }
 
 func (q *OverviewQuery) Execute(ctx context.Context) (OverviewResponse, error) {
@@ -71,13 +94,19 @@ func (q *OverviewQuery) Execute(ctx context.Context) (OverviewResponse, error) {
 		return OverviewResponse{}, err
 	}
 
+	certs, err := q.listCertificates.Execute(ctx)
+	if err != nil {
+		return OverviewResponse{}, err
+	}
+
 	response := OverviewResponse{
-		Runtime:   q.runtime,
-		Version:   q.version,
-		Demo:      q.demo,
-		Instances: make([]InstanceView, 0, len(instances)),
-		Routes:    make([]RouteView, 0, len(routes)),
-		Findings:  reconcile.Inspect(instances, routes),
+		Runtime:      q.runtime,
+		Version:      q.version,
+		Demo:         q.demo,
+		Instances:    make([]InstanceView, 0, len(instances)),
+		Routes:       make([]RouteView, 0, len(routes)),
+		Certificates: make([]CertificateView, 0, len(certs)),
+		Findings:     reconcile.Inspect(instances, routes, certs),
 	}
 
 	for _, i := range instances {
@@ -107,6 +136,15 @@ func (q *OverviewQuery) Execute(ctx context.Context) (OverviewResponse, error) {
 		response.Routes = append(response.Routes, RouteView{
 			Domain: r.Domain, Target: r.Target, Port: r.Port,
 			SSL: r.SSL, State: string(r.State), File: r.File,
+		})
+	}
+
+	now := time.Now()
+	for _, c := range certs {
+		response.Certificates = append(response.Certificates, CertificateView{
+			Domain: c.Domain, Names: c.Names, Issuer: c.Issuer,
+			Expires: c.NotAfter.Format(time.RFC3339), DaysLeft: c.DaysLeft(now),
+			Path: c.Path, Managed: c.Managed, SelfSigned: c.SelfSigned,
 		})
 	}
 

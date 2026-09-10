@@ -5,7 +5,9 @@ package reconcile
 
 import (
 	"fmt"
+	"time"
 
+	certificates "github.com/Hyzokaaa/opencroft/internal/certificate/domain/entities"
 	instances "github.com/Hyzokaaa/opencroft/internal/instance/domain/entities"
 	instanceEnums "github.com/Hyzokaaa/opencroft/internal/instance/domain/enums"
 	routes "github.com/Hyzokaaa/opencroft/internal/route/domain/entities"
@@ -29,7 +31,8 @@ type Finding struct {
 }
 
 // Inspect never mutates anything. It reports.
-func Inspect(is []*instances.Instance, rs []*routes.Route) []Finding {
+func Inspect(is []*instances.Instance, rs []*routes.Route, cs []*certificates.Certificate) []Finding {
+	now := time.Now()
 	findings := []Finding{}
 
 	byAddress := map[string]*instances.Instance{}
@@ -115,5 +118,53 @@ func Inspect(is []*instances.Instance, rs []*routes.Route) []Finding {
 		}
 	}
 
+	return append(findings, inspectCertificates(cs, now)...)
+}
+
+// inspectCertificates is separate because a certificate is not attached to a
+// container: it belongs to a domain, and expires whether or not anything is
+// pointing at it.
+func inspectCertificates(cs []*certificates.Certificate, now time.Time) []Finding {
+	findings := []Finding{}
+
+	for _, certificate := range cs {
+		days := certificate.DaysLeft(now)
+
+		switch {
+		case certificate.Expired(now):
+			findings = append(findings, Finding{
+				Severity: SeverityError,
+				Kind:     "certificate-expired",
+				Subject:  certificate.Domain,
+				Message:  fmt.Sprintf("The certificate expired %d days ago.", -days),
+				Hint:     "Browsers are refusing this domain right now.",
+			})
+		case days < 7:
+			findings = append(findings, Finding{
+				Severity: SeverityError,
+				Kind:     "certificate-expiring",
+				Subject:  certificate.Domain,
+				Message:  fmt.Sprintf("The certificate expires in %d days.", days),
+				Hint:     "Whatever should be renewing it has not.",
+			})
+		case certificate.NeedsAttention(now):
+			findings = append(findings, Finding{
+				Severity: SeverityWarning,
+				Kind:     "certificate-expiring",
+				Subject:  certificate.Domain,
+				Message:  fmt.Sprintf("The certificate expires in %d days.", days),
+			})
+		}
+
+		if certificate.SelfSigned {
+			findings = append(findings, Finding{
+				Severity: SeverityWarning,
+				Kind:     "certificate-self-signed",
+				Subject:  certificate.Domain,
+				Message:  "This certificate signed itself.",
+				Hint:     "Browsers will warn about it. Fine for a private service, not for a public one.",
+			})
+		}
+	}
 	return findings
 }
