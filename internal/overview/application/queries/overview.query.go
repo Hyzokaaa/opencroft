@@ -7,6 +7,7 @@ import (
 
 	certificateServices "github.com/Hyzokaaa/opencroft/internal/certificate/domain/services"
 	instanceServices "github.com/Hyzokaaa/opencroft/internal/instance/domain/services"
+	routeEntities "github.com/Hyzokaaa/opencroft/internal/route/domain/entities"
 	routeServices "github.com/Hyzokaaa/opencroft/internal/route/domain/services"
 	"github.com/Hyzokaaa/opencroft/internal/shared/reconcile"
 )
@@ -38,12 +39,13 @@ type CertificateView struct {
 }
 
 type RouteView struct {
-	Domain string `json:"domain"`
-	Target string `json:"target"`
-	Port   int    `json:"port"`
-	SSL    bool   `json:"ssl"`
-	State  string `json:"state"`
-	File   string `json:"file"`
+	Domain  string `json:"domain"`
+	Target  string `json:"target"`
+	Port    int    `json:"port"`
+	SSL     bool   `json:"ssl"`
+	State   string `json:"state"`
+	File    string `json:"file"`
+	Answers bool   `json:"answers"`
 }
 
 type OverviewResponse struct {
@@ -136,6 +138,7 @@ func (q *OverviewQuery) Execute(ctx context.Context) (OverviewResponse, error) {
 		response.Routes = append(response.Routes, RouteView{
 			Domain: r.Domain, Target: r.Target, Port: r.Port,
 			SSL: r.SSL, State: string(r.State), File: r.File,
+			Answers: answersOf(r),
 		})
 	}
 
@@ -149,4 +152,11 @@ func (q *OverviewQuery) Execute(ctx context.Context) (OverviewResponse, error) {
 	}
 
 	return response, nil
+}
+
+// answersOf defaults to true when nobody checked, so a host that cannot probe
+// does not paint every route as broken.
+func answersOf(route *routeEntities.Route) bool {
+	answers, checked := route.Answers()
+	return !checked || answers
 }

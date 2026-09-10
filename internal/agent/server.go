@@ -189,6 +189,7 @@ func (s *Server) listRoutes(w http.ResponseWriter, r *http.Request) {
 		out = append(out, RouteDTO{
 			Domain: route.Domain, Target: route.Target, Port: route.Port,
 			SSL: route.SSL, State: string(route.State), File: route.File,
+			Answers: answers(route.Target, route.Port),
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

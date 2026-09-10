@@ -208,12 +208,37 @@ function StepList({ steps }) {
             {i + 1}. {step.describe}
             {step.optional && <span className="text-faint"> — skipped if it fails</span>}
           </p>
-          <pre className="mt-1 overflow-x-auto font-mono text-xs text-ink">
-            {step.file ? `cat > ${step.file}` : step.argv.join(' ')}
-          </pre>
+          {step.file ? <FileStep step={step} /> : (
+            <pre className="mt-1 overflow-x-auto font-mono text-xs text-ink">{step.argv.join(' ')}</pre>
+          )}
         </li>
       ))}
     </ol>
+  )
+}
+
+// A whole vhost inline pushes everything else off the screen. The file is
+// still there in full, one click away — hiding it would be the dishonest fix.
+function FileStep({ step }) {
+  const [open, setOpen] = useState(false)
+  const lines = (step.content ?? '').split('\n').length
+
+  return (
+    <>
+      <pre className="mt-1 overflow-x-auto font-mono text-xs text-ink">{`cat > ${step.file}`}</pre>
+      <button
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="mt-1 font-mono text-xs text-faint transition hover:text-muted"
+      >
+        {open ? '− hide contents' : `+ show contents (${lines} lines)`}
+      </button>
+      {open && (
+        <pre className="mt-1 max-h-72 overflow-auto rounded border border-edge bg-panel px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted">
+          {step.content}
+        </pre>
+      )}
+    </>
   )
 }
 

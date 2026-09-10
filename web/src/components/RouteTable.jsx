@@ -49,6 +49,11 @@ export default function RouteTable({ routes, instances, problems, highlighted, o
               <td className="px-4 py-2.5 text-xs">
                 <span className="font-mono">{target ?? r.target}</span>
                 <span className="text-faint">:{r.port}</span>
+                {/* Configured correctly and still returning 502 is a real
+                    state, and the one a visitor notices first. */}
+                {r.answers === false && (
+                  <span className="ml-2 text-problem">nothing listening</span>
+                )}
               </td>
 
               {!compact && (

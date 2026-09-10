@@ -78,6 +78,18 @@ func Inspect(is []*instances.Instance, rs []*routes.Route, cs []*certificates.Ce
 			continue
 		}
 
+		// A route can be perfectly configured, with a valid certificate, and
+		// still return 502 to everyone because nothing is listening.
+		if answers, checked := route.Answers(); checked && !answers && target.Status == instanceEnums.StatusRunning {
+			findings = append(findings, Finding{
+				Severity: SeverityError,
+				Kind:     "nothing-listening",
+				Subject:  route.Domain,
+				Message:  fmt.Sprintf("Nothing is listening on %s:%d.", route.Target, route.Port),
+				Hint:     "The container is running, but the application inside it is not — visitors get 502.",
+			})
+		}
+
 		if target.Status != instanceEnums.StatusRunning {
 			findings = append(findings, Finding{
 				Severity: SeverityError,

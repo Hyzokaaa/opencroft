@@ -13,6 +13,9 @@ type Route struct {
 	State        enums.ManagedState
 	File         string
 	Content      string
+
+	// nil when nobody checked whether anything is listening.
+	answers *bool
 }
 
 type RouteProps struct {
@@ -51,4 +54,16 @@ func (r *Route) CertDir() string {
 		return r.Certificates
 	}
 	return "/var/lib/croft/certificates/" + r.Domain
+}
+
+// Answers is false when nothing accepts a connection where this route points.
+// It is a fact about the world, not about configuration, so it is only known
+// on the side that can open a socket.
+func (r *Route) SetAnswers(answers bool) { r.answers = &answers }
+
+func (r *Route) Answers() (bool, bool) {
+	if r.answers == nil {
+		return false, false
+	}
+	return *r.answers, true
 }

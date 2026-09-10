@@ -42,6 +42,8 @@ type RouteDTO struct {
 	SSL    bool   `json:"ssl"`
 	State  string `json:"state"`
 	File   string `json:"file"`
+	// Answers is false when nothing accepts a connection at Target:Port.
+	Answers bool `json:"answers"`
 }
 
 type PlanResponse struct {
