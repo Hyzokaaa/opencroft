@@ -262,16 +262,28 @@ function Progress({ steps, events, error, done }) {
         </span>
       </div>
 
-      <ol className="mt-4 space-y-1.5">
-        {events.map((event, i) => (
+      <ol className="mt-4 space-y-2">
+        {group(events).map((entry, i) => (
           <li key={i} className="flex gap-2 text-xs">
-            <span className={event.failed ? 'text-problem' : 'text-running'}>
-              {event.failed ? '✕' : '✓'}
+            <span className={entry.failed ? 'text-problem' : 'text-running'}>
+              {entry.failed ? '✕' : '✓'}
             </span>
-            <div className="min-w-0">
-              <p className={event.failed ? 'text-problem' : ''}>{event.text}</p>
-              {event.command && (
-                <pre className="overflow-x-auto font-mono text-[11px] text-faint">{event.command}</pre>
+            <div className="min-w-0 flex-1">
+              <p className={entry.failed ? 'text-problem' : ''}>{entry.text}</p>
+              {entry.command && (
+                <pre className="overflow-x-auto font-mono text-[11px] text-faint">{entry.command}</pre>
+              )}
+              {/* What the step said while it worked. Obtaining a certificate
+                  talks to the authority and waits for DNS; that is one step
+                  narrating, not several steps. */}
+              {entry.details.length > 0 && (
+                <ul className="mt-1 space-y-0.5 border-l border-edge pl-2.5">
+                  {entry.details.map((detail, j) => (
+                    <li key={j} className="text-[11px] text-muted">
+                      {detail}
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
           </li>
@@ -281,4 +293,30 @@ function Progress({ steps, events, error, done }) {
       {done && !error && <p className="mt-4 text-xs text-running">Finished.</p>}
     </div>
   )
+}
+
+// group folds repeated reports for the same step into one entry. A step that
+// narrates while it works is still one step, and repeating its command once
+// per message suggests it ran that many times.
+function group(events) {
+  const entries = []
+
+  for (const event of events) {
+    const last = entries[entries.length - 1]
+
+    if (last && event.step > 0 && last.step === event.step) {
+      last.details.push(event.text)
+      if (event.failed) last.failed = true
+      continue
+    }
+
+    entries.push({
+      step: event.step,
+      text: event.text,
+      command: event.command,
+      failed: event.failed,
+      details: [],
+    })
+  }
+  return entries
 }
