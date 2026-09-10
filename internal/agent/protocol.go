@@ -71,3 +71,13 @@ type CertificateDTO struct {
 	Managed    bool     `json:"managed"`
 	SelfSigned bool     `json:"selfSigned"`
 }
+
+// DNSCredentialsDTO travels in one direction only. The response carries which
+// provider is configured and where it was read from — never the values.
+type DNSCredentialsDTO struct {
+	Provider   string            `json:"provider"`
+	Source     string            `json:"source,omitempty"`
+	Configured bool              `json:"configured"`
+	Keys       []string          `json:"keys,omitempty"`
+	Values     map[string]string `json:"values,omitempty"`
+}

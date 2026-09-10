@@ -98,6 +98,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /routes", s.writeRoute)
 	mux.HandleFunc("GET /routes/{domain}/remove/plan", s.planRemoveRoute)
 	mux.HandleFunc("DELETE /routes/{domain}", s.removeRoute)
+	mux.HandleFunc("GET /dns", s.showDNS)
+	mux.HandleFunc("POST /dns", s.saveDNS)
 
 	return mux
 }

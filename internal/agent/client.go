@@ -343,3 +343,17 @@ func (r *CertificateClient) FindAll(ctx context.Context) ([]*certificateEntities
 	}
 	return out, nil
 }
+
+// DNS reports which provider is configured, without the credentials.
+func (c *Client) DNS(ctx context.Context) (DNSCredentialsDTO, error) {
+	var response DNSCredentialsDTO
+	err := c.call(ctx, http.MethodGet, "/dns", nil, &response)
+	return response, err
+}
+
+// SaveDNS hands credentials to the privileged side. They pass through this
+// process in memory and are never stored or returned here.
+func (c *Client) SaveDNS(ctx context.Context, provider string, values map[string]string) error {
+	return c.call(ctx, http.MethodPost, "/dns",
+		DNSCredentialsDTO{Provider: provider, Values: values}, nil)
+}

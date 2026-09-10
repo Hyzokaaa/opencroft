@@ -75,6 +75,8 @@ func main() {
 		agentCommand(ctx, os.Args[2:])
 	case "cert":
 		cert(ctx, os.Args[2:])
+	case "dns":
+		dnsCommand(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println("croft " + version)
 	default:
@@ -94,6 +96,7 @@ Usage:
   croft update [--check]                install the latest release
   croft agent                           the privileged half, over a unix socket
   croft cert issue <domain>             obtain a TLS certificate
+  croft dns show | set <provider>        DNS credentials, for the dns-01 challenge
   croft version
 
   croft user add <name>                 create a user who can sign in
@@ -109,6 +112,7 @@ Every command works without a terminal: pass flags and read --json.
 // deps wires concrete implementations. The CLI and the HTTP API share it, so
 // there is only ever one path into the domain.
 type deps struct {
+	dns          server.DNSConfig
 	instances    instanceRepositories.InstanceRepository
 	routes       routeRepositories.RouteRepository
 	certificates certificateRepositories.CertificateRepository
@@ -142,6 +146,7 @@ func wire(ctx context.Context, demo bool, nginxDir, socket string) deps {
 				instances:    client,
 				routes:       client.Routing(),
 				certificates: client.Certificates(),
+				dns:          agentDNS{client: client},
 				runtime:      client.Flavor(),
 				version:      version,
 			}
@@ -164,6 +169,7 @@ func wire(ctx context.Context, demo bool, nginxDir, socket string) deps {
 		instances:    runtime.NewCLIInstanceRepository(h, bin, flavor),
 		routes:       nginx.NewNginxRouteRepository(h, nginxDir),
 		certificates: pemCertificates.NewPEMCertificateRepository(h),
+		dns:          localDNS{},
 		runtime:      string(flavor),
 		version:      version,
 	}
@@ -201,6 +207,7 @@ func serve(ctx context.Context, args []string) {
 		AddRoute:        routeServices.NewAddRoute(d.routes, d.instances),
 		Host:            host.NewLocal(),
 		Jobs:            jobs,
+		DNS:             d.dns,
 		Simulated:       d.demo,
 	})
 
@@ -755,4 +762,104 @@ func cert(ctx context.Context, args []string) {
 		fmt.Println("\n  This is a staging certificate. Browsers will reject it — that is expected.")
 		fmt.Println("  Re-run without --staging for one they accept.")
 	}
+}
+
+// ── DNS credentials ───────────────────────────────────────────────────────────
+
+func dnsCommand(args []string) {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: croft dns show | croft dns set <ovh|cloudflare>")
+		os.Exit(1)
+	}
+
+	switch args[0] {
+	case "show":
+		credentials, err := acme.LoadCredentials()
+		if err != nil {
+			fmt.Println("No DNS credentials configured.")
+			fmt.Println("Set them once with:  sudo croft dns set ovh")
+			return
+		}
+		// The values are secrets; only where they came from is printed.
+		fmt.Printf("  Provider: %s\n  Read from: %s\n", credentials.Provider, credentials.Source)
+
+	case "set":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "[ERROR] Which provider? croft dns set <ovh|cloudflare>")
+			os.Exit(1)
+		}
+		if os.Geteuid() != 0 {
+			fmt.Fprintln(os.Stderr, "[ERROR] Credentials are written where only root can read them. Try sudo.")
+			os.Exit(1)
+		}
+
+		provider := args[1]
+		keys := acme.Keys(provider)
+		if keys == nil {
+			fmt.Fprintf(os.Stderr, "[ERROR] croft does not know %q; it knows ovh and cloudflare\n", provider)
+			os.Exit(1)
+		}
+
+		fmt.Printf("\n  Credentials for %s. They are stored at %s, readable only by root.\n\n",
+			provider, acme.CredentialsPath)
+
+		values := map[string]string{}
+		reader := bufio.NewReader(os.Stdin)
+		for _, key := range keys {
+			fmt.Printf("  %s: ", key)
+			line, _ := reader.ReadString('\n')
+			values[key] = strings.TrimSpace(line)
+		}
+
+		if err := acme.Save(provider, values); err != nil {
+			fmt.Fprintln(os.Stderr, "[ERROR]", err)
+			os.Exit(1)
+		}
+		fmt.Printf("\n[OK] Stored. Issue with:  croft cert issue <domain> --dns\n")
+
+	default:
+		fmt.Fprintln(os.Stderr, "Usage: croft dns show | croft dns set <ovh|cloudflare>")
+		os.Exit(1)
+	}
+}
+
+// ── DNS credentials, from either side ─────────────────────────────────────────
+
+// agentDNS forwards to the privileged half. localDNS is for a host with no
+// agent, where this process is already root.
+type agentDNS struct{ client *agent.Client }
+
+func (a agentDNS) Show(ctx context.Context) (server.DNSStatus, error) {
+	dto, err := a.client.DNS(ctx)
+	if err != nil {
+		return server.DNSStatus{}, err
+	}
+	return server.DNSStatus{
+		Provider: dto.Provider, Source: dto.Source,
+		Configured: dto.Configured, Keys: dto.Keys,
+	}, nil
+}
+
+func (a agentDNS) Save(ctx context.Context, provider string, values map[string]string) error {
+	return a.client.SaveDNS(ctx, provider, values)
+}
+
+type localDNS struct{}
+
+func (localDNS) Show(context.Context) (server.DNSStatus, error) {
+	status := server.DNSStatus{Keys: acme.Keys("ovh")}
+
+	credentials, err := acme.LoadCredentials()
+	if err != nil {
+		return status, nil
+	}
+	status.Provider = credentials.Provider
+	status.Source = credentials.Source
+	status.Configured = true
+	status.Keys = acme.Keys(credentials.Provider)
+	return status, nil
+}
+
+func (localDNS) Save(_ context.Context, provider string, values map[string]string) error {
+	return acme.Save(provider, values)
 }

@@ -6,6 +6,7 @@ import InstanceTable from './components/InstanceTable.jsx'
 import RouteTable from './components/RouteTable.jsx'
 import Card from './components/Card.jsx'
 import CertificateTable from './components/CertificateTable.jsx'
+import Settings from './components/Settings.jsx'
 import Login from './components/Login.jsx'
 import PlanDialog from './components/PlanDialog.jsx'
 import { useOverview, useCommandMode, useAuth } from './lib/useOverview.js'
@@ -240,7 +241,9 @@ function Dashboard({ onSignOut, onSessionLost }) {
         </Card>
       )}
 
-      {["activity", "settings"].includes(section) && <NotBuilt section={section} />}
+      {section === 'settings' && <Settings />}
+
+      {section === 'activity' && <NotBuilt section={section} />}
 
       {dialog && (
         <PlanDialog

@@ -96,7 +96,16 @@ func (i *Issuer) Issue(ctx context.Context, request services.IssueRequest, repor
 	switch request.Challenge {
 	case services.ChallengeDNS:
 		report("Publishing a TXT record for the DNS challenge")
-		provider, err := dnsProvider(os.Getenv("CROFT_DNS_PROVIDER"))
+		credentials, err := LoadCredentials()
+		if err != nil {
+			return nil, err
+		}
+		if err := credentials.Apply(); err != nil {
+			return nil, err
+		}
+		report("Using the " + credentials.Provider + " credentials from " + credentials.Source)
+
+		provider, err := dnsProvider(credentials.Provider)
 		if err != nil {
 			return nil, err
 		}
@@ -240,9 +249,17 @@ func dnsProvider(name string) (challenge.Provider, error) {
 		return ovh.NewDNSProvider()
 	case "cloudflare":
 		return cloudflare.NewDNSProvider()
-	case "":
-		return nil, errors.New("set CROFT_DNS_PROVIDER to ovh or cloudflare, with that provider's credentials in the environment")
 	default:
 		return nil, fmt.Errorf("no DNS provider called %q; croft knows ovh and cloudflare", name)
 	}
+}
+
+// DNSAvailable reports whether a DNS challenge could be attempted at all.
+// Offering a button that cannot work is worse than not offering it.
+func DNSAvailable() (string, bool) {
+	credentials, err := LoadCredentials()
+	if err != nil {
+		return "", false
+	}
+	return credentials.Provider, true
 }
