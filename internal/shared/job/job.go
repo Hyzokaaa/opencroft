@@ -50,6 +50,35 @@ type Job struct {
 
 	mu        sync.Mutex
 	listeners map[chan Event]struct{}
+
+	// stop cancels the context the work runs under. Stopping a plan halfway
+	// leaves the machine halfway, which is why it is the person watching who
+	// decides — not a timeout, and not us.
+	stop context.CancelFunc
+}
+
+// Cancel stops the work where it stands.
+//
+// What it cannot promise is tidiness: a plan abandoned halfway has applied some
+// of its steps and not the rest, and a command already running inside a
+// container may outlive the one that launched it. Saying so is better than a
+// button that pretends otherwise — and the snapshot taken at step one is still
+// there.
+func (r *Runner) Cancel(id string) bool {
+	j, ok := r.job(id)
+	if !ok {
+		return false
+	}
+
+	j.mu.Lock()
+	stop, running := j.stop, j.Status == StatusRunning
+	j.mu.Unlock()
+
+	if !running || stop == nil {
+		return false
+	}
+	stop()
+	return true
 }
 
 func (j *Job) snapshotLocked() Snapshot {
@@ -96,6 +125,10 @@ func (r *Runner) Start(kind, subject string, p plan.Plan, work func(ctx context.
 		// abandon a container halfway through being created.
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
+
+		j.mu.Lock()
+		j.stop = cancel
+		j.mu.Unlock()
 
 		err := work(ctx, func(step int, text string) {
 			command := ""

@@ -4,6 +4,7 @@ package container
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +27,11 @@ const Keep = 3
 // Budget is how long readiness is waited for before a deployment is called
 // failed.
 const Budget = 30
+
+// Patience is how long a step that has to finish is given. Installing a large
+// project takes minutes; a command that was never going to return takes for
+// ever, and telling the two apart is the whole point of having a limit.
+const Patience = 900
 
 type Planner struct {
 	bin       string
@@ -56,6 +62,18 @@ func (p *Planner) exec(describe, command string) plan.Step {
 	return plan.Command(describe, p.bin, "exec", p.container, "--", "sh", "-lc", command)
 }
 
+// bounded is for the steps that have to finish: installing and building.
+//
+// A command that never returns — a server put in the wrong box — would
+// otherwise hold the whole deployment until something far away gives up, with
+// nothing said. `timeout` is visible in the plan and, because it runs inside
+// the container, it also kills the process rather than leaving it orphaned
+// when we stop waiting.
+func (p *Planner) bounded(describe, command string) plan.Step {
+	return plan.Command(describe, p.bin, "exec", p.container, "--",
+		"timeout", strconv.Itoa(Patience), "sh", "-lc", command)
+}
+
 // Deploy is the whole thing, in the order it has to happen.
 //
 // The snapshot is first and is not optional. A deployment that breaks the
@@ -83,10 +101,10 @@ func (p *Planner) Deploy(d Deployment) plan.Plan {
 	}
 
 	for _, command := range service.Install {
-		steps = append(steps, p.exec("Install dependencies", p.inPath(service, command)))
+		steps = append(steps, p.bounded("Install dependencies", p.inPath(service, command)))
 	}
 	for _, command := range service.Build {
-		steps = append(steps, p.exec("Build", p.inPath(service, command)))
+		steps = append(steps, p.bounded("Build", p.inPath(service, command)))
 	}
 
 	steps = append(steps,

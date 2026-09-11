@@ -200,12 +200,12 @@ function Found({ service, why, onChange, onDeploy }) {
           and what gets written onto the container.
         </p>
 
-        <Field label="Install" value={service.install} onChange={set('install')} mono
+        <Field label="Install — has to finish" value={service.install} onChange={set("install")} mono
           hint="Run in the checkout. Several commands joined with &&." />
-        <Field label="Build" value={service.build} onChange={set('build')} mono
+        <Field label="Build — has to finish" value={service.build} onChange={set("build")} mono
           hint="Left empty, no build step happens." />
-        <Field label="Start" value={service.start} onChange={set('start')} mono
-          hint="What systemd runs, and restarts if it exits." />
+        <Field label="Start — keeps running" value={service.start} onChange={set("start")} mono
+          hint="What systemd runs, and restarts if it exits. The server goes here, not above." />
 
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Port it listens on" type="number" value={service.port} onChange={set('port')} />

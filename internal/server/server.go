@@ -93,6 +93,7 @@ func Handler(deps Deps) http.Handler {
 
 	mux.HandleFunc("GET /api/jobs/{id}", deps.showJob)
 	mux.HandleFunc("GET /api/jobs/{id}/events", deps.streamJob)
+	mux.HandleFunc("POST /api/jobs/{id}/cancel", deps.cancelJob)
 
 	deps.Auth.Register(mux)
 	mux.Handle("/", staticHandler())

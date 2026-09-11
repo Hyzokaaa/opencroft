@@ -11,7 +11,9 @@ export default function PlanDialog({ request, onClose, onFinished, onResult }) {
   const [events, setEvents] = useState([])
   const [error, setError] = useState(null)
   const [done, setDone] = useState(null)
+  const [stopping, setStopping] = useState(false)
   const stream = useRef(null)
+  const job = useRef(null)
 
   useEffect(() => {
     if (stage === 'loading') askForPlan(values)
@@ -66,7 +68,9 @@ export default function PlanDialog({ request, onClose, onFinished, onResult }) {
         return
       }
 
-      // The work belongs to the daemon. Closing this only stops watching.
+      // The work belongs to the daemon. Closing this only stops watching it —
+      // stopping it is a separate button, because they are separate things.
+      job.current = payload.jobId
       const source = new EventSource(`/api/jobs/${payload.jobId}/events`)
       stream.current = source
 
@@ -80,14 +84,63 @@ export default function PlanDialog({ request, onClose, onFinished, onResult }) {
         setDone(true)
         onFinished?.()
       })
-      source.onerror = () => source.close()
+
+      // Losing the stream used to be swallowed, which left this sitting at
+      // 0/N for ever with nothing said. The work is the daemon's, so the
+      // honest thing is to go and ask it what happened.
+      source.onerror = () => {
+        source.close()
+        if (!done) askTheDaemon(payload.jobId)
+      }
     } catch (e) {
       setError(e.message)
       setStage('error')
     }
   }
 
+  // askTheDaemon is what happens when the stream breaks. The job record holds
+  // the whole story, so a lost connection costs the live narration and nothing
+  // else — and a job that is still running says so rather than looking stuck.
+  async function askTheDaemon(jobId) {
+    try {
+      const res = await fetch(`/api/jobs/${jobId}`)
+      const job = await res.json()
+
+      if (Array.isArray(job.events)) setEvents(job.events)
+
+      if (job.status === 'failed') {
+        setError(job.error ?? 'It stopped, and the daemon did not say why.')
+        return
+      }
+      if (job.status === 'done') {
+        setDone(true)
+        onFinished?.()
+        return
+      }
+      setError(
+        'Lost contact with the daemon while watching this. It is still running — ' +
+          'reopen the panel to see where it got to.',
+      )
+    } catch {
+      setError('Lost contact with the daemon while watching this, and could not ask it what happened.')
+    }
+  }
+
+  // Closing this window and stopping the work are different things, and until
+  // now only one of them existed. Stopping leaves the machine halfway through
+  // a plan — which is why it says so, and why the snapshot from step one is
+  // worth mentioning at exactly that moment.
+  async function stop() {
+    setStopping(true)
+    try {
+      await fetch(`/api/jobs/${job.current}/cancel`, { method: 'POST' })
+    } catch {
+      setError('Could not reach the daemon to stop it.')
+    }
+  }
+
   const steps = plan?.plan?.steps ?? []
+  const running = stage === 'running' && !done && !error
 
   return (
     <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/60 px-4 py-10">
@@ -136,6 +189,8 @@ export default function PlanDialog({ request, onClose, onFinished, onResult }) {
         <footer className="flex items-center justify-between gap-3 border-t border-edge px-5 py-3">
           <p className="text-xs text-faint">
             {stage === 'plan' && `${steps.length} command${steps.length === 1 ? '' : 's'}`}
+            {running &&
+              'Stopping leaves the plan half applied. The snapshot from step one is still there.'}
           </p>
 
           <div className="flex gap-2">
@@ -143,8 +198,18 @@ export default function PlanDialog({ request, onClose, onFinished, onResult }) {
               onClick={onClose}
               className="rounded border border-edge px-3 py-1.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
             >
-              {done ? 'Close' : 'Cancel'}
+              {done ? 'Close' : running ? 'Leave it running' : 'Cancel'}
             </button>
+
+            {running && (
+              <button
+                onClick={stop}
+                disabled={stopping}
+                className="rounded border border-problem/50 bg-problem/10 px-3 py-1.5 text-xs text-problem transition hover:bg-problem/15 disabled:opacity-40"
+              >
+                {stopping ? 'Stopping…' : 'Stop it'}
+              </button>
+            )}
 
             {stage === 'form' && (
               <button
@@ -289,6 +354,12 @@ function Progress({ steps, events, error, done }) {
           {current}/{steps.length}
         </span>
       </div>
+
+      {/* Silence and being stuck look identical, and only one of them is
+          worth worrying about. */}
+      {events.length === 0 && !error && (
+        <p className="mt-4 text-xs text-muted">Waiting for the first step to report&hellip;</p>
+      )}
 
       <ol className="mt-4 space-y-2">
         {group(events).map((entry, i) => (

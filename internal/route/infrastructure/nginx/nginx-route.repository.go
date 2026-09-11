@@ -205,6 +205,13 @@ func render(route *entities.Route) string {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Anything that streams — progress while a plan runs, logs as they
+        # arrive — comes event by event or not at all. Buffering holds it all
+        # back until the work finishes, and the default read timeout would cut
+        # a quiet connection off after a minute.
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
     }
 }
 `, route.Domain, acmeChallenge, route.Target, route.Port)
@@ -231,6 +238,13 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Anything that streams — progress while a plan runs, logs as they
+        # arrive — comes event by event or not at all. Buffering holds it all
+        # back until the work finishes, and the default read timeout would cut
+        # a quiet connection off after a minute.
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
     }
 }
 `, route.Domain, acmeChallenge, route.Domain, route.CertDir(), route.CertDir(), route.Target, route.Port)

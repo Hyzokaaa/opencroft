@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os/exec"
 	"regexp"
 	"sort"
 	"strconv"
@@ -642,7 +643,7 @@ func (s *Server) deploy(w http.ResponseWriter, r *http.Request) {
 				}
 				// Remembering a failed deployment would make the panel show
 				// commands that are not what is running.
-				return fmt.Errorf("%s: %w", step.Describe, err)
+				return explain(step, err)
 			}
 		}
 
@@ -806,4 +807,26 @@ func (s *Server) rollback(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	})
+}
+
+// timedOut is the exit code `timeout` uses when it had to kill something.
+const timedOut = 124
+
+// explain turns a step's failure into something that says what to do about it.
+//
+// The one worth naming is a command that never returns. Install and Build have
+// to finish; the one that keeps running is Start. Putting a server in the
+// wrong box is an easy mistake and `exit status 124` is no help at all in
+// working out that that is what happened.
+func explain(step plan.Step, err error) error {
+	var exit *exec.ExitError
+
+	if errors.As(err, &exit) && exit.ExitCode() == timedOut {
+		return fmt.Errorf(
+			"%s did not finish within %d minutes, so it was stopped.\n"+
+				"A command here has to finish — the one that keeps running belongs in Start.\n"+
+				"    %s",
+			step.Describe, container.Patience/60, step.Shell())
+	}
+	return fmt.Errorf("%s: %w", step.Describe, err)
 }

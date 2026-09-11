@@ -326,3 +326,29 @@ func withEnv(service *entities.Service) *entities.Service {
 func when(hour int) time.Time {
 	return time.Date(2026, 9, 11, hour, 0, 0, 0, time.UTC)
 }
+
+// A command that never returns — a server typed into the wrong box — would
+// otherwise hold the deployment until something far away gave up, with nothing
+// said. The limit runs inside the container, so it kills the process too
+// rather than leaving it orphaned.
+func TestTheStepsThatMustFinishAreGivenALimit(t *testing.T) {
+	for _, step := range deploy(t, nodeService()).Steps {
+		mustFinish := step.Describe == "Install dependencies" || step.Describe == "Build"
+
+		bounded := len(step.Argv) > 3 && step.Argv[3] == "--" && step.Argv[4] == "timeout"
+		if mustFinish && !bounded {
+			t.Errorf("%q could run for ever: %v", step.Describe, step.Argv)
+		}
+		if !mustFinish && bounded {
+			t.Errorf("%q is limited and should not be: %v", step.Describe, step.Argv)
+		}
+	}
+}
+
+// The one that keeps running is the unit, and systemd is what watches it.
+// A limit there would stop the service itself.
+func TestTheServiceItselfIsNotLimited(t *testing.T) {
+	if strings.Contains(text(deploy(t, nodeService())), "timeout 900 sh -lc systemctl") {
+		t.Error("starting the service is on a clock")
+	}
+}

@@ -164,6 +164,12 @@ func (d Deps) streamJob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+
+	// nginx buffers proxied responses by default, which holds every event back
+	// until the work finishes and leaves the panel showing 0/N throughout. This
+	// header turns that off for this response alone, so it works behind a vhost
+	// we wrote and behind one somebody else did.
+	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
@@ -307,4 +313,23 @@ func routeStatusFor(err error) int {
 	default:
 		return http.StatusInternalServerError
 	}
+}
+
+// cancelJob stops work that is under way.
+//
+// It is honest about what that means: a plan abandoned halfway has applied
+// some of its steps and not the rest. The snapshot taken at step one is still
+// there, and going back to it is a separate decision — made by a person, not
+// by us on their behalf.
+func (d Deps) cancelJob(w http.ResponseWriter, r *http.Request) {
+	if d.ReadOnly {
+		writeError(w, http.StatusForbidden, errors.New("this instance is read-only"))
+		return
+	}
+
+	if !d.Jobs.Cancel(r.PathValue("id")) {
+		writeError(w, http.StatusNotFound, errors.New("no such job, or it had already finished"))
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
