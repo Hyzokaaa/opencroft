@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import PlanDialog from './PlanDialog.jsx'
+import EnvEditor, { toObject } from './EnvEditor.jsx'
 
 // Deploying is two plans, not one, because you cannot know how to build code
 // you have not seen. First: "I am going to look at the repository" — the git
@@ -10,21 +11,22 @@ import PlanDialog from './PlanDialog.jsx'
 // does; we just do it where you can see it and change it.
 export default function DeployDialog({ container, onClose, onFinished }) {
   const [stage, setStage] = useState('source')
-  const [source, setSource] = useState({ repo: '', branch: 'main', path: '/srv/app' })
-  const [app, setApp] = useState(null)
+  const [source, setSource] = useState({ repo: '', branch: 'main', name: '', path: '' })
+  const [service, setService] = useState(null)
   const [why, setWhy] = useState('')
   const [error, setError] = useState(null)
 
-  // The inspect plan is approved through the very same dialog every other
-  // write uses. Nothing about this flow gets a shortcut past the plan.
+  const name = source.name || guessName(source.repo)
+  const asked = { ...source, name }
+
   if (stage === 'inspecting') {
     return (
       <PlanDialog
         request={{
           title: `Look at ${source.repo}`,
-          url: `/api/hosts/local/instances/${container.name}/inspect`,
+          url: `/api/hosts/local/instances/${container.name}/services/inspect`,
           method: 'POST',
-          defaults: source,
+          defaults: asked,
           // The answer is a detection, not a job, so the dialog hands it back
           // instead of watching a stream.
           immediate: true,
@@ -33,13 +35,17 @@ export default function DeployDialog({ container, onClose, onFinished }) {
         onClose={onClose}
         onResult={(detection) => {
           setWhy(detection.why ?? '')
-          setApp({
+          setService({
+            ...asked,
             install: (detection.install ?? []).join(' && '),
             build: (detection.build ?? []).join(' && '),
             start: detection.start ?? '',
             runtime: detection.runtime ?? '',
             port: detection.port ?? 0,
             packages: (detection.packages ?? []).join(' '),
+            env: '',
+            health: '',
+            contains: '',
           })
           setStage('found')
         }}
@@ -51,17 +57,22 @@ export default function DeployDialog({ container, onClose, onFinished }) {
     return (
       <PlanDialog
         request={{
-          title: `Deploy to ${container.name}`,
-          url: `/api/hosts/local/instances/${container.name}/deploy`,
+          title: `Deploy ${service.name} to ${container.name}`,
+          url: `/api/hosts/local/instances/${container.name}/services/deploy`,
           method: 'POST',
           defaults: {
-            ...source,
-            install: split(app.install),
-            build: split(app.build),
-            start: app.start.trim(),
-            runtime: app.runtime,
-            port: Number(app.port) || 0,
-            packages: app.packages.split(/\s+/).filter(Boolean),
+            name: service.name,
+            repo: service.repo,
+            branch: service.branch,
+            path: service.path,
+            install: split(service.install),
+            build: split(service.build),
+            start: service.start.trim(),
+            runtime: service.runtime,
+            port: Number(service.port) || 0,
+            packages: service.packages.split(/\s+/).filter(Boolean),
+            env: toObject(service.env),
+            health: { path: service.health.trim(), contains: service.contains.trim(), status: 0 },
           },
         }}
         onClose={onClose}
@@ -75,6 +86,7 @@ export default function DeployDialog({ container, onClose, onFinished }) {
       {stage === 'source' && (
         <Source
           value={source}
+          name={name}
           onChange={setSource}
           error={error}
           onSubmit={() => {
@@ -89,10 +101,16 @@ export default function DeployDialog({ container, onClose, onFinished }) {
       )}
 
       {stage === 'found' && (
-        <Found app={app} why={why} onChange={setApp} onDeploy={() => setStage('deploying')} />
+        <Found service={service} why={why} onChange={setService} onDeploy={() => setStage('deploying')} />
       )}
     </Frame>
   )
+}
+
+// The repository name is what anybody would have typed anyway.
+function guessName(repo) {
+  const last = (repo ?? '').replace(/\/+$/, '').split('/').pop() ?? ''
+  return last.replace(/\.git$/, '').toLowerCase()
 }
 
 function split(joined) {
@@ -115,7 +133,7 @@ function Frame({ title, onClose, children }) {
   )
 }
 
-function Source({ value, onChange, error, onSubmit }) {
+function Source({ value, name, onChange, error, onSubmit }) {
   return (
     <>
       <form onSubmit={(e) => { e.preventDefault(); onSubmit() }} className="space-y-3 px-5 py-4">
@@ -128,10 +146,18 @@ function Source({ value, onChange, error, onSubmit }) {
           onChange={(repo) => onChange({ ...value, repo })}
         />
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-3">
           <Field label="Branch" value={value.branch} onChange={(branch) => onChange({ ...value, branch })} />
           <Field
-            label="Where it lands in the container"
+            label="Call it"
+            placeholder={name || 'app'}
+            value={value.name}
+            onChange={(n) => onChange({ ...value, name: n })}
+            hint="Names its unit and its snapshots."
+          />
+          <Field
+            label="Where it lands"
+            placeholder={name ? `/srv/${name}` : '/srv/app'}
             value={value.path}
             onChange={(path) => onChange({ ...value, path })}
           />
@@ -157,16 +183,16 @@ function Source({ value, onChange, error, onSubmit }) {
   )
 }
 
-// Everything here is a text box on purpose. What was detected is a suggestion,
-// and a suggestion you cannot edit is a decision made behind your back.
-function Found({ app, why, onChange, onDeploy }) {
-  const set = (key) => (v) => onChange({ ...app, [key]: v })
+// Everything here is editable on purpose. What was detected is a suggestion,
+// and a suggestion you cannot change is a decision made behind your back.
+function Found({ service, why, onChange, onDeploy }) {
+  const set = (key) => (v) => onChange({ ...service, [key]: v })
 
   return (
     <>
       <div className="space-y-3 px-5 py-4">
         <p className="text-sm">
-          {app.runtime ? `Detected ${app.runtime}.` : 'Nothing recognisable at the root.'}{' '}
+          {service.runtime ? `Detected ${service.runtime}.` : 'Nothing recognisable at the root.'}{' '}
           <span className="text-muted">{why}</span>
         </p>
         <p className="text-xs text-faint">
@@ -174,29 +200,44 @@ function Found({ app, why, onChange, onDeploy }) {
           and what gets written onto the container.
         </p>
 
-        <Field label="Install" value={app.install} onChange={set('install')} mono
+        <Field label="Install" value={service.install} onChange={set('install')} mono
           hint="Run in the checkout. Several commands joined with &&." />
-        <Field label="Build" value={app.build} onChange={set('build')} mono
+        <Field label="Build" value={service.build} onChange={set('build')} mono
           hint="Left empty, no build step happens." />
-        <Field label="Start" value={app.start} onChange={set('start')} mono
+        <Field label="Start" value={service.start} onChange={set('start')} mono
           hint="What systemd runs, and restarts if it exits." />
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Port it listens on" type="number" value={app.port} onChange={set('port')} />
-          <Field label="Packages to install first" value={app.packages} onChange={set('packages')} mono
-            hint="git is always installed." />
+          <Field label="Port it listens on" type="number" value={service.port} onChange={set('port')} />
+          <Field label="Packages to install first" value={service.packages} onChange={set('packages')} mono
+            hint="git and curl are always installed." />
+        </div>
+
+        <EnvEditor value={service.env} onChange={set('env')} />
+
+        {/* Nothing reports readiness, so without somewhere to ask, a
+            deployment is finished when the unit is up — which is a weaker
+            promise, and the panel says so rather than implying more. */}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Ready when this answers" value={service.health} onChange={set('health')} mono
+            placeholder="/health"
+            hint={service.health.trim()
+              ? 'Asked from the host, for up to 30 seconds.'
+              : 'Left empty, the deployment ends when the unit starts.'} />
+          <Field label="…and the body contains" value={service.contains} onChange={set('contains')} mono
+            placeholder="optional" />
         </div>
       </div>
 
       <footer className="flex items-center justify-between gap-3 border-t border-edge px-5 py-3">
         <p className="text-xs text-faint">
-          {app.start?.trim()
+          {service.start?.trim()
             ? 'A snapshot is taken first, so this can be undone.'
             : 'Nothing says how to start it, so there is no deployment to run.'}
         </p>
         <button
           onClick={onDeploy}
-          disabled={!app.start?.trim()}
+          disabled={!service.start?.trim()}
           className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30 disabled:opacity-40"
         >
           Show me the deploy plan

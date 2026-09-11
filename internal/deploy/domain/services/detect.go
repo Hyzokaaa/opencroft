@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/Hyzokaaa/opencroft/internal/app/domain/entities"
+	"github.com/Hyzokaaa/opencroft/internal/deploy/domain/entities"
 )
 
 // Detection looks at what a repository contains and proposes how to build and
@@ -121,10 +121,10 @@ func static() Detection {
 
 // Apply turns a detection into an app, leaving anything already set alone.
 // A command somebody typed always wins over one we guessed.
-func Apply(detection Detection, existing *entities.App) *entities.App {
+func Apply(detection Detection, existing *entities.Service) *entities.Service {
 	app := existing
 	if app == nil {
-		app = entities.NewApp(entities.AppProps{})
+		app = entities.NewService(entities.ServiceProps{})
 	}
 
 	if len(app.Install) == 0 {

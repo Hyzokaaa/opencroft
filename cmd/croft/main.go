@@ -83,6 +83,8 @@ func main() {
 		expose(ctx, os.Args[2:])
 	case "deploy":
 		deployCommand(ctx, os.Args[2:])
+	case "rollback":
+		rollbackCommand(ctx, os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println("croft " + version)
 	default:
@@ -104,6 +106,7 @@ Usage:
   croft cert issue <domain>             obtain a TLS certificate
   croft expose <domain>                 put the panel on a domain, over https
   croft deploy <container> --repo <url>  fetch a project, then build and run it
+  croft rollback <container>             restore the last version that worked
   croft dns show | set <provider>        DNS credentials, for the dns-01 challenge
   croft version
 
@@ -122,7 +125,7 @@ Every command works without a terminal: pass flags and read --json.
 type deps struct {
 	dns          server.DNSConfig
 	expose       any
-	apps         any
+	services     any
 	instances    instanceRepositories.InstanceRepository
 	routes       routeRepositories.RouteRepository
 	certificates certificateRepositories.CertificateRepository
@@ -158,7 +161,7 @@ func wire(ctx context.Context, demo bool, nginxDir, socket string) deps {
 				certificates: client.Certificates(),
 				dns:          agentDNS{client: client},
 				expose:       client,
-				apps:         client.Apps(),
+				services:     client.Services(),
 				runtime:      client.Flavor(),
 				version:      version,
 			}
@@ -222,7 +225,7 @@ func serve(ctx context.Context, args []string) {
 		Jobs:            jobs,
 		DNS:             d.dns,
 		Expose:          d.expose,
-		Apps:            d.apps,
+		Services:        d.services,
 		PanelPort:       portOf(*addr),
 		Simulated:       d.demo,
 	})

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Hyzokaaa/opencroft/internal/app/domain/entities"
-	"github.com/Hyzokaaa/opencroft/internal/app/domain/services"
+	"github.com/Hyzokaaa/opencroft/internal/deploy/domain/entities"
+	"github.com/Hyzokaaa/opencroft/internal/deploy/domain/services"
 )
 
 func repo(files map[string]string) services.Repository {
@@ -117,7 +117,7 @@ func TestASpecificSignalBeatsAGenericOne(t *testing.T) {
 
 // A command somebody typed always wins over one we guessed.
 func TestWhatYouTypedSurvivesDetection(t *testing.T) {
-	existing := entities.NewApp(entities.AppProps{
+	existing := entities.NewService(entities.ServiceProps{
 		Start: "node dist/main.js",
 		Port:  4000,
 	})

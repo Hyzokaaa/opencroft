@@ -84,21 +84,6 @@ type DNSCredentialsDTO struct {
 	Values     map[string]string `json:"values,omitempty"`
 }
 
-// AppDTO is a deployment as it is stored: on the container, as annotations.
-// Reading it back means asking the machine, not a cache of the machine.
-type AppDTO struct {
-	Deployed bool     `json:"deployed"`
-	Repo     string   `json:"repo"`
-	Branch   string   `json:"branch"`
-	Path     string   `json:"path"`
-	Runtime  string   `json:"runtime"`
-	Install  []string `json:"install"`
-	Build    []string `json:"build"`
-	Start    string   `json:"start"`
-	Port     int      `json:"port"`
-	Packages []string `json:"packages"`
-}
-
 type LogsResponse struct {
 	Lines string `json:"lines"`
 }

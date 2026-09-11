@@ -19,7 +19,7 @@ import (
 func testServer() (*Server, *host.Fake) {
 	fake := host.NewFake()
 	return NewServer(
-		runtime.NewMemoryInstanceRepository(),
+		runtime.NewDemoInstanceRepository(),
 		routeMemory.NewMemoryRouteRepository(),
 		pem.NewDemoCertificateRepository(),
 		fake,
