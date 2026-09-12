@@ -28,7 +28,7 @@ export default function PlanDialog({ request, onClose, onFinished, onResult }) {
       const res = await fetch(`${request.url}${request.url.includes('?') ? '&' : '?'}plan=1`, {
         method: request.method,
         headers: { 'Content-Type': 'application/json' },
-        body: request.method === 'POST' ? JSON.stringify(body) : undefined,
+        body: sends(request.method) ? JSON.stringify(body) : undefined,
       })
       const payload = await res.json()
       if (!res.ok) {
@@ -54,7 +54,7 @@ export default function PlanDialog({ request, onClose, onFinished, onResult }) {
       const res = await fetch(request.url, {
         method: request.method,
         headers: { 'Content-Type': 'application/json' },
-        body: request.method === 'POST' ? JSON.stringify(values) : undefined,
+        body: sends(request.method) ? JSON.stringify(values) : undefined,
       })
       const payload = await res.json()
       if (!res.ok) {
@@ -445,4 +445,11 @@ function Working() {
       <span className="relative inline-flex size-1.5 rounded-full bg-caution" />
     </span>
   )
+}
+
+// Which methods carry what was filled in. This used to say POST alone, which
+// meant editing a route sent nothing at all and the daemon answered "EOF" — a
+// word that tells the person nothing about what went wrong or what to do.
+function sends(method) {
+  return method === 'POST' || method === 'PUT' || method === 'PATCH'
 }

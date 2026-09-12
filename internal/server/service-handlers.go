@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -62,7 +61,7 @@ func (d Deps) listServices(w http.ResponseWriter, r *http.Request) {
 
 func wanted(r *http.Request) (agent.ServiceDTO, error) {
 	var body agent.ServiceDTO
-	err := json.NewDecoder(r.Body).Decode(&body)
+	err := readBody(r, &body)
 	return body, err
 }
 
@@ -222,7 +221,7 @@ func (d Deps) rollbackService(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Snapshot string `json:"snapshot"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := readBody(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}

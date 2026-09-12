@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 )
@@ -55,7 +54,7 @@ func (d Deps) saveDNS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body saveDNSRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := readBody(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}

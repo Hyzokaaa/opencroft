@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -22,7 +21,7 @@ func (d Deps) editRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body editRouteRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := readBody(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}

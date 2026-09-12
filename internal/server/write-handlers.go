@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -30,7 +31,7 @@ func (d Deps) createInstance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body instanceCommands.CreateInstanceRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := readBody(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -205,7 +206,7 @@ func (d Deps) addRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body addRouteRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := readBody(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -332,4 +333,22 @@ func (d Deps) cancelJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// readBody decodes what arrived, turning the two failures that actually happen
+// into something a person can act on.
+//
+// "EOF" on screen is the daemon reporting its own plumbing: it means the
+// request carried no body at all, which says nothing about what went wrong or
+// what to do about it.
+func readBody(r *http.Request, into any) error {
+	err := json.NewDecoder(r.Body).Decode(into)
+
+	switch {
+	case errors.Is(err, io.EOF):
+		return errors.New("that request arrived with nothing in it, so there is nothing to act on")
+	case err != nil:
+		return fmt.Errorf("the request body is not what was expected: %w", err)
+	}
+	return nil
 }

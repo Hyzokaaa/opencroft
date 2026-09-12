@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -38,7 +37,7 @@ func (d Deps) exposePanel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body exposeBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := readBody(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
