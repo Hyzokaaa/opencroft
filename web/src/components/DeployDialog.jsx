@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import PlanDialog from './PlanDialog.jsx'
-import EnvEditor, { toObject } from './EnvEditor.jsx'
+import EnvEditor, { toObject, fromObject } from './EnvEditor.jsx'
 
 // Deploying is two plans, not one, because you cannot know how to build code
 // you have not seen. First: "I am going to look at the repository" — the git
@@ -9,11 +9,21 @@ import EnvEditor, { toObject } from './EnvEditor.jsx'
 //
 // That is the whole difference from a buildpack. We guess as much as anyone
 // does; we just do it where you can see it and change it.
-export default function DeployDialog({ container, onClose, onFinished }) {
-  const [stage, setStage] = useState('source')
-  const [source, setSource] = useState({ repo: '', branch: 'main', name: '', path: '' })
-  const [service, setService] = useState(null)
-  const [why, setWhy] = useState('')
+export default function DeployDialog({ container, service: deployed, onClose, onFinished }) {
+  // Deploying something already here is the same second half, with what the
+  // container remembers instead of what was just detected. Asking again for a
+  // repository it already knows would be asking a question we can answer.
+  const [stage, setStage] = useState(deployed ? 'found' : 'source')
+  const [source, setSource] = useState(() => ({
+    repo: deployed?.repo ?? '',
+    branch: deployed?.branch ?? 'main',
+    name: deployed?.name ?? '',
+    path: deployed?.path ?? '',
+  }))
+  const [service, setService] = useState(() => (deployed ? remembered(deployed) : null))
+  const [why, setWhy] = useState(
+    deployed ? 'What this container remembers. Change anything before it runs again.' : '',
+  )
   const [error, setError] = useState(null)
 
   const name = source.name || guessName(source.repo)
@@ -105,6 +115,27 @@ export default function DeployDialog({ container, onClose, onFinished }) {
       )}
     </Frame>
   )
+}
+
+// remembered turns what is stored on the container back into what the form
+// edits. The environment comes back too — masked in the editor, but present,
+// so changing one variable does not mean retyping the other nineteen.
+function remembered(deployed) {
+  return {
+    repo: deployed.repo,
+    branch: deployed.branch,
+    name: deployed.name,
+    path: deployed.path,
+    install: (deployed.install ?? []).join(' && '),
+    build: (deployed.build ?? []).join(' && '),
+    start: deployed.start ?? '',
+    runtime: deployed.runtime ?? '',
+    port: deployed.port ?? 0,
+    packages: (deployed.packages ?? []).join(' '),
+    env: fromObject(deployed.env),
+    health: deployed.health?.path ?? '',
+    contains: deployed.health?.contains ?? '',
+  }
 }
 
 // The repository name is what anybody would have typed anyway.

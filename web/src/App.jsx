@@ -10,6 +10,7 @@ import Settings from './components/Settings.jsx'
 import Login from './components/Login.jsx'
 import PlanDialog from './components/PlanDialog.jsx'
 import DeployDialog from './components/DeployDialog.jsx'
+import Container from './components/Container.jsx'
 import { useOverview, useCommandMode, useAuth } from './lib/useOverview.js'
 
 export default function App() {
@@ -43,6 +44,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
   const [highlighted, setHighlighted] = useState(null)
   const [dialog, setDialog] = useState(null)
   const [deploying, setDeploying] = useState(null)
+  const [opened, setOpened] = useState(null)
 
   // Subjects named by a problem, so the tables carry the same severity the
   // findings panel reports. Two truths on one screen is worse than none.
@@ -145,8 +147,26 @@ function Dashboard({ onSignOut, onSessionLost }) {
     })
   }
 
+  // Restoring reaches every service in the container and everything written
+  // since, so it goes through the same plan dialog as any other write — and
+  // the summary the daemon returns names what else it takes back.
+  function rollback(container, snapshot) {
+    setDialog({
+      title: `Restore ${snapshot}`,
+      url: `/api/hosts/local/instances/${container.name}/services/rollback`,
+      method: 'POST',
+      defaults: { snapshot },
+      destructive: true,
+    })
+  }
+
   function focusSubject(subject) {
     const isDomain = data?.routes.some((r) => r.domain === subject)
+    if (!isDomain && data?.instances.some((i) => i.name === subject)) {
+      setOpened(subject)
+      return
+    }
+
     setSection(isDomain ? 'domains' : 'containers')
     setHighlighted(subject)
   }
@@ -180,12 +200,14 @@ function Dashboard({ onSignOut, onSessionLost }) {
     onDestroy: destroyContainer,
     onAddDomain: addDomain,
     onPower: powerContainer,
-    onDeploy: setDeploying,
+    onDeploy: (container, service) => setDeploying({ container, service }),
     onRemoveDomain: removeDomain,
     onEnableTLS: enableTLS,
     onEditDomain: editDomain,
     instances: data.instances,
   }
+
+  const openedContainer = data.instances.find((i) => i.name === opened)
 
   const runtimeBin = data.runtime === 'demo' ? 'incus' : data.runtime
   const containerCommands = [`${runtimeBin} list --format json`]
@@ -195,7 +217,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
     <Shell
       data={data}
       section={section}
-      onSection={setSection}
+      onSection={(id) => { setOpened(null); setSection(id) }}
       commandMode={commandMode}
       onToggleCommands={toggleCommands}
       freshness={freshness(fetchedAt, loading)}
@@ -214,7 +236,20 @@ function Dashboard({ onSignOut, onSessionLost }) {
         </div>
       )}
 
-      {section === 'overview' && (
+      {/* One container, on its own. The list answers what exists; this
+          answers what it is doing and whether it is working. */}
+      {opened && openedContainer && (
+        <Container
+          container={openedContainer}
+          routes={data.routes}
+          onBack={() => setOpened(null)}
+          onDeploy={(container, service) => setDeploying({ container, service })}
+          onRollback={rollback}
+          onAddDomain={addDomain}
+        />
+      )}
+
+      {!opened && section === 'overview' && (
         <>
           <Verdict data={data} problemCount={problemCount} onFilter={setSection} />
 
@@ -254,7 +289,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
         </>
       )}
 
-      {section === 'containers' && (
+      {!opened && section === 'containers' && (
         <Card
           title="Containers"
           count={data.instances.length}
@@ -266,7 +301,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
         </Card>
       )}
 
-      {section === 'domains' && (
+      {!opened && section === 'domains' && (
         <Card
           title="Domains"
           count={data.routes.length}
@@ -277,7 +312,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
         </Card>
       )}
 
-      {section === "certificates" && (
+      {!opened && section === "certificates" && (
         <Card
           title="Certificates"
           count={data.certificates?.length ?? 0}
@@ -288,16 +323,17 @@ function Dashboard({ onSignOut, onSessionLost }) {
         </Card>
       )}
 
-      {section === 'settings' && <Settings onExpose={exposePanel} />}
+      {!opened && section === 'settings' && <Settings onExpose={exposePanel} />}
 
-      {section === 'activity' && <NotBuilt section={section} />}
+      {!opened && section === 'activity' && <NotBuilt section={section} />}
 
       {/* Deploying has a step in the middle — look at the repository, then
           decide — so it runs its own flow and hands off to the same plan
           dialog for each half. */}
       {deploying && (
         <DeployDialog
-          container={deploying}
+          container={deploying.container}
+          service={deploying.service}
           onClose={() => { setDeploying(null); reload() }}
           onFinished={reload}
         />
