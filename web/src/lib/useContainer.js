@@ -8,6 +8,7 @@ const INTERVAL = 5000
 export function useServices(container) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
+  const [fetchedAt, setFetchedAt] = useState(null)
   const timer = useRef(null)
 
   const load = useCallback(async () => {
@@ -18,6 +19,7 @@ export function useServices(container) {
 
       if (!res.ok) throw new Error(payload.error ?? `The daemon answered ${res.status}`)
       setData(payload)
+      setFetchedAt(new Date())
       setError(null)
     } catch (e) {
       setError(e.message)
@@ -25,12 +27,22 @@ export function useServices(container) {
   }, [container])
 
   useEffect(() => {
+    // Another container is another subject. Without this the panel shows one
+    // machine's services under another machine's name for as long as the next
+    // read takes — correct data, attributed to the wrong host, which is the
+    // worst thing an infrastructure panel can do.
+    setData(null)
+    setError(null)
+    setFetchedAt(null)
+
     load()
     timer.current = setInterval(load, INTERVAL)
     return () => clearInterval(timer.current)
   }, [load])
 
-  return { data, error, reload: load }
+  // `read` is what separates "there is nothing here" from "I do not know yet".
+  // Without it an empty array means both, and the panel asserts the first.
+  return { data, error, fetchedAt, read: data !== null, reload: load }
 }
 
 // Following logs is polling, and saying so is better than implying a stream we

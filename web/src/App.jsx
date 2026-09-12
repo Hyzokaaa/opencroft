@@ -147,6 +147,19 @@ function Dashboard({ onSignOut, onSessionLost }) {
     })
   }
 
+  // There is no router, but the browser's back button exists anyway and people
+  // press it by reflex. Without this it leaves the application entirely
+  // instead of going back to the list.
+  useEffect(() => {
+    if (!opened) return
+
+    history.pushState({ opened }, '', `#/containers/${opened}`)
+    const back = () => setOpened(null)
+
+    addEventListener('popstate', back)
+    return () => removeEventListener('popstate', back)
+  }, [opened])
+
   // Restoring reaches every service in the container and everything written
   // since, so it goes through the same plan dialog as any other write — and
   // the summary the daemon returns names what else it takes back.
@@ -216,7 +229,8 @@ function Dashboard({ onSignOut, onSessionLost }) {
   return (
     <Shell
       data={data}
-      section={section}
+      section={opened ? "containers" : section}
+      crumb={opened ? { label: opened, parent: "Containers", onParent: () => setOpened(null) } : null}
       onSection={(id) => { setOpened(null); setSection(id) }}
       commandMode={commandMode}
       onToggleCommands={toggleCommands}
@@ -242,7 +256,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
         <Container
           container={openedContainer}
           routes={data.routes}
-          onBack={() => setOpened(null)}
+          commandMode={commandMode}
           onDeploy={(container, service) => setDeploying({ container, service })}
           onRollback={rollback}
           onAddDomain={addDomain}

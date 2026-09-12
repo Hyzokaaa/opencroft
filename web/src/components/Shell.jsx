@@ -11,7 +11,7 @@ const SECTIONS = [
 
 export { SECTIONS }
 
-export default function Shell({ data, section, onSection, commandMode, onToggleCommands, freshness, onReload, stale, onSignOut, children }) {
+export default function Shell({ data, section, crumb, onSection, commandMode, onToggleCommands, freshness, onReload, stale, onSignOut, children }) {
   const [navOpen, setNavOpen] = useState(false)
   const current = SECTIONS.find((s) => s.id === section)
 
@@ -31,9 +31,32 @@ export default function Shell({ data, section, onSection, commandMode, onToggleC
                 <path d="M2 4h12M2 8h12M2 12h12" strokeLinecap="round" />
               </svg>
             </button>
-            <span className="truncate font-mono text-xs text-faint">local</span>
-            <span className="text-faint">/</span>
-            <span className="truncate text-sm">{current?.label}</span>
+            {/* Without a router the section alone cannot say where you are: a
+                container page kept marking Overview as the current page — to a
+                screen reader most of all, where it meant you had never left. */}
+            <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2">
+              <span className="truncate font-mono text-xs text-muted">local</span>
+              <span className="text-faint" aria-hidden="true">/</span>
+
+              {crumb ? (
+                <>
+                  <button
+                    onClick={crumb.onParent}
+                    className="truncate text-sm text-muted transition hover:text-ink"
+                  >
+                    {crumb.parent}
+                  </button>
+                  <span className="text-faint" aria-hidden="true">/</span>
+                  <span className="truncate font-mono text-sm" aria-current="page">
+                    {crumb.label}
+                  </span>
+                </>
+              ) : (
+                <span className="truncate text-sm" aria-current="page">
+                  {current?.label}
+                </span>
+              )}
+            </nav>
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
