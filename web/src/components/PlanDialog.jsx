@@ -340,6 +340,11 @@ function Progress({ steps, events, error, done }) {
   // times — obtaining a certificate talks to the authority, waits for DNS to
   // propagate, and stores the result, all as step one.
   const current = events.reduce((furthest, e) => Math.max(furthest, e.step ?? 0), 0)
+  const entries = group(events)
+
+  // While a step is still running it has not been got through, so counting it
+  // would put the bar ahead of the work.
+  const through = done || error ? current : Math.max(0, current - 1)
 
   return (
     <div>
@@ -347,11 +352,11 @@ function Progress({ steps, events, error, done }) {
         <div className="h-1 flex-1 overflow-hidden rounded bg-edge">
           <div
             className={`h-full transition-all ${error ? 'bg-problem' : 'bg-running'}`}
-            style={{ width: `${steps.length ? (current / steps.length) * 100 : 0}%` }}
+            style={{ width: `${steps.length ? (through / steps.length) * 100 : 0}%` }}
           />
         </div>
         <span className="font-mono text-xs text-muted">
-          {current}/{steps.length}
+          {through}/{steps.length}
         </span>
       </div>
 
@@ -362,13 +367,22 @@ function Progress({ steps, events, error, done }) {
       )}
 
       <ol className="mt-4 space-y-2">
-        {group(events).map((entry, i) => (
+        {entries.map((entry, i) => {
+          // A step is announced before it runs, so the last one reported is
+          // the one happening now — not one that finished. Marking it done
+          // was a small lie that made a long step look like a stuck panel.
+          const working = !done && !error && i === entries.length - 1
+
+          return (
           <li key={i} className="flex gap-2 text-xs">
-            <span className={entry.failed ? 'text-problem' : 'text-running'}>
-              {entry.failed ? '✕' : '✓'}
+            <span className={entry.failed ? 'text-problem' : working ? 'text-caution' : 'text-running'}>
+              {entry.failed ? '✕' : working ? <Working /> : '✓'}
             </span>
             <div className="min-w-0 flex-1">
-              <p className={entry.failed ? 'text-problem' : ''}>{entry.text}</p>
+              <p className={entry.failed ? 'text-problem' : working ? 'text-ink' : ''}>
+                {entry.text}
+                {working && <span className="text-faint"> &mdash; running</span>}
+              </p>
               {entry.command && (
                 <pre className="overflow-x-auto font-mono text-[11px] text-faint">{entry.command}</pre>
               )}
@@ -386,7 +400,8 @@ function Progress({ steps, events, error, done }) {
               )}
             </div>
           </li>
-        ))}
+          )
+        })}
       </ol>
 
       {done && !error && <p className="mt-4 text-xs text-running">Finished.</p>}
@@ -418,4 +433,16 @@ function group(events) {
     })
   }
   return entries
+}
+
+// Something that moves, because the whole point is to tell "working" apart
+// from "stuck". A tick cannot do that, and for a long install the difference
+// is the only thing on screen worth knowing.
+function Working() {
+  return (
+    <span className="relative flex size-2.5 translate-y-[3px] items-center justify-center">
+      <span className="absolute inline-flex size-2.5 animate-ping rounded-full bg-caution/60" />
+      <span className="relative inline-flex size-1.5 rounded-full bg-caution" />
+    </span>
+  )
 }
