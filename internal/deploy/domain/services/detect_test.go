@@ -186,3 +186,46 @@ func TestAnSSHSourceIsKnownToBePrivate(t *testing.T) {
 		}
 	}
 }
+
+// Ubuntu 24.04 still ships Node 18 and npm 9, and that npm leaves native
+// optional dependencies uninstalled however correct the lockfile is. Proposing
+// it means proposing a build that fails on any current project, with an error
+// that blames the project.
+func TestNodeDoesNotComeFromTheDistribution(t *testing.T) {
+	detection, _ := services.Detect(repo(map[string]string{
+		"package.json":      `{"scripts":{"start":"node ."}}`,
+		"package-lock.json": "{}",
+	}))
+
+	for _, name := range detection.Packages {
+		if name == "nodejs" || name == "npm" {
+			t.Errorf("proposed %q from apt, which is years behind", name)
+		}
+	}
+
+	if !strings.Contains(strings.Join(detection.Install, " && "), "nodesource") {
+		t.Errorf("nothing installs a usable Node: %v", detection.Install)
+	}
+}
+
+// Installing Node has to happen before anything uses it.
+func TestTheRuntimeIsInstalledBeforeItIsUsed(t *testing.T) {
+	detection, _ := services.Detect(repo(map[string]string{
+		"package.json":      `{"scripts":{"start":"node ."}}`,
+		"package-lock.json": "{}",
+	}))
+
+	runtime, install := -1, -1
+	for i, command := range detection.Install {
+		if strings.Contains(command, "nodesource") {
+			runtime = i
+		}
+		if strings.HasPrefix(command, "npm ") {
+			install = i
+		}
+	}
+
+	if runtime < 0 || install < 0 || runtime > install {
+		t.Errorf("npm would run before Node is installed: %v", detection.Install)
+	}
+}
