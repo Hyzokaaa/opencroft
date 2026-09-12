@@ -25,6 +25,8 @@ type Deployer interface {
 	RollbackPlan(ctx context.Context, container, snapshot string) (plan.Plan, string, error)
 	Rollback(ctx context.Context, container, snapshot string, report func(int, string)) error
 	Logs(ctx context.Context, container, service string, lines int) (string, error)
+	DestroyPlan(ctx context.Context, container, service string) (plan.Plan, string, error)
+	Destroy(ctx context.Context, container, service string, report func(int, string)) error
 }
 
 func (d Deps) deployer(w http.ResponseWriter) (Deployer, bool) {
@@ -271,4 +273,48 @@ func (d Deps) showServiceLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"lines": text})
+}
+
+// destroyService removes one service from a container.
+//
+// Everything below the snapshot it takes first is irreversible: the unit, the
+// code, and the environment file with whatever secrets are in it. The summary
+// says what else stops being true — a domain that pointed at its port, and the
+// deployment snapshots that stay behind because they are the way back.
+func (d Deps) destroyService(w http.ResponseWriter, r *http.Request) {
+	if !d.writable(w) {
+		return
+	}
+	deployer, ok := d.deployer(w)
+	if !ok {
+		return
+	}
+
+	name, service := r.PathValue("name"), r.PathValue("service")
+
+	p, warning, err := deployer.DestroyPlan(r.Context(), name, service)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if wantsPlan(r) {
+		summary := fmt.Sprintf(
+			"Remove %s from %s, and everything it wrote beside its code.", service, name)
+		if warning != "" {
+			summary += " " + warning
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"summary": summary, "plan": p})
+		return
+	}
+
+	started := d.Jobs.Start("destroy", name+"/"+service, p,
+		func(ctx context.Context, report func(int, string)) error {
+			if d.Simulated {
+				return d.rehearse(p, report)
+			}
+			return deployer.Destroy(ctx, name, service, report)
+		})
+
+	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": service})
 }

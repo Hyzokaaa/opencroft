@@ -26,6 +26,11 @@ const (
 	Prefix     = "croft-"
 	DeployKind = Prefix + "deploy-"
 
+	// DestroyKind is taken before a service is removed. Pruning only ever
+	// reaches DeployKind, so this one survives — it is the only record of
+	// something that was deliberately deleted, and the only way back.
+	DestroyKind = Prefix + "destroy-"
+
 	// stamp sorts lexically as it sorts in time, and is UTC so that a host
 	// that changes timezone does not reorder its own history.
 	stamp = "20060102-150405"
@@ -73,3 +78,14 @@ func Prunable(snapshots []string, service string, keep int, healthy string) []st
 	}
 	return mine[keep:]
 }
+
+// FarewellName marks the moment a service was removed. It is deliberately not
+// a DeployKind: pruning must never reach it, because it is the only way back
+// to something somebody chose to delete.
+func FarewellName(service string, at time.Time) string {
+	return DestroyKind + service + "-" + at.UTC().Format(stamp)
+}
+
+// IndexKey lists the services on a container. Without it there is no way to
+// enumerate what is deployed — only to ask about names already known.
+const IndexKey = "user.croft.services"

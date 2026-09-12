@@ -67,3 +67,15 @@ func (a *ServiceClient) Logs(ctx context.Context, container, service string, lin
 		nil, &response)
 	return response.Lines, err
 }
+
+func (a *ServiceClient) DestroyPlan(ctx context.Context, container, service string) (plan.Plan, string, error) {
+	var response RollbackResponse
+	err := a.c.call(ctx, http.MethodGet,
+		servicePath(container, "/"+url.PathEscape(service)+"/destroy/plan"), nil, &response)
+	return response.Plan, response.Warning, err
+}
+
+func (a *ServiceClient) Destroy(ctx context.Context, container, service string, report func(int, string)) error {
+	return a.c.streamed(ctx, http.MethodDelete,
+		servicePath(container, "/"+url.PathEscape(service)), nil, report)
+}

@@ -279,3 +279,48 @@ func counted(describe string, i, total int) string {
 	}
 	return fmt.Sprintf("%s (%d of %d)", describe, i+1, total)
 }
+
+// Destroy takes a service off the container.
+//
+// The snapshot is first and is not a DeployKind, so nothing will ever prune
+// it: everything below this line is irreversible otherwise, and it includes
+// the environment file and whatever the service wrote beside its code.
+//
+// The annotations go last. A failure halfway then leaves a service the panel
+// still knows about — which can be looked at and tried again — rather than a
+// directory nobody remembers owning.
+func (p *Planner) Destroy(service *entities.Service, keys []string, remaining []string, at time.Time) plan.Plan {
+	steps := []plan.Step{
+		plan.Command("Take a snapshot, in case this was a mistake",
+			p.bin, "snapshot", p.container, entities.FarewellName(service.Name, at)),
+
+		// Optional: a unit that was never written, or already gone, is not a
+		// reason to stop.
+		plan.Optional("Stop and disable "+service.Unit(),
+			p.bin, "exec", p.container, "--", "systemctl", "disable", "--now", service.Unit()),
+	}
+
+	steps = append(steps,
+		p.exec("Remove the unit", "rm -f /etc/systemd/system/"+service.Unit()+
+			".service && systemctl daemon-reload"),
+		p.exec("Remove "+service.Path+", including its .env and anything written beside it",
+			"rm -rf "+service.Path),
+	)
+
+	for _, key := range keys {
+		steps = append(steps, plan.Optional("Forget "+key,
+			p.bin, "config", "unset", p.container, key))
+	}
+
+	// Written rather than unset when something is left, so the index never
+	// disagrees with what is actually on the container.
+	if len(remaining) > 0 {
+		steps = append(steps, plan.Command("Leave "+strings.Join(remaining, ", ")+" in the index",
+			p.bin, "config", "set", p.container, entities.IndexKey, strings.Join(remaining, " ")))
+	} else {
+		steps = append(steps, plan.Optional("Empty the index",
+			p.bin, "config", "unset", p.container, entities.IndexKey))
+	}
+
+	return plan.New(steps...)
+}

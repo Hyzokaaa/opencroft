@@ -19,6 +19,7 @@ export default function Container({
   commandMode,
   onDeploy,
   onRollback,
+  onDestroy,
   onAddDomain,
 }) {
   const { data, error, fetchedAt, read } = useServices(container.name)
@@ -114,6 +115,7 @@ export default function Container({
                   service={service}
                   onLogs={() => setLogs(service.name)}
                   onDeploy={() => onDeploy(container, service)}
+                  onDestroy={() => onDestroy(container, service)}
                 />
               ))}
             </ul>
@@ -188,7 +190,7 @@ const SECONDARY =
 // State comes from the machine, not from what we recorded. A service croft
 // deployed and that then died must look dead here — and in more than one
 // colour, because colour alone reaches nobody who cannot see it.
-function Service({ service, onLogs, onDeploy }) {
+function Service({ service, onLogs, onDeploy, onDestroy }) {
   const running = service.state === 'active'
 
   return (
@@ -242,6 +244,12 @@ function Service({ service, onLogs, onDeploy }) {
           <button onClick={onDeploy} className={SECONDARY}>
             Deploy again
           </button>
+          <button
+            onClick={onDestroy}
+            className="rounded border border-edge px-2 py-0.5 text-xs text-muted transition hover:border-problem/50 hover:text-problem"
+          >
+            Remove&hellip;
+          </button>
         </div>
       </div>
     </li>
@@ -268,15 +276,15 @@ function StateDot({ state }) {
   )
 }
 
-// croft-deploy-<service>-<YYYYMMDD>-<HHMMSS>. An earlier generation left the
+// croft-<kind>-<service>-<YYYYMMDD>-<HHMMSS>. An earlier generation left the
 // service out; that is not guessed at, it is said.
 function describe(name) {
-  const match = /^croft-deploy-(?:(.+)-)?(\d{8})-(\d{6})$/.exec(name)
+  const match = /^croft-(deploy|destroy)-(?:(.+)-)?(\d{8})-(\d{6})$/.exec(name)
   if (!match) {
     return { raw: name, ours: name.startsWith('croft-'), service: null, when: null }
   }
 
-  const [, service, day, time] = match
+  const [, kind, service, day, time] = match
   const when = new Date(
     `${day.slice(0, 4)}-${day.slice(4, 6)}-${day.slice(6, 8)}T` +
       `${time.slice(0, 2)}:${time.slice(2, 4)}:${time.slice(4, 6)}Z`,
@@ -285,6 +293,7 @@ function describe(name) {
   return {
     raw: name,
     ours: true,
+    kind,
     service: service ?? null,
     when: isNaN(when.getTime()) ? null : when,
   }
@@ -384,6 +393,13 @@ function Snapshot({ snapshot, healthy, orphaned, onRollback }) {
               label="yours"
               tone="border-yours/40 text-yours"
               explain="Croft did not take this, and will never remove it."
+            />
+          )}
+          {snapshot.kind === 'destroy' && (
+            <Chip
+              label="removed here"
+              tone="border-caution/40 text-caution"
+              explain="Taken immediately before this service was removed. Nothing ever prunes it, because it is the only way back to something you chose to delete."
             />
           )}
           {healthy && (

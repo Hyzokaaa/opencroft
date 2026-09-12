@@ -85,6 +85,7 @@ func Handler(deps Deps) http.Handler {
 	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/services/deploy", deps.deployService)
 	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/services/rollback", deps.rollbackService)
 	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/services/{service}/logs", deps.showServiceLogs)
+	mux.HandleFunc("DELETE /api/hosts/{hostId}/instances/{name}/services/{service}", deps.destroyService)
 
 	mux.HandleFunc("POST /api/hosts/{hostId}/expose", deps.exposePanel)
 

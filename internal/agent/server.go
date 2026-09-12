@@ -119,6 +119,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /instances/{name}/services/deploy/plan", s.planDeploy)
 	mux.HandleFunc("POST /instances/{name}/services/deploy", s.deploy)
 	mux.HandleFunc("GET /instances/{name}/services/{service}/logs", s.serviceLogs)
+	mux.HandleFunc("GET /instances/{name}/services/{service}/destroy/plan", s.planDestroyService)
+	mux.HandleFunc("DELETE /instances/{name}/services/{service}", s.destroyService)
 	mux.HandleFunc("POST /instances/{name}/services/rollback/plan", s.planRollback)
 	mux.HandleFunc("POST /instances/{name}/services/rollback", s.rollback)
 	mux.HandleFunc("GET /dns", s.showDNS)

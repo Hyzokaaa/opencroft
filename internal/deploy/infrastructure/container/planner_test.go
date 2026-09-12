@@ -352,3 +352,76 @@ func TestTheServiceItselfIsNotLimited(t *testing.T) {
 		t.Error("starting the service is on a clock")
 	}
 }
+
+// Everything a removal does below the snapshot is irreversible, so the
+// snapshot has to come first — and it must not be a deploy snapshot, because
+// pruning would eventually take away the only way back to something somebody
+// chose to delete.
+func TestRemovingAServiceKeepsAWayBackForever(t *testing.T) {
+	service := nodeService()
+	steps := planner().Destroy(service, []string{"user.croft.service.backend.repo"}, nil, when(1)).Steps
+
+	if len(steps) == 0 || !strings.Contains(steps[0].Shell(), "snapshot") {
+		t.Fatalf("the first step is %v", steps)
+	}
+
+	taken := steps[0].Argv[len(steps[0].Argv)-1]
+	if !entities.Ours(taken) {
+		t.Errorf("%s would not be recognised as ours", taken)
+	}
+	if entities.OfService(taken, service.Name) {
+		t.Errorf("%s is prunable, so the only way back would age out", taken)
+	}
+}
+
+// The environment file lives beside the code, so removing the checkout takes
+// the secrets with it. That is correct, and it is why the plan has to say so.
+func TestRemovingAServiceSaysItTakesTheEnvironmentWithIt(t *testing.T) {
+	service := nodeService()
+	p := planner().Destroy(service, nil, nil, when(1))
+
+	if !strings.Contains(text(p), "rm -rf /srv/backend") {
+		t.Errorf("the checkout is left behind:\n%s", text(p))
+	}
+
+	said := false
+	for _, step := range p.Steps {
+		if strings.Contains(step.Describe, ".env") {
+			said = true
+		}
+	}
+	if !said {
+		t.Error("nothing warns that the environment file goes too")
+	}
+}
+
+// A failure halfway should leave a service the panel still knows about, which
+// can be looked at and tried again — not a directory nobody remembers owning.
+func TestWhatCroftRecordedIsForgottenLast(t *testing.T) {
+	keys := []string{"user.croft.service.backend.repo", "user.croft.service.backend.start"}
+	steps := planner().Destroy(nodeService(), keys, nil, when(1)).Steps
+
+	removal, forgetting := -1, -1
+	for i, step := range steps {
+		if strings.Contains(step.Shell(), "rm -rf") {
+			removal = i
+		}
+		if strings.Contains(step.Shell(), "config unset") && forgetting < 0 {
+			forgetting = i
+		}
+	}
+
+	if removal < 0 || forgetting < 0 || forgetting < removal {
+		t.Errorf("forgetting happens at %d and removal at %d", forgetting, removal)
+	}
+}
+
+// The index has to agree with what is on the container, so what is left is
+// written rather than the removed one being subtracted somewhere else.
+func TestTheIndexIsLeftSayingWhatRemains(t *testing.T) {
+	body := text(planner().Destroy(nodeService(), nil, []string{"client"}, when(1)))
+
+	if !strings.Contains(body, "config set helpdesk "+entities.IndexKey+" client") {
+		t.Errorf("the index would not match the container:\n%s", body)
+	}
+}

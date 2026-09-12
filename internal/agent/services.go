@@ -33,8 +33,8 @@ import (
 // container itself, under its own name, so that losing our database costs
 // nothing and moving the container carries its deployments with it.
 
-// index lists the services on a container. Without it there is no way to
-// enumerate annotations, only to ask for ones whose names are already known.
+// index is the key under the runtime prefix; the whole key lives in the deploy
+// module, because the planner needs it too.
 const index = "services"
 
 func annotation(service, key string) string {
@@ -927,4 +927,115 @@ func fromConfig(config map[string]string, name string) ServiceDTO {
 		Commit:  read("commit"),
 		Healthy: read("healthy"),
 	}
+}
+
+// ── Removing a service ────────────────────────────────────────────────────────
+
+// destroyPlan is built from what the container actually holds, so it names the
+// real keys and the real path rather than what they would be by default.
+func (s *Server) destroyPlan(ctx context.Context, container, name string) (plan.Plan, string, error) {
+	if err := validName(container); err != nil {
+		return plan.Plan{}, "", err
+	}
+	if err := validService(name); err != nil {
+		return plan.Plan{}, "", err
+	}
+
+	config, err := s.instances.Annotations(ctx, container)
+	if err != nil {
+		return plan.Plan{}, "", err
+	}
+
+	listed := stored(config)
+	if !contains(listed, name) {
+		return plan.Plan{}, "", errors.New(name + " is not deployed on " + container)
+	}
+
+	service, err := fromConfig(config, name).entity()
+	if err != nil {
+		return plan.Plan{}, "", err
+	}
+
+	keys := []string{}
+	for key := range config {
+		if strings.HasPrefix(key, full(name, "")) {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+
+	remaining := []string{}
+	for _, other := range listed {
+		if other != name {
+			remaining = append(remaining, other)
+		}
+	}
+
+	planner, err := s.planner(ctx, container)
+	if err != nil {
+		return plan.Plan{}, "", err
+	}
+
+	return planner.Destroy(service, keys, remaining, time.Now()), s.consequences(ctx, container, service), nil
+}
+
+// consequences is what stops being true once this is gone. A domain pointing
+// at the port it served will answer 502 from the moment the unit stops, and
+// that is worth reading before agreeing rather than discovering afterwards.
+func (s *Server) consequences(ctx context.Context, container string, service *deployEntities.Service) string {
+	said := []string{}
+
+	instance, err := s.instances.FindByName(ctx, container)
+	if err == nil && instance != nil && service.Port > 0 {
+		if routes, err := s.routes.FindAll(ctx); err == nil {
+			for _, route := range routes {
+				if route.Target == instance.Address && route.Port == service.Port {
+					said = append(said, route.Domain+" points at this port and will stop answering")
+				}
+			}
+		}
+	}
+
+	said = append(said,
+		"its deployment snapshots stay, because they are what would bring it back")
+
+	return strings.Join(said, ". ") + "."
+}
+
+func contains(all []string, want string) bool {
+	for _, item := range all {
+		if item == want {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) planDestroyService(w http.ResponseWriter, r *http.Request) {
+	p, warning, err := s.destroyPlan(r.Context(), r.PathValue("name"), r.PathValue("service"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, RollbackResponse{Plan: p, Warning: warning})
+}
+
+func (s *Server) destroyService(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	p, _, err := s.destroyPlan(ctx, r.PathValue("name"), r.PathValue("service"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	s.stream(w, func(report func(int, string)) error {
+		for i, step := range p.Steps {
+			report(i+1, step.Describe)
+
+			if err := host.RunStep(ctx, s.host, step); err != nil && !step.Optional {
+				return explain(step, err)
+			}
+		}
+		return nil
+	})
 }

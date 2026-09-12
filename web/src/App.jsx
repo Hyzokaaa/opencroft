@@ -173,6 +173,18 @@ function Dashboard({ onSignOut, onSessionLost }) {
     })
   }
 
+  // Everything below the snapshot it takes first is irreversible, the
+  // environment file included. The daemon's summary says what else stops being
+  // true — a domain pointing at its port, above all.
+  function destroyService(container, service) {
+    setDialog({
+      title: `Remove ${service.name} from ${container.name}`,
+      url: `/api/hosts/local/instances/${container.name}/services/${service.name}`,
+      method: 'DELETE',
+      destructive: true,
+    })
+  }
+
   function focusSubject(subject) {
     const isDomain = data?.routes.some((r) => r.domain === subject)
     if (!isDomain && data?.instances.some((i) => i.name === subject)) {
@@ -259,6 +271,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
           commandMode={commandMode}
           onDeploy={(container, service) => setDeploying({ container, service })}
           onRollback={rollback}
+          onDestroy={destroyService}
           onAddDomain={addDomain}
         />
       )}
