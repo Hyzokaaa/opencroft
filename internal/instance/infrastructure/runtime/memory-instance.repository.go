@@ -15,12 +15,16 @@ import (
 // MemoryInstanceRepository implements the same interface without a runtime.
 // It backs `croft serve --demo` and the test suite.
 type MemoryInstanceRepository struct {
-	mu        sync.RWMutex
-	instances map[string]*entities.Instance
+	mu          sync.RWMutex
+	instances   map[string]*entities.Instance
+	annotations map[string]map[string]string
 }
 
 func NewMemoryInstanceRepository() *MemoryInstanceRepository {
-	return &MemoryInstanceRepository{instances: map[string]*entities.Instance{}}
+	return &MemoryInstanceRepository{
+		instances:   map[string]*entities.Instance{},
+		annotations: map[string]map[string]string{},
+	}
 }
 
 // NewDemoInstanceRepository is pre-populated so the interface has something to
@@ -143,6 +147,11 @@ func (r *MemoryInstanceRepository) Annotate(_ context.Context, name, key, value 
 	case "managed":
 		found.Managed = value == "true"
 	}
+
+	if r.annotations[name] == nil {
+		r.annotations[name] = map[string]string{}
+	}
+	r.annotations[name][AnnotationPrefix+"."+key] = value
 	return nil
 }
 
@@ -170,4 +179,15 @@ func (r *MemoryInstanceRepository) StartPlan(name string) plan.Plan {
 
 func (r *MemoryInstanceRepository) StopPlan(name string) plan.Plan {
 	return plan.New(plan.Command("Stop the container", "incus", "stop", name))
+}
+
+func (r *MemoryInstanceRepository) Annotations(_ context.Context, name string) (map[string]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	out := map[string]string{}
+	for key, value := range r.annotations[name] {
+		out[key] = value
+	}
+	return out, nil
 }

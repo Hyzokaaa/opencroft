@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -242,5 +243,37 @@ func TestRollingBackToASnapshotThatIsNotThereIsRefused(t *testing.T) {
 		if recorder.Code == http.StatusOK {
 			t.Errorf("%q was accepted", snapshot)
 		}
+	}
+}
+
+// Reading a container used to be one call per annotation plus one per service:
+// with two services that was more than twenty processes, started one after
+// another, and the wait was long enough to look like a broken panel.
+//
+// The runtime hands over the whole configuration at once, and systemctl
+// answers about every unit in a single question. Neither costs more as a
+// container fills up, which is the property worth keeping.
+func TestReadingAContainerDoesNotAskOneQuestionPerAnnotation(t *testing.T) {
+	server, fake := testServer()
+
+	request := httptest.NewRequest(http.MethodGet, "/instances/helpdesk/services", nil)
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("refused with %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	for _, command := range fake.Commands {
+		if strings.Contains(command, "config get") {
+			t.Errorf("still reading annotations one at a time: %q", command)
+		}
+	}
+
+	// A snapshot listing and one question about the units. Anything much
+	// beyond that means something is being asked per service again.
+	if len(fake.Commands) > 3 {
+		t.Errorf("took %d calls to the runtime:\n  %s",
+			len(fake.Commands), strings.Join(fake.Commands, "\n  "))
 	}
 }

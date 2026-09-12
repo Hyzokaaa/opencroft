@@ -411,3 +411,11 @@ func (c *Client) ExposePlan(ctx context.Context, domain string, port int) (plan.
 		exposeRequest{Domain: domain, Port: port}, &response)
 	return response.Plan, err
 }
+
+// Annotations reads the desired state stored on a container, all of it in one
+// request rather than one per key.
+func (c *Client) Annotations(ctx context.Context, name string) (map[string]string, error) {
+	var out map[string]string
+	err := c.call(ctx, http.MethodGet, "/instances/"+url.PathEscape(name)+"/annotations", nil, &out)
+	return out, err
+}

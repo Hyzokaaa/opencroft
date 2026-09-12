@@ -112,6 +112,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /routes/{domain}/tls", s.enableTLS)
 	mux.HandleFunc("POST /expose/plan", s.planExpose)
 	mux.HandleFunc("POST /expose", s.expose)
+	mux.HandleFunc("GET /instances/{name}/annotations", s.showAnnotations)
 	mux.HandleFunc("GET /instances/{name}/services", s.listServices)
 	mux.HandleFunc("POST /instances/{name}/services/inspect/plan", s.planInspect)
 	mux.HandleFunc("POST /instances/{name}/services/inspect", s.inspect)

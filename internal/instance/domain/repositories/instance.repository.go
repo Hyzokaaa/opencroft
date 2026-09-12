@@ -26,6 +26,11 @@ type InstanceRepository interface {
 	Stop(ctx context.Context, name string) error
 	Annotate(ctx context.Context, name, key, value string) error
 
+	// Annotations returns the desired state stored on the resource, all of it
+	// at once. Asked one key at a time, reading a container meant starting
+	// twenty processes to answer one page.
+	Annotations(ctx context.Context, name string) (map[string]string, error)
+
 	// AllocateAddress returns a free address in the static range.
 	AllocateAddress(ctx context.Context) (string, error)
 

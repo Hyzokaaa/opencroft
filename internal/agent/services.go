@@ -443,6 +443,11 @@ func (s *Server) acceptService(r *http.Request) (string, *deployEntities.Service
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
+// listServices answers the whole page in three calls to the runtime.
+//
+// It used to be one per annotation plus one per service: opening a container
+// with two services in it started more than twenty processes, one after
+// another, and the wait was long enough to look like something had broken.
 func (s *Server) listServices(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if err := validName(name); err != nil {
@@ -451,17 +456,50 @@ func (s *Server) listServices(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	out := []ServiceDTO{}
+	config, err := s.instances.Annotations(ctx, name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 
-	for _, service := range s.names(ctx, name) {
-		dto := s.readService(ctx, name, service)
-		if entity, err := dto.entity(); err == nil {
-			dto.State = s.state(ctx, name, entity)
-		}
-		out = append(out, dto)
+	names := stored(config)
+	out := make([]ServiceDTO, 0, len(names))
+	units := make([]string, 0, len(names))
+
+	for _, service := range names {
+		out = append(out, fromConfig(config, service))
+		units = append(units, "croft-"+service)
+	}
+
+	for i, state := range s.states(ctx, name, units) {
+		out[i].State = state
 	}
 
 	writeJSON(w, http.StatusOK, ServicesResponse{Services: out, Snapshots: s.snapshots(ctx, name)})
+}
+
+// states asks about every unit at once. `systemctl is-active` answers one line
+// per unit, in the order it was asked.
+func (s *Server) states(ctx context.Context, container string, units []string) []string {
+	answers := make([]string, len(units))
+	for i := range answers {
+		answers[i] = "unknown"
+	}
+	if len(units) == 0 {
+		return answers
+	}
+
+	argv := append([]string{"exec", container, "--", "systemctl", "is-active"}, units...)
+	out, _ := s.host.Run(ctx, s.bin, argv...)
+
+	// A non-zero exit is expected here: `is-active` fails when anything it was
+	// asked about is not running, which is exactly what we want to read.
+	for i, line := range strings.Fields(out.Stdout) {
+		if i < len(answers) {
+			answers[i] = line
+		}
+	}
+	return answers
 }
 
 // inspectPlan is deliberately small: a snapshot, the tools, and a checkout.
@@ -829,4 +867,64 @@ func explain(step plan.Step, err error) error {
 			step.Describe, container.Patience/60, step.Shell())
 	}
 	return fmt.Errorf("%s: %w", step.Describe, err)
+}
+
+func (s *Server) showAnnotations(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if err := validName(name); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	found, err := s.instances.Annotations(r.Context(), name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, found)
+}
+
+// stored reads the index out of a configuration already in hand, and falls
+// back to the single unnamed deployment that version 0.15 wrote. Upgrading
+// should not lose what is already deployed.
+func stored(config map[string]string) []string {
+	listed := strings.Fields(config[runtime.AnnotationPrefix+"."+index])
+	if len(listed) > 0 {
+		return listed
+	}
+	if config[runtime.AnnotationPrefix+".app.repo"] != "" {
+		return []string{"app"}
+	}
+	return nil
+}
+
+// fromConfig prefers the current keys and falls back to the old ones, so a
+// deployment made before services had names keeps working.
+func fromConfig(config map[string]string, name string) ServiceDTO {
+	read := func(key string) string {
+		if value := config[full(name, key)]; value != "" {
+			return value
+		}
+		if name == "app" {
+			return config[runtime.AnnotationPrefix+".app."+key]
+		}
+		return ""
+	}
+
+	port, _ := strconv.Atoi(read("port"))
+	status, _ := strconv.Atoi(read("health-status"))
+
+	return ServiceDTO{
+		Name: name, Repo: read("repo"), Branch: read("branch"), Path: read("path"),
+		Runtime: read("runtime"), Start: read("start"), Port: port,
+		Install:  commands(read("install")),
+		Build:    commands(read("build")),
+		Packages: strings.Fields(read("packages")),
+		Env:      decodeEnv(read("env")),
+		Health: HealthDTO{
+			Path: read("health"), Status: status, Contains: read("health-contains"),
+		},
+		Commit:  read("commit"),
+		Healthy: read("healthy"),
+	}
 }

@@ -275,3 +275,29 @@ func (r *CLIInstanceRepository) StartPlan(name string) plan.Plan {
 func (r *CLIInstanceRepository) StopPlan(name string) plan.Plan {
 	return plan.New(plan.Command("Stop the container", r.bin, "stop", name))
 }
+
+// Annotations reads the whole configuration of one container in a single call.
+//
+// The listing already carries every key; asking for them one at a time was
+// starting a process per annotation, which is what made opening a container
+// feel slow for no reason anybody could see.
+func (r *CLIInstanceRepository) Annotations(ctx context.Context, name string) (map[string]string, error) {
+	out, err := r.host.Run(ctx, r.bin, "list", name, "--format", "json")
+	if err != nil {
+		return nil, err
+	}
+
+	var raw []cliInstance
+	if err := json.Unmarshal([]byte(out.Stdout), &raw); err != nil {
+		return nil, fmt.Errorf("parsing the runtime listing: %w", err)
+	}
+
+	// The runtime matches on a prefix, so asking for "web" can also answer
+	// about "web-staging".
+	for _, item := range raw {
+		if item.Name == name {
+			return item.Config, nil
+		}
+	}
+	return map[string]string{}, nil
+}
