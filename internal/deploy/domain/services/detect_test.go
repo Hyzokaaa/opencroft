@@ -46,15 +46,47 @@ func TestTheInstallCommandFollowsTheLockfile(t *testing.T) {
 		"package.json":      `{"scripts":{"start":"node ."}}`,
 		"package-lock.json": "{}",
 	}))
-	if strings.Join(locked.Install, " ") != "npm ci" {
+	if last(locked.Install) != "npm ci" {
 		t.Errorf("with a lockfile: %v", locked.Install)
 	}
 
 	loose, _ := services.Detect(repo(map[string]string{
 		"package.json": `{"scripts":{"start":"node ."}}`,
 	}))
-	if strings.Join(loose.Install, " ") != "npm install" {
+	if last(loose.Install) != "npm install" {
 		t.Errorf("without a lockfile: %v", loose.Install)
+	}
+}
+
+func last(commands []string) string {
+	if len(commands) == 0 {
+		return ""
+	}
+	return commands[len(commands)-1]
+}
+
+// Debian and Ubuntu ship a Node that is years behind: 24.04 still carries Node
+// 18 and npm 9, and that npm leaves native optional dependencies uninstalled
+// however correct the lockfile is. Proposing the distribution's own is
+// proposing a build that fails and then blames the project.
+func TestNodeComesFromSomewhereCurrent(t *testing.T) {
+	detection, _ := services.Detect(repo(map[string]string{
+		"package.json": `{"scripts":{"start":"node ."}}`,
+	}))
+
+	for _, name := range detection.Packages {
+		if name == "nodejs" || name == "npm" {
+			t.Errorf("the distribution's own Node was proposed: %v", detection.Packages)
+		}
+	}
+	if !strings.Contains(strings.Join(detection.Install, " "), "nodesource") {
+		t.Errorf("no Node is installed at all: %v", detection.Install)
+	}
+
+	// A guess that turns out wrong should be obvious rather than mysterious,
+	// and this one is worth explaining before somebody deletes it.
+	if !strings.Contains(detection.Why, "too old") {
+		t.Errorf("the reason does not say why: %q", detection.Why)
 	}
 }
 

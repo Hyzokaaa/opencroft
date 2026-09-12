@@ -55,19 +55,32 @@ type packageJSON struct {
 	Scripts map[string]string `json:"scripts"`
 }
 
+// nodeSource is where a usable Node comes from.
+//
+// Debian and Ubuntu ship one that is years behind: 24.04 still carries Node 18
+// and npm 9, and that npm has a bug which leaves native optional dependencies
+// uninstalled however correct the lockfile is. Proposing `apt install nodejs`
+// is proposing a build that fails on any project using current tooling, with
+// an error that blames the project.
+//
+// It is a third-party repository, which is worth knowing. It is also what
+// every Node install guide does, it is a visible command in the plan, and it
+// can be edited or removed before anything runs.
+const nodeSource = "curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs"
+
 func node(repo Repository) Detection {
 	detection := Detection{
-		Runtime:  "node",
-		Packages: []string{"nodejs", "npm"},
-		Port:     3000,
-		Why:      "package.json is present",
+		Runtime: "node",
+		Port:    3000,
+		Why:     "package.json is present, and the distribution's own Node is too old for current tooling",
+		Install: []string{nodeSource},
 	}
 
 	// npm ci needs a lockfile and fails without one; npm install does not.
 	if repo.has("package-lock.json") {
-		detection.Install = []string{"npm ci"}
+		detection.Install = append(detection.Install, "npm ci")
 	} else {
-		detection.Install = []string{"npm install"}
+		detection.Install = append(detection.Install, "npm install")
 		detection.Why += ", without a lockfile"
 	}
 

@@ -100,11 +100,15 @@ func (p *Planner) Deploy(d Deployment) plan.Plan {
 		steps = append(steps, p.writeEnv(service))
 	}
 
-	for _, command := range service.Install {
-		steps = append(steps, p.bounded("Install dependencies", p.inPath(service, command)))
+	// Numbered when there is more than one, because two steps called "Install
+	// dependencies" tell you nothing about which of them you are watching.
+	for i, command := range service.Install {
+		steps = append(steps, p.bounded(
+			counted("Install dependencies", i, len(service.Install)), p.inPath(service, command)))
 	}
-	for _, command := range service.Build {
-		steps = append(steps, p.bounded("Build", p.inPath(service, command)))
+	for i, command := range service.Build {
+		steps = append(steps, p.bounded(
+			counted("Build", i, len(service.Build)), p.inPath(service, command)))
 	}
 
 	steps = append(steps,
@@ -267,4 +271,11 @@ func (p *Planner) Rollback(snapshot string) plan.Plan {
 func (p *Planner) Logs(service *entities.Service, lines int) plan.Plan {
 	return plan.New(p.exec(fmt.Sprintf("Read the last %d lines", lines),
 		fmt.Sprintf("journalctl -u %s -n %d --no-pager", service.Unit(), lines)))
+}
+
+func counted(describe string, i, total int) string {
+	if total < 2 {
+		return describe
+	}
+	return fmt.Sprintf("%s (%d of %d)", describe, i+1, total)
 }
