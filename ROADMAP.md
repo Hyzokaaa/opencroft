@@ -162,9 +162,20 @@ instancia a mano tiene que seguir funcionando.
 
 Módulos nuevos siguiendo las mismas capas. No requiere tocar los existentes.
 
-- [ ] Módulo `app`: origen git, despliegue, historial, rollback
-- [ ] Módulo `build`: detección de runtime, buildpacks o Dockerfile
-- [ ] Módulo `env`: variables de entorno y secretos cifrados
+Adelantada sobre el catálogo: desplegar un proyecto resultó ser la máquina que ejecuta
+las recetas, y sin ella el catálogo habrían sido diez scripts a medida.
+
+- [x] Módulo `deploy`: origen git, servicios por contenedor, despliegue en dos planes
+- [x] Detección de runtime que propone y no decide (node, go, estático)
+- [x] Variables de entorno por servicio, escritas junto al código
+- [x] Comprobación de salud antes de dar un despliegue por terminado
+- [x] Snapshot antes de cada despliegue, con poda visible y marcado del que funcionó
+- [x] Rollback por snapshot, y commit fijado para volver sin tocar el resto
+- [ ] Secretos generados (contraseñas, JWT) en vez de escritos a mano
+- [ ] Claves de despliegue para repositorios privados
+- [ ] Sitios estáticos con nginx dentro del contenedor, sin trucos
+- [ ] Limpieza de snapshots de servicios abandonados
+- [ ] Webhooks de despliegue (GitHub, GitLab)
 - [ ] Webhooks de despliegue (GitHub, GitLab)
 - [ ] Módulo `database`: PostgreSQL, MySQL y Redis gestionados con backups
 - [ ] Promoción de una instancia existente a App

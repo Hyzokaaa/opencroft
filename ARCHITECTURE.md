@@ -574,21 +574,117 @@ Para la capa de infraestructura, un `FakeHost` que registra los comandos ejecuta
 devuelve salidas preparadas. Así se puede verificar que `CreateInstance` produce
 exactamente la secuencia de comandos esperada, sin ejecutar ninguno.
 
+## Módulo `deploy`
+
+Un contenedor corre **servicios**, en plural. Un servicio es un origen en git, unos
+comandos para construirlo y uno para arrancarlo. No es una entidad nueva junto a
+`Instance`: es algo que una instancia contiene.
+
+```
+internal/deploy/
+  domain/
+    entities/      service.go, snapshot.go
+    services/      detect.go — propone, nunca decide
+  infrastructure/
+    container/     planner.go — convierte un Service en comandos
+```
+
+### Desplegar son dos planes, no uno
+
+No se puede saber cómo construir código que no se ha visto. Así que el primer plan dice
+*"tráelo para que pueda mirarlo"* — snapshot, herramientas, checkout — y el segundo dice
+exactamente qué significa construirlo y arrancarlo. Ambos se leen antes de que corra
+ninguno.
+
+El plan de inspección es **el prefijo del de despliegue**, construido por el mismo código.
+Si se escribieran aparte, aprobar el primero dejaría de decir nada sobre el segundo.
+
+La detección lee `package.json`, `go.mod`, `index.html` y propone comandos concretos, que
+llegan a la interfaz como cajas de texto editables y se guardan como anotaciones. Es lo
+contrario de un buildpack: adivinamos igual que cualquiera, pero a la vista.
+
+### Anotaciones
+
+```
+user.croft.services                        "backend client"  ← el índice
+user.croft.service.<nombre>.repo           origen
+user.croft.service.<nombre>.commit         lo desplegado ahora mismo
+user.croft.service.<nombre>.install|build|start
+user.croft.service.<nombre>.env            JSON, escrito y leído entero
+user.croft.service.<nombre>.health         ruta, código, texto esperado
+user.croft.service.<nombre>.healthy        el snapshot que pasó su comprobación
+```
+
+Sin el índice no hay forma de enumerar: solo de preguntar por nombres ya conocidos.
+
+### Saber cuándo termina un despliegue
+
+Nada informa de que una aplicación esté lista. systemd da un unit por arrancado en cuanto
+el proceso se bifurca, mucho antes de que algo escuche. Así que es una pregunta repetida
+hasta que se responde o se agota el presupuesto — que es lo que hace por debajo todo lo
+que afirme otra cosa.
+
+Se pregunta **desde el host**, no desde dentro del contenedor, porque es desde donde
+preguntará nginx. Un servicio atado a `127.0.0.1` pasa una comprobación interna y no sirve
+a nadie. Y el bucle abandona en cuanto el unit muere, para que un arranque fallido se vea
+en segundos y no al cabo del presupuesto entero.
+
+Los pasos de instalación y construcción **tienen que terminar**: corren bajo `timeout`
+dentro del contenedor, así que un comando que no vuelve muere ahí en vez de quedar
+huérfano. El que sigue corriendo es el de arranque, y de ese se ocupa systemd.
+
+### Snapshots
+
+Dos orígenes que no pueden confundirse: los que tomó una persona, y los que tomamos
+nosotros antes de cada despliegue. La regla que los separa es la misma de los vhosts —
+el prefijo dice quién lo hizo.
+
+```
+croft-deploy-<servicio>-<fecha>    nuestro, podable
+before-upgrade                     de quien sea, intocable
+```
+
+Se conservan tres por servicio, y nunca el marcado como sano. Cada borrado es un paso
+visible del plan: este es el único sitio donde croft elimina algo por su cuenta.
+
+**Dos formas de volver atrás**, que deshacen cosas distintas:
+
+| | Alcance | Recupera datos |
+|---|---|---|
+| Fijar el commit anterior | solo ese servicio | no |
+| Restaurar el snapshot | el contenedor entero | sí |
+
+La primera es quirúrgica y sirve para el fallo normal, que es código malo. La segunda es
+lo único que salva de una migración que destrozó la base de datos — y es lo que una imagen
+de Docker no puede hacer. Por eso el checkout baja con diez commits de historia y no uno.
+
+### La consecuencia que hay que decir en voz alta
+
+Los snapshots son **del contenedor**, no del servicio. Restaurar uno se lleva a sus
+vecinos por delante. Por eso un servicio por contenedor suele ser más sensato, y por eso
+el panel lo avisa **al añadir el segundo** —que es cuando empieza a costar algo— y otra
+vez en el plan de rollback, nombrando qué más se revierte.
+
+### Lo que falta por hacer aquí
+
+- Los snapshots de un nombre de servicio abandonado no se podan nunca: la poda solo
+  alcanza al servicio que se está desplegando.
+- Un sitio estático se sirve hoy con un truco (`serve`) porque no escribimos configuración
+  de nginx dentro del contenedor.
+- Repos privados: `AuthKind` y `Source.Private()` existen, las claves de despliegue no.
+
 ## Camino a PaaS
 
-La v1 no incluye despliegue desde git, pero la arquitectura no lo bloquea. Lo que se añade
-después son módulos nuevos siguiendo las mismas capas:
+Lo que queda se añade como módulos nuevos siguiendo las mismas capas:
 
 | Módulo | Domain services | Repositorios de infraestructura |
 |---|---|---|
-| `app` | `CreateApp`, `DeployApp`, `RollbackApp` | anotaciones LXD + SQLite (historial de despliegues) |
-| `build` | `BuildImage`, `DetectRuntime` | buildpacks o script dentro del contenedor |
-| `env` | `SetEnvVar`, `RotateSecret` | fichero cifrado dentro de la instancia |
 | `database` | `ProvisionDatabase`, `BackupDatabase` | contenedor dedicado + `lxc snapshot` |
+| `secret` | `Generate`, `Rotate` | el fichero de entorno del servicio |
 
-Ninguno de ellos obliga a tocar `instance`, `route` ni `certificate`. Esa es la prueba de
-que la separación en capas está bien puesta: las features nuevas se añaden por los
-extremos, no por el centro.
+Ninguno obliga a tocar `instance`, `route` ni `certificate`. Esa es la prueba de que la
+separación en capas está bien puesta: las features nuevas se añaden por los extremos, no
+por el centro.
 
 `lxc snapshot` da backups y rollback prácticamente gratis, lo que es una ventaja real
 frente a los PaaS basados en Docker, donde el estado persistente es siempre el problema
