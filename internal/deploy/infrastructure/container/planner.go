@@ -212,21 +212,37 @@ WantedBy=multi-user.target
 //
 // The loop gives up early if the unit died, so a deployment that failed to
 // start says so in seconds rather than after the whole budget.
+//
+// This is the only shell croft runs on the host rather than inside a
+// container, which makes it the only place where a field from a request could
+// reach root. The URL is therefore single-quoted, and the health path is
+// refused if it carries a quote that could close it. Quoting is the fix;
+// rejecting the quote is the belt to its braces.
+//
+// curl is asked with -f only when the expected status is a success. -f makes
+// curl exit non-zero on 4xx and 5xx, which would short-circuit the && and
+// leave a check for an expected 401 or 404 timing out against a service that
+// was answering correctly all along.
 func (p *Planner) check(service *entities.Service) plan.Step {
 	url := fmt.Sprintf("http://%s:%d%s", p.address, service.Port, service.Health.Path)
+
+	fail := "f"
+	if service.Health.Code() >= 400 {
+		fail = ""
+	}
 
 	command := fmt.Sprintf(
 		"for attempt in $(seq 1 %d); do "+
 			"%s exec %s -- systemctl is-active --quiet %s || "+
 			"{ echo '%s stopped before it answered'; exit 1; }; "+
-			"answer=$(curl -fsS --max-time 2 -w '%%{http_code}' %s 2>/dev/null) && "+
+			"answer=$(curl -%ssS --max-time 2 -w '%%{http_code}' '%s' 2>/dev/null) && "+
 			"case \"$answer\" in %s) %s;; esac; "+
 			"sleep 1; done; "+
 			"echo 'nothing answered %s within %d seconds'; exit 1",
 		Budget,
 		p.bin, p.container, service.Unit(),
 		service.Unit(),
-		url,
+		fail, url,
 		"*"+fmt.Sprint(service.Health.Code()), body(service.Health.Contains),
 		url, Budget)
 

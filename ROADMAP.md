@@ -40,20 +40,20 @@ sin UI todavía.
 
 **Módulos**: `instance`, `route`, `certificate`, `host`, `shared/id`, `shared/host`
 
-- [ ] Esqueleto del proyecto y abstracción `Host` con implementación `LocalHost`
-- [ ] Driver `ContainerRuntime` con implementaciones para LXD e Incus, detectadas al arrancar
-- [ ] Driver `Proxy` sobre `/etc/nginx/croft.d/`, sin asumir el layout de Debian
-- [ ] Módulo `instance`: crear, listar, ver, arrancar, parar, destruir, editar límites
-- [ ] Módulo `route`: añadir dominio, listar, quitar, cambiar destino y puerto
-- [ ] Módulo `certificate`: emitir, renovar, revocar, listar con fecha de caducidad
-- [ ] ACME embebido con `lego`, sin dependencia de certbot
-- [ ] Proveedores DNS para el reto ACME: OVH y Cloudflare
-- [ ] Asignación de IP estática y validación de que las rutas apuntan a la IP real
-- [ ] Cabecera `managed-by: croft` con hash en todos los ficheros generados
+- [x] Esqueleto del proyecto y abstracción `Host` con implementación `LocalHost`
+- [x] Driver `ContainerRuntime` con implementaciones para LXD e Incus, detectadas al arrancar
+- [x] Driver `Proxy` sobre `/etc/nginx/croft.d/`, sin asumir el layout de Debian
+- [x] Módulo `instance`: crear, listar, ver, arrancar, parar, destruir (editar límites pendiente)
+- [x] Módulo `route`: añadir dominio, listar, quitar, cambiar destino y puerto
+- [x] Módulo `certificate`: emitir, renovar, listar con fecha de caducidad (revocar pendiente)
+- [x] ACME embebido con `lego`, sin dependencia de certbot
+- [x] Proveedores DNS para el reto ACME: OVH y Cloudflare
+- [x] Asignación de IP estática y validación de que las rutas apuntan a la IP real
+- [x] Cabecera `managed-by: croft` con hash en todos los ficheros generados
 - [ ] Modo `--plan` y `--explain` en toda operación de escritura
 - [ ] Descubrimiento de recursos `unmanaged` y comando de adopción
 - [ ] Salida `--json` en todos los comandos de lectura
-- [ ] Suite de tests con mocks y `FakeHost`
+- [x] Suite de tests con mocks y `FakeHost`
 
 **Criterio de aceptación de la fase**: todo comando funciona de forma no interactiva con
 flags. El modo interactivo, si existe, es una envoltura por encima. Sin esto la UI tendría
@@ -72,7 +72,7 @@ El 80% del valor percibido con el 0% del riesgo. Solo lectura.
 - [x] API HTTP con `hostId` en las rutas desde el principio
 - [x] Autenticación: usuarios locales y sesiones
 - [ ] Tokens de API para automatización
-- [ ] SQLite para estado propio (usuarios, sesiones, tokens, auditoría, trabajos)
+- [x] SQLite para estado propio (usuarios y sesiones; tokens y auditoría pendientes)
 - [x] Separación en dos procesos: `croft agent` (root) y `croft serve` (sin privilegios), por unix socket
 - [x] UI en React + Vite + Tailwind, embebida con `go:embed`
 - [x] Dashboard: instancias, estado, rutas y hallazgos
@@ -176,8 +176,9 @@ las recetas, y sin ella el catálogo habrían sido diez scripts a medida.
 - [ ] Sitios estáticos con nginx dentro del contenedor, sin trucos
 - [ ] Limpieza de snapshots de servicios abandonados
 - [ ] Webhooks de despliegue (GitHub, GitLab)
-- [ ] Webhooks de despliegue (GitHub, GitLab)
-- [ ] Módulo `database`: PostgreSQL, MySQL y Redis gestionados con backups
+- [x] Módulo `database`: PostgreSQL, MySQL y Redis **dentro** del contenedor que los usa
+- [ ] Base de datos compartida entre contenedores (diseñada, no construida)
+- [ ] Volcados lógicos (`pg_dump`), que son lo que habilita los backups fuera de la máquina
 - [ ] Promoción de una instancia existente a App
 
 ---

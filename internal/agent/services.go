@@ -56,7 +56,12 @@ var (
 	servicePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,30}$`)
 	packagePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9.+:-]{0,127}$`)
 	envKeyPattern  = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,127}$`)
-	healthPattern  = regexp.MustCompile(`^/[A-Za-z0-9._~:/?#@!$&'()*+,;=%-]{0,255}$`)
+	// No apostrophe. The health path is the one request field that reaches a
+	// shell running as root on the host — the readiness check asks from
+	// outside the container on purpose — where it sits inside single quotes.
+	// A quote is the only character that could close them, so it is the one
+	// character a URL path is not allowed to carry.
+	healthPattern = regexp.MustCompile(`^/[A-Za-z0-9._~:/?#@!$&()*+,;=%-]{0,255}$`)
 )
 
 // ── What crosses the socket ───────────────────────────────────────────────────
@@ -220,7 +225,7 @@ func wanted(dto HealthDTO) (deployEntities.Health, error) {
 	}
 
 	if !healthPattern.MatchString(health.Path) {
-		return health, errors.New("a health check is a path beginning with /")
+		return health, errors.New("a health check is a path beginning with /, and cannot carry a quote")
 	}
 	if health.Status != 0 && (health.Status < 100 || health.Status > 599) {
 		return health, errors.New("that is not a status code")
@@ -757,7 +762,10 @@ type rollbackRequest struct {
 // every service in it, and everything written since. The plan says so, and
 // says it louder when there is more than one service to lose.
 func (s *Server) rollbackPlan(ctx context.Context, name, snapshot string) (plan.Plan, string, error) {
-	if !deployEntities.Ours(snapshot) && !containsSnapshot(s.snapshots(ctx, name), snapshot) {
+	// Asked of the runtime, always. This used to skip the check for anything
+	// named like ours, which meant a name we would have chosen but never took
+	// produced a plan that could only fail once it was approved.
+	if !containsSnapshot(s.snapshots(ctx, name), snapshot) {
 		return plan.Plan{}, "", errors.New("there is no snapshot called " + snapshot + " on " + name)
 	}
 

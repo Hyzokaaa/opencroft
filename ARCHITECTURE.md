@@ -679,7 +679,7 @@ Lo que queda se añade como módulos nuevos siguiendo las mismas capas:
 
 | Módulo | Domain services | Repositorios de infraestructura |
 |---|---|---|
-| `database` | `ProvisionDatabase`, `BackupDatabase` | contenedor dedicado + `lxc snapshot` |
+| `database` | `ProvisionDatabase`, `DestroyDatabase` | el mismo contenedor + `lxc snapshot` |
 | `secret` | `Generate`, `Rotate` | el fichero de entorno del servicio |
 
 Ninguno obliga a tocar `instance`, `route` ni `certificate`. Esa es la prueba de que la

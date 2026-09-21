@@ -9,7 +9,7 @@ set -e
 # ended up reporting 0.2.0 while running 0.3.0, so it lives in a script.
 
 VERSION="${1:-dev}"
-IMAGE="${IMAGE:-golang:1.25-alpine}"
+IMAGE="${IMAGE:-golang:1.27-alpine}"
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 

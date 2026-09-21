@@ -177,12 +177,22 @@ func (r *NginxRouteRepository) Reload(ctx context.Context) error {
 	if _, err := r.host.Run(ctx, "nginx", "-t"); err != nil {
 		return fmt.Errorf("nginx rejected the configuration: %w", err)
 	}
-	if _, ok := r.host.Lookup(ctx, "systemctl"); ok {
-		_, err := r.host.Run(ctx, "systemctl", "reload", "nginx")
-		return err
-	}
-	_, err := r.host.Run(ctx, "rc-service", "nginx", "reload")
+	argv := r.reload()
+	_, err := r.host.Run(ctx, argv[0], argv[1:]...)
 	return err
+}
+
+// reload is how this host restarts nginx. Alpine has no systemd, and a plan
+// that ends in `systemctl reload nginx` there fails on its last step with the
+// vhost already written — which is the worst place to stop.
+//
+// Asked here rather than hard-coded, so that the plan shows the command that
+// will actually run on this machine.
+func (r *NginxRouteRepository) reload() []string {
+	if _, ok := r.host.Lookup(context.Background(), "systemctl"); ok {
+		return []string{"systemctl", "reload", "nginx"}
+	}
+	return []string{"rc-service", "nginx", "reload"}
 }
 
 // acmeChallenge lets Let's Encrypt reach the token over port 80 without
@@ -254,23 +264,28 @@ server {
 // before reloading matters: a bad file that nginx accepts is a bug, a bad file
 // that nginx rejects would take every other site down with it.
 func (r *NginxRouteRepository) WritePlan(route *entities.Route) plan.Plan {
-	path := filepath.Join(r.confDir, route.Domain+".conf")
-
 	return plan.New(
-		plan.WriteFile("Write the vhost, with a hash of its own contents", path, marked(route)),
+		plan.WriteFile("Write the vhost, with a hash of its own contents",
+			r.vhost(route.Domain), marked(route)),
 		plan.Command("Check nginx accepts it", "nginx", "-t"),
-		plan.Command("Reload nginx", "systemctl", "reload", "nginx"),
+		plan.Command("Reload nginx", r.reload()...),
 	)
 }
 
 func (r *NginxRouteRepository) RemovePlan(domain string) plan.Plan {
-	path := filepath.Join(r.confDir, domain+".conf")
-
 	return plan.New(
-		plan.Command("Remove the vhost", "rm", "-f", path),
+		plan.Command("Remove the vhost", "rm", "-f", r.vhost(domain)),
 		plan.Command("Check nginx accepts it", "nginx", "-t"),
-		plan.Command("Reload nginx", "systemctl", "reload", "nginx"),
+		plan.Command("Reload nginx", r.reload()...),
 	)
+}
+
+// vhost is a path on the machine nginx runs on, which is always Linux. Joined
+// by hand rather than with filepath, which would pick up the separator of
+// whatever machine croft was compiled on and write a Windows path into a plan
+// meant for a Linux host.
+func (r *NginxRouteRepository) vhost(domain string) string {
+	return r.confDir + "/" + domain + ".conf"
 }
 
 // marked renders the file with the header that lets us tell later whether

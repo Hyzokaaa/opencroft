@@ -105,6 +105,42 @@ func TestTheHealthCheckCannotCarryShellCharacters(t *testing.T) {
 	}
 }
 
+// The readiness check is the only shell croft runs on the host, and the health
+// path is the only request field that reaches it. It sits in single quotes, so
+// a quote is refused — and everything else is inert inside them.
+//
+// The case above used to be the whole of this, and it passed for the wrong
+// reason: "/health; id" is rejected for the space, not the semicolon. A
+// payload without spaces went straight through to root.
+func TestAHealthPathCannotReachTheHostShell(t *testing.T) {
+	for _, path := range []string{
+		"/health'",
+		"/'",
+		"/health'&&id;'",
+	} {
+		body := aService()
+		body.Health = HealthDTO{Path: path}
+		refused(t, body)
+	}
+
+	// These carry shell metacharacters and are accepted, because quoting makes
+	// them literal. What must never happen is the plan containing them
+	// unquoted.
+	for _, path := range []string{"/health;id", "/$(id)", "/health?a=1&b=2"} {
+		body := aService()
+		body.Health = HealthDTO{Path: path}
+
+		for _, step := range planOf(t, "/instances/helpdesk/services/deploy/plan", body).Plan.Steps {
+			if step.Argv[0] != "sh" {
+				continue
+			}
+			if !strings.Contains(step.Shell(), "'http://") {
+				t.Errorf("the readiness URL is not quoted for %q:\n%s", path, step.Shell())
+			}
+		}
+	}
+}
+
 // Asking a port nobody said to listen on would wait thirty seconds and then
 // blame the application.
 func TestAHealthCheckNeedsAPort(t *testing.T) {

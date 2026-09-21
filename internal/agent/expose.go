@@ -101,9 +101,10 @@ func (s *Server) expose(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 
-		for i, step := range s.routes.WritePlan(route).Steps {
-			report(i+2, step.Describe)
-		}
+		// One line for the whole write, because the repository walks the plan
+		// itself and will undo what it wrote if nginx refuses it. Announcing
+		// each step here would tick them all off before any of them ran.
+		report(2, "Writing the vhost and reloading nginx")
 		return s.routes.Write(r.Context(), route)
 	})
 }

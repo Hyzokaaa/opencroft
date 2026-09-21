@@ -202,12 +202,14 @@ else
   add_step "Download croft" "curl -fsSL '$RELEASE_URL' -o $PREFIX/bin/croft.new && chmod 0755 $PREFIX/bin/croft.new && mv $PREFIX/bin/croft.new $PREFIX/bin/croft"
 fi
 
-add_step "Create the croft system user" "groupadd --system croft; useradd --system -g croft -d /var/lib/croft -s /usr/sbin/nologin croft"
+add_step "Create the croft system user" "groupadd/useradd, or addgroup/adduser on busybox systems"
 add_step "Create the vhost directory" "install -d $NGINX_CONF_DIR"
 add_step "Wire it into nginx" "include $NGINX_CONF_DIR/*.conf; → the http block of $NGINX_CONF"
 
 if [ "$(service_manager)" = "systemd" ]; then
   add_step "Install two services" "croft-agent (root, talks to the runtime) and croft (unprivileged, serves HTTP)"
+else
+  add_step "NOT install any service — no systemd here" "you will have to write the init scripts yourself; the commands are printed at the end"
 fi
 
 echo ""
@@ -304,8 +306,16 @@ fi
 # The half that serves HTTP to a browser has no business being root. The
 # agent holds the privileges; the API reaches it over a socket its group owns.
 echo "── Create the croft system user"
-getent group croft >/dev/null || groupadd --system croft
-getent passwd croft >/dev/null || useradd --system -g croft -d /var/lib/croft -s /usr/sbin/nologin croft
+# groupadd and useradd are shadow-utils. Busybox systems — Alpine — have
+# addgroup and adduser instead, and failing here used to stop the install with
+# "command not found" on a distribution the rest of the script supports.
+if command -v groupadd >/dev/null; then
+  getent group croft >/dev/null 2>&1 || groupadd --system croft
+  getent passwd croft >/dev/null 2>&1 || useradd --system -g croft -d /var/lib/croft -s /usr/sbin/nologin croft
+else
+  addgroup -S croft 2>/dev/null || true
+  adduser -S -G croft -h /var/lib/croft -s /sbin/nologin croft 2>/dev/null || true
+fi
 install -d -o croft -g croft -m 0750 /var/lib/croft
 echo "[OK] user croft"
 
@@ -362,6 +372,20 @@ EOF
   systemctl enable --now croft-agent
   systemctl enable --now croft
   echo "[OK] croft-agent.service (root) and croft.service (unprivileged) running"
+else
+  # Saying nothing here was worse than not supporting it: the script went on to
+  # print "Installed" and the panel's address while nothing was running and
+  # nothing would start at boot.
+  echo "── No systemd on this host"
+  echo "[WARN] croft is installed, but nothing was started and nothing will"
+  echo "       start at boot. Two processes have to run:"
+  echo ""
+  echo "         $PREFIX/bin/croft agent --socket /run/croft/agent.sock --group croft"
+  echo "         $PREFIX/bin/croft serve --addr $ADDR      (as the croft user)"
+  echo ""
+  echo "       The first needs root. Write the two service files your init"
+  echo "       expects — on OpenRC that is /etc/init.d/croft-agent and"
+  echo "       /etc/init.d/croft."
 fi
 
 # There is no sign-up in the panel on purpose: an account is created by

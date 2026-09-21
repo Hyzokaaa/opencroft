@@ -8,6 +8,7 @@ package job
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -118,6 +119,7 @@ func (r *Runner) Start(kind, subject string, p plan.Plan, work func(ctx context.
 
 	r.mu.Lock()
 	r.jobs[j.Id] = j
+	r.forget()
 	r.mu.Unlock()
 
 	go func() {
@@ -165,6 +167,36 @@ func finalText(err error) string {
 		return fmt.Sprintf("Stopped: %v", err)
 	}
 	return "Done."
+}
+
+// Keep is how many finished jobs are remembered. Enough that the panel can
+// still open the one that just failed, and few enough that a daemon left
+// running for months does not hold every event of every deployment it ever
+// ran. Anything still running is never dropped.
+const Keep = 50
+
+// forget drops the oldest finished jobs. The caller holds the lock.
+func (r *Runner) forget() {
+	finished := make([]*Job, 0, len(r.jobs))
+	for _, j := range r.jobs {
+		j.mu.Lock()
+		done := j.Status != StatusRunning
+		j.mu.Unlock()
+
+		if done {
+			finished = append(finished, j)
+		}
+	}
+	if len(finished) <= Keep {
+		return
+	}
+
+	sort.Slice(finished, func(a, b int) bool {
+		return finished[a].Ended.Before(finished[b].Ended)
+	})
+	for _, j := range finished[:len(finished)-Keep] {
+		delete(r.jobs, j.Id)
+	}
 }
 
 func (r *Runner) Find(id string) (Snapshot, bool) {

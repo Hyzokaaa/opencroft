@@ -63,7 +63,7 @@ func Inspect(is []*instances.Instance, rs []*routes.Route, cs []*certificates.Ce
 				Kind:     "unmanaged",
 				Subject:  route.Domain,
 				Message:  "This route was not created by OpenCroft.",
-				Hint:     "Adopt it to manage it from here, or leave it alone.",
+				Hint:     "croft lists it and warns about its certificate, but will not change it.",
 			})
 		}
 

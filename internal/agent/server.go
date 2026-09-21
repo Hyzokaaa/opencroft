@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	certificateRepositories "github.com/Hyzokaaa/opencroft/internal/certificate/domain/repositories"
@@ -212,14 +213,27 @@ func (s *Server) listRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out := make([]RouteDTO, 0, len(found))
-	for _, route := range found {
-		out = append(out, RouteDTO{
+	out := make([]RouteDTO, len(found))
+	for i, route := range found {
+		out[i] = RouteDTO{
 			Domain: route.Domain, Target: route.Target, Port: route.Port,
 			SSL: route.SSL, State: string(route.State), File: route.File,
-			Answers: answers(route.Target, route.Port),
-		})
+		}
 	}
+
+	// Asked all at once. A target that is down costs the whole dial timeout,
+	// and in a row that is the overview taking a second per broken route — on
+	// a page that refreshes every ten.
+	var wg sync.WaitGroup
+	for i, route := range found {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			out[i].Answers = answers(route.Target, route.Port)
+		}()
+	}
+	wg.Wait()
+
 	writeJSON(w, http.StatusOK, out)
 }
 

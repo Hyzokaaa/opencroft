@@ -196,13 +196,29 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-// sourceOf is the address the request came from. Behind our own nginx that is
-// the forwarded one; the header is only trusted because nothing but the local
-// proxy can reach the panel's port.
+// sourceOf is the address the request came from, and it has to be one the
+// caller cannot choose.
+//
+// X-Forwarded-For is appended to, not replaced: nginx adds the real address to
+// the end of whatever arrived. Reading the front of that list means reading a
+// value the client wrote, so a different one on every attempt would give a
+// fresh throttle key each time and the per-source limit would count to one for
+// ever.
+//
+// X-Real-IP is set rather than appended by the vhost croft generates, so nginx
+// overwrites anything the client sent. That is the one forwarded header worth
+// believing; failing that, the last entry of the chain is the one the nearest
+// proxy added, and failing that, the socket itself.
 func sourceOf(r *http.Request) string {
+	if real := strings.TrimSpace(r.Header.Get("X-Real-IP")); real != "" {
+		return real
+	}
+
 	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		first, _, _ := strings.Cut(forwarded, ",")
-		return strings.TrimSpace(first)
+		parts := strings.Split(forwarded, ",")
+		if last := strings.TrimSpace(parts[len(parts)-1]); last != "" {
+			return last
+		}
 	}
 
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
