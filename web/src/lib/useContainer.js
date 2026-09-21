@@ -45,6 +45,48 @@ export function useServices(container) {
   return { data, error, fetchedAt, read: data !== null, reload: load }
 }
 
+// A database lives inside the container that uses it, which is what makes a
+// snapshot of that container a snapshot of the application and its data at the
+// same instant. What comes back is metadata only: the password is generated on
+// the privileged side and never crosses back.
+export function useDatabases(container) {
+  const [data, setData] = useState(null)
+  const [error, setError] = useState(null)
+  const timer = useRef(null)
+
+  const load = useCallback(async () => {
+    if (!container) return
+    try {
+      const res = await fetch(`/api/hosts/${HOST}/instances/${container}/databases`)
+      const payload = await res.json()
+
+      // A host with no privileged side says so rather than looking broken.
+      if (res.status === 503) {
+        setData({ databases: [] })
+        setError(null)
+        return
+      }
+      if (!res.ok) throw new Error(payload.error ?? `The daemon answered ${res.status}`)
+      setData(payload)
+      setError(null)
+    } catch (e) {
+      setError(e.message)
+    }
+  }, [container])
+
+  useEffect(() => {
+    // Another container is another subject, same as the services above.
+    setData(null)
+    setError(null)
+
+    load()
+    timer.current = setInterval(load, INTERVAL)
+    return () => clearInterval(timer.current)
+  }, [load])
+
+  return { data, error, read: data !== null, reload: load }
+}
+
 // Following logs is polling, and saying so is better than implying a stream we
 // do not have. journalctl is asked for the last N lines; the same lines coming
 // back twice is cheap and the difference is invisible.

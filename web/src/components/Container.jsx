@@ -2,7 +2,8 @@ import { useState } from 'react'
 import Card from './Card.jsx'
 import Chip from './Chip.jsx'
 import LogView from './LogView.jsx'
-import { useServices } from '../lib/useContainer.js'
+import PlanDialog from './PlanDialog.jsx'
+import { useServices, useDatabases } from '../lib/useContainer.js'
 
 // What a container actually is, once something has been deployed into it.
 //
@@ -23,7 +24,9 @@ export default function Container({
   onAddDomain,
 }) {
   const { data, error, fetchedAt, read } = useServices(container.name)
+  const databases = useDatabases(container.name)
   const [logs, setLogs] = useState(null)
+  const [dialog, setDialog] = useState(null)
 
   const services = data?.services ?? []
   const snapshots = data?.snapshots ?? []
@@ -141,6 +144,14 @@ export default function Container({
         )}
       </Card>
 
+      <Databases
+        container={container}
+        state={databases}
+        commandMode={commandMode}
+        onAdd={() => setDialog({ kind: 'add' })}
+        onRemove={(database) => setDialog({ kind: 'remove', database })}
+      />
+
       <Snapshots
         snapshots={snapshots}
         services={services}
@@ -148,10 +159,146 @@ export default function Container({
         commandMode={commandMode}
         read={read}
         onRollback={onRollback}
+        databases={databases.data?.databases ?? []}
       />
 
       {logs && <LogView container={container.name} service={logs} onClose={() => setLogs(null)} />}
+
+      {dialog && (
+        <PlanDialog
+          request={databaseRequest(container, dialog)}
+          onClose={() => setDialog(null)}
+          onFinished={() => {
+            setDialog(null)
+            databases.reload()
+          }}
+        />
+      )}
     </>
+  )
+}
+
+// databaseRequest is the whole add-and-remove flow, because PlanDialog already
+// is one: a form, then the commands, then watching them run. A second dialog
+// that did the same thing differently is how two screens start disagreeing.
+function databaseRequest(container, dialog) {
+  const url = `/api/hosts/local/instances/${container.name}/databases`
+
+  if (dialog.kind === 'remove') {
+    return {
+      title: `Remove ${dialog.database.name} from ${container.name}`,
+      url: `${url}/${dialog.database.name}`,
+      method: 'DELETE',
+      destructive: true,
+    }
+  }
+
+  return {
+    title: `Add a database to ${container.name}`,
+    url,
+    method: 'POST',
+    fields: [
+      {
+        name: 'engine',
+        label: 'Engine',
+        options: ['postgres', 'mysql', 'redis'],
+      },
+      {
+        name: 'name',
+        label: 'Name',
+        placeholder: 'main',
+        autoFocus: true,
+        hint: 'Lowercase letters, digits and underscores — it becomes an SQL identifier.',
+      },
+    ],
+    defaults: { engine: 'postgres', name: 'main' },
+  }
+}
+
+// The data lives in the container, so it is in the snapshots too. That is the
+// advantage, and it is also the thing to know before restoring one.
+function Databases({ container, state, commandMode, onAdd, onRemove }) {
+  const databases = state.data?.databases ?? []
+
+  return (
+    <Card
+      title="Databases"
+      count={state.read ? databases.length : undefined}
+      commandMode={commandMode}
+      commands={[`lxc exec ${container.name} -- systemctl is-active postgresql`]}
+      action={
+        <button onClick={onAdd} className="text-xs text-muted transition hover:text-ink">
+          Add
+        </button>
+      }
+    >
+      {!state.read ? (
+        <Reading what="what it stores" />
+      ) : databases.length === 0 ? (
+        <div className="px-4 py-8 text-center">
+          <p className="text-sm text-muted">No database here.</p>
+          <p className="mt-1 text-xs text-muted">
+            One inside this container is captured by its snapshots — the application and its data
+            go back together.
+          </p>
+        </div>
+      ) : (
+        <ul className="divide-y divide-edge">
+          {databases.map((database) => (
+            <Database key={database.name} database={database} onRemove={() => onRemove(database)} />
+          ))}
+        </ul>
+      )}
+    </Card>
+  )
+}
+
+function Database({ database, onRemove }) {
+  const away = Boolean(database.location)
+  const running = database.state === 'active'
+  const wrong = !away && !running
+
+  return (
+    <li className={`relative px-4 py-3 ${wrong ? 'bg-problem/[0.04]' : ''}`}>
+      {wrong && <span className="absolute left-0 top-0 h-full w-[2px] bg-problem" />}
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-mono text-xs">
+            {database.name}
+            <span className="text-muted"> · {database.engine}</span>
+          </p>
+          <p className="mt-0.5 font-mono text-[11px] text-muted">
+            {database.db} on {database.port}
+            {away ? ` · in ${database.location}` : ''}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Chip
+            label={away ? 'elsewhere' : database.state || 'unknown'}
+            tone={
+              away
+                ? 'border-caution/40 text-caution'
+                : running
+                  ? 'border-running/40 text-running'
+                  : 'border-problem/40 text-problem'
+            }
+          />
+          <button onClick={onRemove} className={SECONDARY}>
+            Remove
+          </button>
+        </div>
+      </div>
+
+      {away && (
+        <p className="mt-2 text-[11px] text-caution">
+          This data is in {database.location}, so restoring a snapshot of this container does not
+          bring it back — the application would return to an older version against today&apos;s
+          data.
+        </p>
+      )}
+    </li>
   )
 }
 
@@ -312,7 +459,36 @@ function ago(when) {
 // Ours and yours in one list, told apart by the prefix — the same rule the
 // generated vhosts use. Yours are shown because a rollback has to name
 // something real, and never touched because they are not ours to touch.
-function Snapshots({ snapshots, services, container, commandMode, read, onRollback }) {
+// What restoring one of these actually reaches, once the container stores data.
+//
+// A snapshot that carries the database is the whole reason for putting it in
+// here — and it is also the reason a restore is not free. Saying only the first
+// half is how the first half stops being believed.
+function DataWarning({ databases }) {
+  const inside = databases.filter((d) => !d.location).map((d) => d.db)
+  const away = databases.filter((d) => d.location)
+
+  if (inside.length === 0 && away.length === 0) return null
+
+  return (
+    <div className="border-b border-edge px-4 py-2.5 text-[11px]">
+      {inside.length > 0 && (
+        <p className="text-caution">
+          Restoring takes {inside.join(', ')} back to that moment too, losing anything written
+          since.
+        </p>
+      )}
+      {away.map((d) => (
+        <p key={d.name} className="text-caution">
+          {d.db} is in {d.location} and does <strong>not</strong> go back — the application would
+          return to an older version against today&apos;s data.
+        </p>
+      ))}
+    </div>
+  )
+}
+
+function Snapshots({ snapshots, services, container, commandMode, read, onRollback, databases }) {
   const healthy = new Set(services.map((s) => s.healthy).filter(Boolean))
   const alive = new Set(services.map((s) => s.name))
 
@@ -351,6 +527,11 @@ function Snapshots({ snapshots, services, container, commandMode, read, onRollba
         </p>
       ) : (
         <>
+          {/* The same capability sold as the advantage and warned about as the
+              risk. Said here, above the buttons, because this is where somebody
+              is about to press one. */}
+          <DataWarning databases={databases ?? []} />
+
           <ul className="divide-y divide-edge">
             {worked.map(row)}
             {rest.slice(0, 4).map(row)}

@@ -4,6 +4,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/Hyzokaaa/opencroft/internal/shared/snapshot"
 )
 
 // Snapshots come from two places and must never be confused.
@@ -20,37 +22,34 @@ import (
 //	croft-deploy-backend-20260911-143000   ours, prunable
 //	before-upgrade                          yours, untouchable
 //
-// The shape is croft-<kind>-<subject>-<timestamp>. Adding another kind later
-// — an upgrade, a scheduled backup — fits without reopening the decision.
+// The shape is croft-<kind>-<subject>-<timestamp>. The prefix, the timestamp
+// and the ownership rule live in shared/snapshot, because the database module
+// names snapshots too and there can only be one answer to "is this ours".
 const (
-	Prefix     = "croft-"
+	Prefix     = snapshot.Prefix
 	DeployKind = Prefix + "deploy-"
 
 	// DestroyKind is taken before a service is removed. Pruning only ever
 	// reaches DeployKind, so this one survives — it is the only record of
 	// something that was deliberately deleted, and the only way back.
 	DestroyKind = Prefix + "destroy-"
-
-	// stamp sorts lexically as it sorts in time, and is UTC so that a host
-	// that changes timezone does not reorder its own history.
-	stamp = "20060102-150405"
 )
 
 // SnapshotName says what was deployed and when. The snapshot covers the whole
 // container — a service cannot be snapshotted on its own — so the name records
 // which deployment caused it, not what it contains.
 func SnapshotName(service string, at time.Time) string {
-	return DeployKind + service + "-" + at.UTC().Format(stamp)
+	return snapshot.Name(DeployKind, service, at)
 }
 
 // Ours is the whole of the ownership rule. Everything that removes a snapshot
 // asks this first.
-func Ours(snapshot string) bool { return strings.HasPrefix(snapshot, Prefix) }
+func Ours(name string) bool { return snapshot.Ours(name) }
 
 // OfService is true for our snapshots taken for this particular service, so
 // that pruning one deployment's history never reaches into another's.
-func OfService(snapshot, service string) bool {
-	return strings.HasPrefix(snapshot, DeployKind+service+"-")
+func OfService(name, service string) bool {
+	return strings.HasPrefix(name, DeployKind+service+"-")
 }
 
 // Prunable returns the snapshots to remove: ours, for this service, beyond the
@@ -61,9 +60,9 @@ func OfService(snapshot, service string) bool {
 // be the one place this tool deleted something nobody read about.
 func Prunable(snapshots []string, service string, keep int, healthy string) []string {
 	mine := []string{}
-	for _, snapshot := range snapshots {
-		if OfService(snapshot, service) && snapshot != healthy {
-			mine = append(mine, snapshot)
+	for _, name := range snapshots {
+		if OfService(name, service) && name != healthy {
+			mine = append(mine, name)
 		}
 	}
 
@@ -83,7 +82,7 @@ func Prunable(snapshots []string, service string, keep int, healthy string) []st
 // a DeployKind: pruning must never reach it, because it is the only way back
 // to something somebody chose to delete.
 func FarewellName(service string, at time.Time) string {
-	return DestroyKind + service + "-" + at.UTC().Format(stamp)
+	return snapshot.Name(DestroyKind, service, at)
 }
 
 // IndexKey lists the services on a container. Without it there is no way to

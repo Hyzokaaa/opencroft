@@ -123,6 +123,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /instances/{name}/services/{service}", s.destroyService)
 	mux.HandleFunc("POST /instances/{name}/services/rollback/plan", s.planRollback)
 	mux.HandleFunc("POST /instances/{name}/services/rollback", s.rollback)
+	mux.HandleFunc("GET /instances/{name}/databases", s.listDatabases)
+	mux.HandleFunc("POST /instances/{name}/databases/plan", s.planProvision)
+	mux.HandleFunc("POST /instances/{name}/databases", s.provision)
+	mux.HandleFunc("GET /instances/{name}/databases/{database}/destroy/plan", s.planDestroyDatabase)
+	mux.HandleFunc("DELETE /instances/{name}/databases/{database}", s.destroyDatabase)
 	mux.HandleFunc("GET /dns", s.showDNS)
 	mux.HandleFunc("POST /dns", s.saveDNS)
 

@@ -42,7 +42,9 @@ type Deps struct {
 	Expose    any
 	// Services is the deploy side of the agent, held as any for the same
 	// reason Expose is: a host with no runtime has none, and says so.
-	Services  any
+	Services any
+	// Databases is the same for the engines that live inside a container.
+	Databases any
 	PanelPort int
 	Simulated bool
 
@@ -86,6 +88,10 @@ func Handler(deps Deps) http.Handler {
 	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/services/rollback", deps.rollbackService)
 	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/services/{service}/logs", deps.showServiceLogs)
 	mux.HandleFunc("DELETE /api/hosts/{hostId}/instances/{name}/services/{service}", deps.destroyService)
+
+	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/databases", deps.listDatabases)
+	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/databases", deps.provisionDatabase)
+	mux.HandleFunc("DELETE /api/hosts/{hostId}/instances/{name}/databases/{database}", deps.destroyDatabase)
 
 	mux.HandleFunc("POST /api/hosts/{hostId}/expose", deps.exposePanel)
 

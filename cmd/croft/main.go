@@ -83,6 +83,8 @@ func main() {
 		expose(ctx, os.Args[2:])
 	case "deploy":
 		deployCommand(ctx, os.Args[2:])
+	case "db":
+		databaseCommand(ctx, os.Args[2:])
 	case "rollback":
 		rollbackCommand(ctx, os.Args[2:])
 	case "version", "--version", "-v":
@@ -107,6 +109,7 @@ Usage:
   croft expose <domain>                 put the panel on a domain, over https
   croft deploy <container> --repo <url>  fetch a project, then build and run it
   croft rollback <container>             restore the last version that worked
+  croft db add <container> --engine postgres   a database inside the container
   croft dns show | set <provider>        DNS credentials, for the dns-01 challenge
   croft version
 
@@ -126,6 +129,7 @@ type deps struct {
 	dns          server.DNSConfig
 	expose       any
 	services     any
+	databases    any
 	instances    instanceRepositories.InstanceRepository
 	routes       routeRepositories.RouteRepository
 	certificates certificateRepositories.CertificateRepository
@@ -162,6 +166,7 @@ func wire(ctx context.Context, demo bool, nginxDir, socket string) deps {
 				dns:          agentDNS{client: client},
 				expose:       client,
 				services:     client.Services(),
+				databases:    client.Databases(),
 				runtime:      client.Flavor(),
 				version:      version,
 			}
@@ -226,6 +231,7 @@ func serve(ctx context.Context, args []string) {
 		DNS:             d.dns,
 		Expose:          d.expose,
 		Services:        d.services,
+		Databases:       d.databases,
 		PanelPort:       portOf(*addr),
 		Simulated:       d.demo,
 	})
