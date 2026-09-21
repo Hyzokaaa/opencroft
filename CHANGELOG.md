@@ -15,6 +15,7 @@ descargó.
 ## No publicado
 
 - feat: a database inside the container, so one snapshot holds both
+- fix: give an older unit the line it needs to read generated credentials
 - fix: the health path can no longer reach the shell croft runs as root
 - fix: reload nginx the way this host does it, so a vhost lands on Alpine too
 - fix: count login attempts by an address the caller cannot choose

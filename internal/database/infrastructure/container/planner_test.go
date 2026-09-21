@@ -101,17 +101,35 @@ func TestALocalDatabaseTouchesNoConfiguration(t *testing.T) {
 	}
 }
 
-// Provisioning must never rewrite a unit. The unit reads a fixed path, written
-// once when the service was deployed; that is what keeps the two modules from
-// having to know about each other.
-func TestNoUnitIsRewritten(t *testing.T) {
+// Provisioning must never regenerate a unit — that is what keeps the two
+// modules from having to know about each other. It may add the one line a unit
+// written before the fixed path existed is missing, which is a different thing
+// and the only reason it touches one at all.
+func TestNoUnitIsRegenerated(t *testing.T) {
 	body := text(provision(postgres(), "backend", "worker"))
 
-	if strings.Contains(body, "/etc/systemd/system") {
-		t.Error("provisioning rewrites a unit file")
+	if strings.Contains(body, "cat > /etc/systemd/system") {
+		t.Error("provisioning writes a unit file from scratch")
 	}
-	if !strings.Contains(body, "systemctl restart croft-backend") {
-		t.Error("the service is never restarted, so it will not see the credentials")
+	for _, service := range []string{"backend", "worker"} {
+		if !strings.Contains(body, "systemctl restart croft-"+service) {
+			t.Errorf("%s is never restarted, so it will not see the credentials", service)
+		}
+	}
+}
+
+// A container deployed by an older croft has a unit with no EnvironmentFile for
+// the generated credentials. It would come back up without them and without
+// saying why, which is the worst shape a failure can take.
+func TestAUnitWrittenBeforeTheFixedPathIsGivenIt(t *testing.T) {
+	body := text(provision(postgres(), "backend"))
+
+	if !strings.Contains(body, "sed -i") || !strings.Contains(body, entities.EnvPath) {
+		t.Errorf("an older unit is never given the line:\n%s", body)
+	}
+	// Running it twice has to change nothing.
+	if !strings.Contains(body, "grep -q") {
+		t.Error("the line would be added again on every provision")
 	}
 }
 

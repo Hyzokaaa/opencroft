@@ -141,15 +141,38 @@ func (p *Planner) Provision(d *entities.Database, at time.Time, index, services 
 		"List "+strings.Join(index, ", ")+" in the index",
 		p.bin, "config", "set", p.container, entities.IndexKey, strings.Join(index, " ")))
 
-	// Nothing is rewritten: the unit already reads the file that the previous
-	// step regenerated. A restart is all it takes to pick the credentials up.
+	// A unit written by croft 0.20 or later already reads the file the previous
+	// step regenerated, and a restart is all it takes. One written before that
+	// does not, and would come back up without its credentials and without
+	// saying why — so the line is put there if it is missing.
+	//
+	// Checked rather than assumed, because a container deployed months ago is
+	// exactly the one somebody adds a database to.
 	for _, service := range services {
 		steps = append(steps, plan.Optional(
 			"Restart croft-"+service+" so it reads the new credentials",
-			p.bin, "exec", p.container, "--", "systemctl", "restart", "croft-"+service))
+			p.bin, "exec", p.container, "--", "sh", "-lc", p.reread(service)))
 	}
 
 	return plan.New(steps...)
+}
+
+// reread makes a service pick the credentials up, whatever version of croft
+// wrote its unit.
+//
+// The EnvironmentFile line is a fixed path so that provisioning never has to
+// regenerate a unit — but a unit that predates the path has no line to fix, so
+// it gets one. Idempotent: the grep means running this twice changes nothing.
+func (p *Planner) reread(service string) string {
+	unit := "/etc/systemd/system/croft-" + service + ".service"
+	line := "EnvironmentFile=-" + entities.EnvPath
+
+	return "unit=" + unit + "\n" +
+		"if [ -f \"$unit\" ] && ! grep -q '" + line + "' \"$unit\"; then\n" +
+		"  sed -i '/^\\[Service\\]/a " + line + "' \"$unit\"\n" +
+		"  systemctl daemon-reload\n" +
+		"fi\n" +
+		"systemctl restart croft-" + service
 }
 
 func waitFor(engine enums.Engine) string {
