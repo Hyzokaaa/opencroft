@@ -28,8 +28,14 @@ npm --prefix web run build
 #
 # So it is used when it is there, and the fallback says what is not being
 # checked rather than pretending the two paths are the same.
-if ! docker info >/dev/null 2>&1; then
-  echo "── No docker daemon — building with the local toolchain"
+#   NO_DOCKER=1 bash build.sh 0.20.0
+#
+# is the way out when the daemon answers but cannot work — a full disk puts its
+# filesystem in read-only and every command fails halfway through. Asked for
+# rather than guessed, because "docker did not work" is also what a failing
+# test looks like, and falling back on that would hide it.
+if [ "${NO_DOCKER:-}" = "1" ] || ! docker info >/dev/null 2>&1; then
+  echo "── Building with the local toolchain, not in docker"
   echo "   The tests will run on $(uname -s), not on Linux."
   echo ""
 
