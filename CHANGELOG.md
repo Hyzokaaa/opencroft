@@ -14,6 +14,7 @@ descargó.
 
 ## No publicado
 
+### v0.20.0 — 2026-09-21
 - feat: a database inside the container, so one snapshot holds both
 - fix: give an older unit the line it needs to read generated credentials
 - fix: the health path can no longer reach the shell croft runs as root
@@ -27,6 +28,8 @@ descargó.
 - fix: build vhost paths as Linux paths, whatever compiled croft
 - fix: say out loud when the installer has not started anything
 - docs: bring the roadmap up to what is actually built
+- build: fall back to the local toolchain when there is no docker daemon
+- build: let NO_DOCKER=1 skip a daemon that answers but cannot write
 
 ### v0.19.0 — 2026-09-12
 - feat: remove a service
