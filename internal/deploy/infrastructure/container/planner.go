@@ -280,6 +280,22 @@ func (p *Planner) prune(d Deployment) []plan.Step {
 	return steps
 }
 
+// Restart, Stop and Start touch nothing the service runs — nothing is
+// fetched, installed or built. They exist for what a full Deploy is not: a
+// process that hung, or a change made by hand that only needs systemd to
+// notice.
+func (p *Planner) Restart(service *entities.Service) plan.Plan {
+	return plan.New(p.exec("Restart "+service.Unit(), "systemctl restart "+service.Unit()))
+}
+
+func (p *Planner) Stop(service *entities.Service) plan.Plan {
+	return plan.New(p.exec("Stop "+service.Unit(), "systemctl stop "+service.Unit()))
+}
+
+func (p *Planner) Start(service *entities.Service) plan.Plan {
+	return plan.New(p.exec("Start "+service.Unit(), "systemctl start "+service.Unit()))
+}
+
 // Rollback puts the container back to a snapshot. Restoring includes whatever
 // the services had written to disk, which is the part an image cannot do — and
 // the part that reaches every other service in the container.

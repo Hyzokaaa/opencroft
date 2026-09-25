@@ -21,6 +21,7 @@ export default function Container({
   onDeploy,
   onRollback,
   onDestroy,
+  onPowerService,
   onAddDomain,
 }) {
   const { data, error, fetchedAt, read } = useServices(container.name)
@@ -119,6 +120,7 @@ export default function Container({
                   onLogs={() => setLogs(service.name)}
                   onDeploy={() => onDeploy(container, service)}
                   onDestroy={() => onDestroy(container, service)}
+                  onPower={(action) => onPowerService(container, service, action)}
                 />
               ))}
             </ul>
@@ -337,7 +339,7 @@ const SECONDARY =
 // State comes from the machine, not from what we recorded. A service croft
 // deployed and that then died must look dead here — and in more than one
 // colour, because colour alone reaches nobody who cannot see it.
-function Service({ service, onLogs, onDeploy, onDestroy }) {
+function Service({ service, onLogs, onDeploy, onDestroy, onPower }) {
   const running = service.state === 'active'
 
   return (
@@ -384,10 +386,24 @@ function Service({ service, onLogs, onDeploy, onDestroy }) {
         {/* When something is down the useful move is to look before writing,
             so the prominent button follows the situation rather than the
             layout. */}
-        <div className="flex shrink-0 gap-1.5">
+        <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
           <button onClick={onLogs} className={running ? SECONDARY : PRIMARY}>
             Logs
           </button>
+          {running ? (
+            <>
+              <button onClick={() => onPower('restart')} className={SECONDARY}>
+                Restart
+              </button>
+              <button onClick={() => onPower('stop')} className={SECONDARY}>
+                Stop
+              </button>
+            </>
+          ) : (
+            <button onClick={() => onPower('start')} className={PRIMARY}>
+              Start
+            </button>
+          )}
           <button onClick={onDeploy} className={SECONDARY}>
             Deploy again
           </button>

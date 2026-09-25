@@ -752,6 +752,57 @@ func (s *Server) stored(r *http.Request) (string, *deployEntities.Service, error
 	return name, entity, nil
 }
 
+// ── Power ─────────────────────────────────────────────────────────────────────
+//
+// Restart, stop and start are the one-step plans: no fetch, no install, no
+// build. Sharing this pair of handlers, parameterised by which of the
+// planner's three methods to call, is what keeps them from drifting into
+// three copies of the same streaming and error handling.
+
+type servicePlan func(*container.Planner, *deployEntities.Service) plan.Plan
+
+func (s *Server) planServicePower(w http.ResponseWriter, r *http.Request, build servicePlan) {
+	name, service, err := s.stored(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	planner, err := s.planner(r.Context(), name)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, PlanResponse{Plan: build(planner, service)})
+}
+
+func (s *Server) servicePower(w http.ResponseWriter, r *http.Request, build servicePlan) {
+	name, service, err := s.stored(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	planner, err := s.planner(r.Context(), name)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	ctx := r.Context()
+	p := build(planner, service)
+
+	s.stream(w, func(report func(int, string)) error {
+		for i, step := range p.Steps {
+			report(i+1, step.Describe)
+			if err := host.RunStep(ctx, s.host, step); err != nil {
+				return explain(step, err)
+			}
+		}
+		return nil
+	})
+}
+
 // ── Going back ────────────────────────────────────────────────────────────────
 
 type rollbackRequest struct {

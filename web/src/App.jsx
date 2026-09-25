@@ -185,6 +185,19 @@ function Dashboard({ onSignOut, onSessionLost }) {
     })
   }
 
+  // Restarting, stopping or starting touches nothing the service runs — no
+  // fetch, no install, no build. Only stop leaves it down until told
+  // otherwise, which is the one of the three worth pausing on.
+  const POWER_TITLE = { restart: 'Restart', stop: 'Stop', start: 'Start' }
+  function powerService(container, service, action) {
+    setDialog({
+      title: `${POWER_TITLE[action]} ${service.name}`,
+      url: `/api/hosts/local/instances/${container.name}/services/${service.name}/${action}`,
+      method: 'POST',
+      destructive: action === 'stop',
+    })
+  }
+
   function focusSubject(subject) {
     const isDomain = data?.routes.some((r) => r.domain === subject)
     if (!isDomain && data?.instances.some((i) => i.name === subject)) {
@@ -272,6 +285,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
           onDeploy={(container, service) => setDeploying({ container, service })}
           onRollback={rollback}
           onDestroy={destroyService}
+          onPowerService={powerService}
           onAddDomain={addDomain}
         />
       )}
