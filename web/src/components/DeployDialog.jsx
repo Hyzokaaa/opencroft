@@ -45,7 +45,12 @@ export default function DeployDialog({ container, service: deployed, onClose, on
         onClose={onClose}
         onResult={(detection) => {
           setWhy(detection.why ?? '')
-          setService({
+          // Re-detecting a service that already exists — after changing its
+          // branch, say — looks at the new code, not at what it is configured
+          // to do with it. The environment and the readiness check are not on
+          // the branch; wiping them here would make "change the branch" also
+          // mean "forget the secrets".
+          setService((prev) => ({
             ...asked,
             install: (detection.install ?? []).join(' && '),
             build: (detection.build ?? []).join(' && '),
@@ -53,10 +58,10 @@ export default function DeployDialog({ container, service: deployed, onClose, on
             runtime: detection.runtime ?? '',
             port: detection.port ?? 0,
             packages: (detection.packages ?? []).join(' '),
-            env: '',
-            health: '',
-            contains: '',
-          })
+            env: prev?.env ?? '',
+            health: prev?.health ?? '',
+            contains: prev?.contains ?? '',
+          }))
           setStage('found')
         }}
       />
@@ -111,7 +116,13 @@ export default function DeployDialog({ container, service: deployed, onClose, on
       )}
 
       {stage === 'found' && (
-        <Found service={service} why={why} onChange={setService} onDeploy={() => setStage('deploying')} />
+        <Found
+          service={service}
+          why={why}
+          onChange={setService}
+          onDeploy={() => setStage('deploying')}
+          onEditSource={deployed ? () => setStage('source') : null}
+        />
       )}
     </Frame>
   )
@@ -216,15 +227,29 @@ function Source({ value, name, onChange, error, onSubmit }) {
 
 // Everything here is editable on purpose. What was detected is a suggestion,
 // and a suggestion you cannot change is a decision made behind your back.
-function Found({ service, why, onChange, onDeploy }) {
+function Found({ service, why, onChange, onDeploy, onEditSource }) {
   const set = (key) => (v) => onChange({ ...service, [key]: v })
 
   return (
     <>
       <div className="space-y-3 px-5 py-4">
-        <p className="text-sm">
-          {service.runtime ? `Detected ${service.runtime}.` : 'Nothing recognisable at the root.'}{' '}
-          <span className="text-muted">{why}</span>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <p className="text-sm">
+            {service.runtime ? `Detected ${service.runtime}.` : 'Nothing recognisable at the root.'}{' '}
+            <span className="text-muted">{why}</span>
+          </p>
+          {onEditSource && (
+            <button
+              onClick={onEditSource}
+              className="shrink-0 text-xs text-muted underline decoration-dotted underline-offset-2 transition hover:text-ink"
+            >
+              Advanced: change repository or branch
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-faint">
+          {service.repo}
+          {service.branch ? ` @ ${service.branch}` : ''}
         </p>
         <p className="text-xs text-faint">
           These are suggestions, not rules. Change anything &mdash; what you leave here is what runs,
