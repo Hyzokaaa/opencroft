@@ -14,6 +14,16 @@ descargó.
 
 ## No publicado
 
+### v0.22.0 — 2026-09-26
+- docs: file v0.21.0 and v0.22.0 in the changelog
+- fix: forward restart, stop and start from the panel to the agent
+- feat: see and bounce the units croft found but did not deploy
+
+### v0.21.0 — 2026-09-25
+- feat: restart, stop and start a service without a full deploy
+- feat: let a deployed service's branch change without losing its env
+- docs: file v0.20.0 where it already shipped
+
 ### v0.20.0 — 2026-09-21
 - feat: a database inside the container, so one snapshot holds both
 - fix: give an older unit the line it needs to read generated credentials
