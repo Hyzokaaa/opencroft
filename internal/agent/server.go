@@ -14,7 +14,6 @@ import (
 	"time"
 
 	certificateRepositories "github.com/Hyzokaaa/opencroft/internal/certificate/domain/repositories"
-	"github.com/Hyzokaaa/opencroft/internal/deploy/infrastructure/container"
 	instanceEntities "github.com/Hyzokaaa/opencroft/internal/instance/domain/entities"
 	instanceRepositories "github.com/Hyzokaaa/opencroft/internal/instance/domain/repositories"
 	routeEntities "github.com/Hyzokaaa/opencroft/internal/route/domain/entities"
@@ -125,12 +124,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /instances/{name}/services/{service}", s.destroyService)
 	mux.HandleFunc("POST /instances/{name}/services/rollback/plan", s.planRollback)
 	mux.HandleFunc("POST /instances/{name}/services/rollback", s.rollback)
-	mux.HandleFunc("GET /instances/{name}/services/{service}/restart/plan", func(w http.ResponseWriter, r *http.Request) { s.planServicePower(w, r, (*container.Planner).Restart) })
-	mux.HandleFunc("POST /instances/{name}/services/{service}/restart", func(w http.ResponseWriter, r *http.Request) { s.servicePower(w, r, (*container.Planner).Restart) })
-	mux.HandleFunc("GET /instances/{name}/services/{service}/stop/plan", func(w http.ResponseWriter, r *http.Request) { s.planServicePower(w, r, (*container.Planner).Stop) })
-	mux.HandleFunc("POST /instances/{name}/services/{service}/stop", func(w http.ResponseWriter, r *http.Request) { s.servicePower(w, r, (*container.Planner).Stop) })
-	mux.HandleFunc("GET /instances/{name}/services/{service}/start/plan", func(w http.ResponseWriter, r *http.Request) { s.planServicePower(w, r, (*container.Planner).Start) })
-	mux.HandleFunc("POST /instances/{name}/services/{service}/start", func(w http.ResponseWriter, r *http.Request) { s.servicePower(w, r, (*container.Planner).Start) })
+	for _, action := range PowerActions {
+		verb := string(action)
+		mux.HandleFunc("GET /instances/{name}/services/{service}/"+verb+"/plan",
+			func(w http.ResponseWriter, r *http.Request) { s.planServicePower(w, r, action) })
+		mux.HandleFunc("POST /instances/{name}/services/{service}/"+verb,
+			func(w http.ResponseWriter, r *http.Request) { s.servicePower(w, r, action) })
+		mux.HandleFunc("GET /instances/{name}/units/{unit}/"+verb+"/plan",
+			func(w http.ResponseWriter, r *http.Request) { s.planUnitPower(w, r, action) })
+		mux.HandleFunc("POST /instances/{name}/units/{unit}/"+verb,
+			func(w http.ResponseWriter, r *http.Request) { s.unitPower(w, r, action) })
+	}
+	mux.HandleFunc("GET /instances/{name}/units/{unit}/logs", s.unitLogs)
 	mux.HandleFunc("GET /instances/{name}/databases", s.listDatabases)
 	mux.HandleFunc("POST /instances/{name}/databases/plan", s.planProvision)
 	mux.HandleFunc("POST /instances/{name}/databases", s.provision)

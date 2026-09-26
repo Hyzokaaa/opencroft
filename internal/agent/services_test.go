@@ -1,9 +1,12 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -311,5 +314,67 @@ func TestReadingAContainerDoesNotAskOneQuestionPerAnnotation(t *testing.T) {
 	if len(fake.Commands) > 3 {
 		t.Errorf("took %d calls to the runtime:\n  %s",
 			len(fake.Commands), strings.Join(fake.Commands, "\n  "))
+	}
+}
+
+// What a container runs that croft did not deploy is listed beside what it
+// did — and asked about in the same single question to systemctl, so a
+// container full of found units costs no more to read than an empty one.
+func TestFoundUnitsAreListedWithoutAskingAboutEachOne(t *testing.T) {
+	server, fake := testServer()
+	ctx := context.Background()
+	_ = server.instances.Annotate(ctx, "helpdesk", "services", "backend")
+	_ = server.instances.Annotate(ctx, "helpdesk", "service.backend.repo", "https://github.com/user/app.git")
+
+	fake.Responses["lxc exec helpdesk -- sh -lc for f in"] = "openhelpdesk-backend\ncroft-backend\nworker"
+	fake.Responses["lxc exec helpdesk -- systemctl is-active"] = "active\nactive\nfailed"
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/instances/helpdesk/services", nil))
+
+	var body ServicesResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+
+	// croft-backend is ours, and already listed as the service it is.
+	want := []UnitDTO{{Name: "openhelpdesk-backend", State: "active"}, {Name: "worker", State: "failed"}}
+	if fmt.Sprint(body.External) != fmt.Sprint(want) {
+		t.Errorf("found %v, want %v", body.External, want)
+	}
+	if len(body.Services) != 1 || body.Services[0].State != "active" {
+		t.Errorf("the service lost its state: %+v", body.Services)
+	}
+
+	asked := 0
+	for _, command := range fake.Commands {
+		if strings.Contains(command, "systemctl is-active") {
+			asked++
+		}
+	}
+	if asked != 1 {
+		t.Errorf("asked systemctl %d times", asked)
+	}
+}
+
+// A unit name reaches systemctl inside a shell, so it is checked like every
+// other name — and croft's own units are reached as the services they are,
+// never through the door meant for what it only found.
+func TestAUnitNameCannotCarryAnythingElse(t *testing.T) {
+	server, fake := testServer()
+
+	for _, unit := range []string{"a;id", "--force", "$(id)", "a b", "croft-backend"} {
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet,
+			"/instances/helpdesk/units/"+url.PathEscape(unit)+"/restart/plan", nil))
+
+		if recorder.Code == http.StatusOK {
+			t.Errorf("%q was accepted", unit)
+		}
+	}
+	for _, command := range fake.Commands {
+		if strings.Contains(command, "systemctl") {
+			t.Errorf("a refused name still reached the container: %q", command)
+		}
 	}
 }

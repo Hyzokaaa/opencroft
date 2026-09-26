@@ -280,20 +280,27 @@ func (p *Planner) prune(d Deployment) []plan.Step {
 	return steps
 }
 
-// Restart, Stop and Start touch nothing the service runs — nothing is
-// fetched, installed or built. They exist for what a full Deploy is not: a
+// RestartUnit, StopUnit and StartUnit touch nothing the unit runs — nothing
+// is fetched, installed or built. They exist for what a full Deploy is not: a
 // process that hung, or a change made by hand that only needs systemd to
-// notice.
-func (p *Planner) Restart(service *entities.Service) plan.Plan {
-	return plan.New(p.exec("Restart "+service.Unit(), "systemctl restart "+service.Unit()))
+// notice. Taking a raw unit name rather than a Service is what lets them work
+// on something croft did not deploy — found on the container, not written by
+// us — the same way.
+func (p *Planner) RestartUnit(unit string) plan.Plan {
+	return plan.New(p.exec("Restart "+unit, "systemctl restart "+unit))
 }
 
-func (p *Planner) Stop(service *entities.Service) plan.Plan {
-	return plan.New(p.exec("Stop "+service.Unit(), "systemctl stop "+service.Unit()))
+func (p *Planner) StopUnit(unit string) plan.Plan {
+	return plan.New(p.exec("Stop "+unit, "systemctl stop "+unit))
 }
 
-func (p *Planner) Start(service *entities.Service) plan.Plan {
-	return plan.New(p.exec("Start "+service.Unit(), "systemctl start "+service.Unit()))
+func (p *Planner) StartUnit(unit string) plan.Plan {
+	return plan.New(p.exec("Start "+unit, "systemctl start "+unit))
+}
+
+func (p *Planner) LogsUnit(unit string, lines int) plan.Plan {
+	return plan.New(p.exec(fmt.Sprintf("Read the last %d lines", lines),
+		fmt.Sprintf("journalctl -u %s -n %d --no-pager", unit, lines)))
 }
 
 // Rollback puts the container back to a snapshot. Restoring includes whatever
@@ -309,8 +316,7 @@ func (p *Planner) Rollback(snapshot string) plan.Plan {
 // Logs is what a failed deployment leaves behind, and the first thing anybody
 // asks for.
 func (p *Planner) Logs(service *entities.Service, lines int) plan.Plan {
-	return plan.New(p.exec(fmt.Sprintf("Read the last %d lines", lines),
-		fmt.Sprintf("journalctl -u %s -n %d --no-pager", service.Unit(), lines)))
+	return p.LogsUnit(service.Unit(), lines)
 }
 
 func counted(describe string, i, total int) string {

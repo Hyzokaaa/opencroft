@@ -22,6 +22,7 @@ export default function Container({
   onRollback,
   onDestroy,
   onPowerService,
+  onPowerUnit,
   onAddDomain,
 }) {
   const { data, error, fetchedAt, read } = useServices(container.name)
@@ -30,6 +31,7 @@ export default function Container({
   const [dialog, setDialog] = useState(null)
 
   const services = data?.services ?? []
+  const external = data?.external ?? []
   const snapshots = data?.snapshots ?? []
   const domains = routes.filter((r) => r.target === container.address)
 
@@ -108,22 +110,24 @@ export default function Container({
       >
         {!read ? (
           <Reading what="what is running inside" />
-        ) : services.length === 0 ? (
+        ) : services.length === 0 && external.length === 0 ? (
           <Empty onDeploy={() => onDeploy(container)} />
         ) : (
           <>
-            <ul className="divide-y divide-edge">
-              {services.map((service) => (
-                <Service
-                  key={service.name}
-                  service={service}
-                  onLogs={() => setLogs(service.name)}
-                  onDeploy={() => onDeploy(container, service)}
-                  onDestroy={() => onDestroy(container, service)}
-                  onPower={(action) => onPowerService(container, service, action)}
-                />
-              ))}
-            </ul>
+            {services.length > 0 && (
+              <ul className="divide-y divide-edge">
+                {services.map((service) => (
+                  <Service
+                    key={service.name}
+                    service={service}
+                    onLogs={() => setLogs({ name: service.name, kind: 'service' })}
+                    onDeploy={() => onDeploy(container, service)}
+                    onDestroy={() => onDestroy(container, service)}
+                    onPower={(action) => onPowerService(container, service, action)}
+                  />
+                ))}
+              </ul>
+            )}
 
             {/* Repeated on every row, this stops being read by the second one.
                 Said once, about all of them, it says something the repetitions
@@ -134,6 +138,25 @@ export default function Container({
                 None of these has a version recorded as having worked, so a rollback here cannot
                 promise anything yet.
               </p>
+            )}
+
+            {external.length > 0 && (
+              <div className="border-t border-edge">
+                <p className="px-4 pt-3 pb-1 text-[11px] text-faint">
+                  Found on this container, not created by croft — no snapshots, no redeploy, but
+                  you can restart or stop what is already there.
+                </p>
+                <ul className="divide-y divide-edge">
+                  {external.map((unit) => (
+                    <ExternalUnit
+                      key={unit.name}
+                      unit={unit}
+                      onLogs={() => setLogs({ name: unit.name, kind: 'unit' })}
+                      onPower={(action) => onPowerUnit(container, unit, action)}
+                    />
+                  ))}
+                </ul>
+              </div>
             )}
 
             {fetchedAt && (
@@ -164,7 +187,14 @@ export default function Container({
         databases={databases.data?.databases ?? []}
       />
 
-      {logs && <LogView container={container.name} service={logs} onClose={() => setLogs(null)} />}
+      {logs && (
+        <LogView
+          container={container.name}
+          service={logs.name}
+          kind={logs.kind}
+          onClose={() => setLogs(null)}
+        />
+      )}
 
       {dialog && (
         <PlanDialog
@@ -413,6 +443,56 @@ function Service({ service, onLogs, onDeploy, onDestroy, onPower }) {
           >
             Remove&hellip;
           </button>
+        </div>
+      </div>
+    </li>
+  )
+}
+
+// A unit croft found rather than deployed. No repo, no branch, no health
+// check — it never inspected the code to know any of that — so it gets the
+// verbs that need none of it: look, and bounce the process.
+function ExternalUnit({ unit, onLogs, onPower }) {
+  const running = unit.state === 'active'
+
+  return (
+    <li className={`relative px-4 py-3 ${running ? '' : 'bg-problem/[0.04]'}`}>
+      {!running && <span className="absolute left-0 top-0 h-full w-[2px] bg-problem" />}
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <StateDot state={unit.state} />
+          <span className="font-mono text-sm">{unit.name}</span>
+          <Chip
+            label="not created by croft"
+            tone="border-yours/40 text-yours"
+            explain="Found on this container. Croft did not deploy it, so it has no snapshots and no redeploy — only what any process gets: logs, restart, stop and start."
+          />
+          {!running && unit.state && (
+            <span className="rounded border border-problem/40 px-1.5 py-px text-[11px] text-problem">
+              {unit.state}
+            </span>
+          )}
+        </div>
+
+        <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+          <button onClick={onLogs} className={running ? SECONDARY : PRIMARY}>
+            Logs
+          </button>
+          {running ? (
+            <>
+              <button onClick={() => onPower('restart')} className={SECONDARY}>
+                Restart
+              </button>
+              <button onClick={() => onPower('stop')} className={SECONDARY}>
+                Stop
+              </button>
+            </>
+          ) : (
+            <button onClick={() => onPower('start')} className={PRIMARY}>
+              Start
+            </button>
+          )}
         </div>
       </div>
     </li>

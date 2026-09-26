@@ -102,6 +102,8 @@ type ServicesResponse struct {
 	// Snapshots is everything on the container, ours and yours. The panel
 	// needs both to say what a rollback would reach.
 	Snapshots []string `json:"snapshots"`
+	// External is what runs that croft did not deploy — found, not adopted.
+	External []UnitDTO `json:"external"`
 }
 
 // ── Validation ────────────────────────────────────────────────────────────────
@@ -476,11 +478,22 @@ func (s *Server) listServices(w http.ResponseWriter, r *http.Request) {
 		units = append(units, "croft-"+service)
 	}
 
-	for i, state := range s.states(ctx, name, units) {
-		out[i].State = state
+	// Ours and the ones found beside them are asked about in one question:
+	// what it costs to read a container must not grow with what is in it.
+	found := s.discoverUnits(ctx, name)
+	states := s.states(ctx, name, append(units, found...))
+
+	for i := range out {
+		out[i].State = states[i]
+	}
+	external := make([]UnitDTO, len(found))
+	for i, unit := range found {
+		external[i] = UnitDTO{Name: unit, State: states[len(out)+i]}
 	}
 
-	writeJSON(w, http.StatusOK, ServicesResponse{Services: out, Snapshots: s.snapshots(ctx, name)})
+	writeJSON(w, http.StatusOK, ServicesResponse{
+		Services: out, Snapshots: s.snapshots(ctx, name), External: external,
+	})
 }
 
 // states asks about every unit at once. `systemctl is-active` answers one line
@@ -754,53 +767,26 @@ func (s *Server) stored(r *http.Request) (string, *deployEntities.Service, error
 
 // ── Power ─────────────────────────────────────────────────────────────────────
 //
-// Restart, stop and start are the one-step plans: no fetch, no install, no
-// build. Sharing this pair of handlers, parameterised by which of the
-// planner's three methods to call, is what keeps them from drifting into
-// three copies of the same streaming and error handling.
+// A service is a unit croft knows the name of. Restarting one is the same
+// one-step plan as restarting any unit — no fetch, no install, no build — so
+// it goes through the same code, looked up by name first.
 
-type servicePlan func(*container.Planner, *deployEntities.Service) plan.Plan
-
-func (s *Server) planServicePower(w http.ResponseWriter, r *http.Request, build servicePlan) {
+func (s *Server) planServicePower(w http.ResponseWriter, r *http.Request, action PowerAction) {
 	name, service, err := s.stored(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-
-	planner, err := s.planner(r.Context(), name)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, PlanResponse{Plan: build(planner, service)})
+	s.writeUnitPlan(w, r, name, service.Unit(), action)
 }
 
-func (s *Server) servicePower(w http.ResponseWriter, r *http.Request, build servicePlan) {
+func (s *Server) servicePower(w http.ResponseWriter, r *http.Request, action PowerAction) {
 	name, service, err := s.stored(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-
-	planner, err := s.planner(r.Context(), name)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-
-	ctx := r.Context()
-	p := build(planner, service)
-
-	s.stream(w, func(report func(int, string)) error {
-		for i, step := range p.Steps {
-			report(i+1, step.Describe)
-			if err := host.RunStep(ctx, s.host, step); err != nil {
-				return explain(step, err)
-			}
-		}
-		return nil
-	})
+	s.runUnitPlan(w, r, name, service.Unit(), action)
 }
 
 // ── Going back ────────────────────────────────────────────────────────────────

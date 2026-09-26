@@ -198,6 +198,17 @@ function Dashboard({ onSignOut, onSessionLost }) {
     })
   }
 
+  // Same three verbs, on a unit croft found rather than deployed — a
+  // different path because its name carries no croft- prefix to trust.
+  function powerUnit(container, unit, action) {
+    setDialog({
+      title: `${POWER_TITLE[action]} ${unit.name}`,
+      url: `/api/hosts/local/instances/${container.name}/units/${unit.name}/${action}`,
+      method: 'POST',
+      destructive: action === 'stop',
+    })
+  }
+
   function focusSubject(subject) {
     const isDomain = data?.routes.some((r) => r.domain === subject)
     if (!isDomain && data?.instances.some((i) => i.name === subject)) {
@@ -286,6 +297,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
           onRollback={rollback}
           onDestroy={destroyService}
           onPowerService={powerService}
+          onPowerUnit={powerUnit}
           onAddDomain={addDomain}
         />
       )}

@@ -90,7 +90,10 @@ export function useDatabases(container) {
 // Following logs is polling, and saying so is better than implying a stream we
 // do not have. journalctl is asked for the last N lines; the same lines coming
 // back twice is cheap and the difference is invisible.
-export function useLogs(container, service, { lines = 200, follow = false } = {}) {
+// kind picks the endpoint: a service croft deployed, or a unit it only found.
+// The two live under different paths because a unit name carries no
+// guarantee of the croft- prefix a service's does.
+export function useLogs(container, service, { lines = 200, follow = false, kind = 'service' } = {}) {
   const [text, setText] = useState('')
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -99,8 +102,9 @@ export function useLogs(container, service, { lines = 200, follow = false } = {}
   const load = useCallback(async () => {
     if (!container || !service) return
     try {
+      const segment = kind === 'unit' ? 'units' : 'services'
       const res = await fetch(
-        `/api/hosts/${HOST}/instances/${container}/services/${service}/logs?lines=${lines}`,
+        `/api/hosts/${HOST}/instances/${container}/${segment}/${service}/logs?lines=${lines}`,
       )
       const payload = await res.json()
 
@@ -112,7 +116,7 @@ export function useLogs(container, service, { lines = 200, follow = false } = {}
     } finally {
       setLoading(false)
     }
-  }, [container, service, lines])
+  }, [container, service, lines, kind])
 
   useEffect(() => {
     load()

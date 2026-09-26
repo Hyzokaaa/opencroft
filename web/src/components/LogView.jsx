@@ -4,13 +4,17 @@ import { useLogs } from '../lib/useContainer.js'
 // The one thing every log viewer gets wrong is scrolling: it follows the end
 // while you are trying to read something further up, and drags you away from
 // it. So following stops the moment you scroll back, and says how to resume.
-export default function LogView({ container, service, onClose }) {
+export default function LogView({ container, service, kind = 'service', onClose }) {
   const [follow, setFollow] = useState(true)
   const [lines, setLines] = useState(200)
-  const { text, error, loading } = useLogs(container, service, { lines, follow })
+  const { text, error, loading } = useLogs(container, service, { lines, follow, kind })
   const pane = useRef(null)
   const frame = useDialog(onClose)
   const titleId = useId()
+
+  // A service croft deployed always runs as croft-<name>; a unit it only
+  // found keeps whatever name it already had.
+  const unit = kind === 'unit' ? service : `croft-${service}`
 
   useEffect(() => {
     if (follow && pane.current) pane.current.scrollTop = pane.current.scrollHeight
@@ -44,7 +48,7 @@ export default function LogView({ container, service, onClose }) {
           <div className="min-w-0">
             <h2 id={titleId} className="truncate text-sm font-medium">{service}</h2>
             <p className="font-mono text-[11px] text-muted">
-              journalctl -u croft-{service} -n {lines}
+              journalctl -u {unit} -n {lines}
             </p>
           </div>
 
@@ -97,8 +101,7 @@ export default function LogView({ container, service, onClose }) {
             </pre>
           ) : (
             <p className="text-xs text-muted">
-              The journal has nothing for croft-{service}. Either it has not started yet, or it
-              never has.
+              The journal has nothing for {unit}. Either it has not started yet, or it never has.
             </p>
           )}
         </div>
