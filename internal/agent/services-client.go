@@ -79,3 +79,39 @@ func (a *ServiceClient) Destroy(ctx context.Context, container, service string, 
 	return a.c.streamed(ctx, http.MethodDelete,
 		servicePath(container, "/"+url.PathEscape(service)), nil, report)
 }
+
+func (a *ServiceClient) PowerPlan(ctx context.Context, container, service string, action PowerAction) (plan.Plan, error) {
+	var response PlanResponse
+	err := a.c.call(ctx, http.MethodGet,
+		servicePath(container, "/"+url.PathEscape(service)+"/"+string(action)+"/plan"), nil, &response)
+	return response.Plan, err
+}
+
+func (a *ServiceClient) Power(ctx context.Context, container, service string, action PowerAction, report func(int, string)) error {
+	return a.c.streamed(ctx, http.MethodPost,
+		servicePath(container, "/"+url.PathEscape(service)+"/"+string(action)), nil, report)
+}
+
+// Units are what the container runs that croft did not deploy. They are
+// reached by their own name, which carries none of the guarantees a
+// service's does, so they live under a path of their own.
+func unitPath(container, unit, suffix string) string {
+	return "/instances/" + url.PathEscape(container) + "/units/" + url.PathEscape(unit) + suffix
+}
+
+func (a *ServiceClient) UnitPowerPlan(ctx context.Context, container, unit string, action PowerAction) (plan.Plan, error) {
+	var response PlanResponse
+	err := a.c.call(ctx, http.MethodGet, unitPath(container, unit, "/"+string(action)+"/plan"), nil, &response)
+	return response.Plan, err
+}
+
+func (a *ServiceClient) UnitPower(ctx context.Context, container, unit string, action PowerAction, report func(int, string)) error {
+	return a.c.streamed(ctx, http.MethodPost, unitPath(container, unit, "/"+string(action)), nil, report)
+}
+
+func (a *ServiceClient) UnitLogs(ctx context.Context, container, unit string, lines int) (string, error) {
+	var response LogsResponse
+	err := a.c.call(ctx, http.MethodGet,
+		unitPath(container, unit, "/logs")+"?lines="+strconv.Itoa(lines), nil, &response)
+	return response.Lines, err
+}

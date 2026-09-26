@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Hyzokaaa/opencroft/internal/agent"
 	authHttp "github.com/Hyzokaaa/opencroft/internal/auth/infrastructure/http"
 	instanceRepositories "github.com/Hyzokaaa/opencroft/internal/instance/domain/repositories"
 	instanceServices "github.com/Hyzokaaa/opencroft/internal/instance/domain/services"
@@ -54,6 +55,17 @@ type Deps struct {
 }
 
 func Handler(deps Deps) http.Handler {
+	mux := api(deps)
+
+	deps.Auth.Register(mux)
+	mux.Handle("/", staticHandler())
+
+	return logging(deps.Auth.Guard(mux))
+}
+
+// api is every route the interface calls, without the login in front of it,
+// so that what the panel can reach is testable without a session.
+func api(deps Deps) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -88,6 +100,17 @@ func Handler(deps Deps) http.Handler {
 	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/services/rollback", deps.rollbackService)
 	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/services/{service}/logs", deps.showServiceLogs)
 	mux.HandleFunc("DELETE /api/hosts/{hostId}/instances/{name}/services/{service}", deps.destroyService)
+	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/units/{unit}/logs", deps.showUnitLogs)
+
+	// From the agent's own list, so the panel cannot offer an action the agent
+	// does not serve — which is how restart once shipped as a button to nowhere.
+	for _, action := range agent.PowerActions {
+		verb := string(action)
+		mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/services/{service}/"+verb,
+			deps.powerService(action))
+		mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/units/{unit}/"+verb,
+			deps.powerUnit(action))
+	}
 
 	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/databases", deps.listDatabases)
 	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/databases", deps.provisionDatabase)
@@ -102,10 +125,7 @@ func Handler(deps Deps) http.Handler {
 	mux.HandleFunc("GET /api/jobs/{id}/events", deps.streamJob)
 	mux.HandleFunc("POST /api/jobs/{id}/cancel", deps.cancelJob)
 
-	deps.Auth.Register(mux)
-	mux.Handle("/", staticHandler())
-
-	return logging(deps.Auth.Guard(mux))
+	return mux
 }
 
 func statusFor(err error) int {

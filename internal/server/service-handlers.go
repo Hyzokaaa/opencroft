@@ -27,6 +27,11 @@ type Deployer interface {
 	Logs(ctx context.Context, container, service string, lines int) (string, error)
 	DestroyPlan(ctx context.Context, container, service string) (plan.Plan, string, error)
 	Destroy(ctx context.Context, container, service string, report func(int, string)) error
+	PowerPlan(ctx context.Context, container, service string, action agent.PowerAction) (plan.Plan, error)
+	Power(ctx context.Context, container, service string, action agent.PowerAction, report func(int, string)) error
+	UnitPowerPlan(ctx context.Context, container, unit string, action agent.PowerAction) (plan.Plan, error)
+	UnitPower(ctx context.Context, container, unit string, action agent.PowerAction, report func(int, string)) error
+	UnitLogs(ctx context.Context, container, unit string, lines int) (string, error)
 }
 
 func (d Deps) deployer(w http.ResponseWriter) (Deployer, bool) {
@@ -317,4 +322,100 @@ func (d Deps) destroyService(w http.ResponseWriter, r *http.Request) {
 		})
 
 	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": service})
+}
+
+// powerService restarts, stops or starts a service croft deployed; powerUnit
+// does the same to one it only found. Nothing is fetched or built either way —
+// the process is bounced, which is what a hang or a change made by hand needs.
+func (d Deps) powerService(action agent.PowerAction) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		name, service := r.PathValue("name"), r.PathValue("service")
+		d.bounce(w, r, action, name, service,
+			func(ctx context.Context, deployer Deployer) (plan.Plan, error) {
+				return deployer.PowerPlan(ctx, name, service, action)
+			},
+			func(ctx context.Context, deployer Deployer, report func(int, string)) error {
+				return deployer.Power(ctx, name, service, action, report)
+			})
+	}
+}
+
+func (d Deps) powerUnit(action agent.PowerAction) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		name, unit := r.PathValue("name"), r.PathValue("unit")
+		d.bounce(w, r, action, name, unit,
+			func(ctx context.Context, deployer Deployer) (plan.Plan, error) {
+				return deployer.UnitPowerPlan(ctx, name, unit, action)
+			},
+			func(ctx context.Context, deployer Deployer, report func(int, string)) error {
+				return deployer.UnitPower(ctx, name, unit, action, report)
+			})
+	}
+}
+
+func (d Deps) bounce(
+	w http.ResponseWriter, r *http.Request, action agent.PowerAction, container, subject string,
+	planOf func(context.Context, Deployer) (plan.Plan, error),
+	run func(context.Context, Deployer, func(int, string)) error,
+) {
+	if !d.writable(w) {
+		return
+	}
+	deployer, ok := d.deployer(w)
+	if !ok {
+		return
+	}
+
+	p, err := planOf(r.Context(), deployer)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if wantsPlan(r) {
+		writeJSON(w, http.StatusOK, map[string]any{"summary": bounced(action, subject, container), "plan": p})
+		return
+	}
+
+	started := d.Jobs.Start(string(action), container+"/"+subject, p,
+		func(ctx context.Context, report func(int, string)) error {
+			if d.Simulated {
+				return d.rehearse(p, report)
+			}
+			return run(ctx, deployer, report)
+		})
+
+	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": subject})
+}
+
+func bounced(action agent.PowerAction, subject, container string) string {
+	switch action {
+	case agent.PowerStop:
+		return fmt.Sprintf("Stop %s in %s. Anything it serves goes down until it is started again.",
+			subject, container)
+	case agent.PowerStart:
+		return fmt.Sprintf("Start %s in %s.", subject, container)
+	default:
+		return fmt.Sprintf("Restart %s in %s. Nothing is fetched or built — the process is stopped and started again.",
+			subject, container)
+	}
+}
+
+func (d Deps) showUnitLogs(w http.ResponseWriter, r *http.Request) {
+	deployer, ok := d.deployer(w)
+	if !ok {
+		return
+	}
+
+	lines := 200
+	if asked, err := strconv.Atoi(r.URL.Query().Get("lines")); err == nil && asked > 0 {
+		lines = asked
+	}
+
+	text, err := deployer.UnitLogs(r.Context(), r.PathValue("name"), r.PathValue("unit"), lines)
+	if err != nil && strings.TrimSpace(text) == "" {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"lines": text})
 }
