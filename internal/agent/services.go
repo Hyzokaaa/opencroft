@@ -95,6 +95,16 @@ type ServiceDTO struct {
 	// State is read from the container, not remembered. The machine is the
 	// source of truth about whether something is running.
 	State string `json:"state,omitempty"`
+
+	// Adopted is shown, never accepted: entity ignores it, and adoption is
+	// only ever read from the container itself.
+	Adopted *AdoptedDTO `json:"adopted,omitempty"`
+}
+
+type AdoptedDTO struct {
+	Unit    string `json:"unit"`
+	RunAs   string `json:"runAs,omitempty"`
+	EnvFile string `json:"envFile,omitempty"`
 }
 
 type ServicesResponse struct {
@@ -263,37 +273,6 @@ func (s *Server) names(ctx context.Context, container string) []string {
 	return nil
 }
 
-// readService prefers the current keys and falls back to the old ones, so a
-// deployment made before services had names keeps working.
-func (s *Server) readService(ctx context.Context, container, name string) ServiceDTO {
-	read := func(key string) string {
-		if value := s.get(ctx, container, full(name, key)); value != "" {
-			return value
-		}
-		if name == "app" {
-			return s.get(ctx, container, runtime.AnnotationPrefix+".app."+key)
-		}
-		return ""
-	}
-
-	port, _ := strconv.Atoi(read("port"))
-	status, _ := strconv.Atoi(read("health-status"))
-
-	return ServiceDTO{
-		Name: name, Repo: read("repo"), Branch: read("branch"), Path: read("path"),
-		Runtime: read("runtime"), Start: read("start"), Port: port,
-		Install:  commands(read("install")),
-		Build:    commands(read("build")),
-		Packages: strings.Fields(read("packages")),
-		Env:      decodeEnv(read("env")),
-		Health: HealthDTO{
-			Path: read("health"), Status: status, Contains: read("health-contains"),
-		},
-		Commit:  read("commit"),
-		Healthy: read("healthy"),
-	}
-}
-
 func commands(joined string) []string {
 	if strings.TrimSpace(joined) == "" {
 		return nil
@@ -321,37 +300,42 @@ func decodeEnv(stored string) map[string]string {
 
 // remember writes the deployment onto the container.
 func (s *Server) remember(ctx context.Context, container string, service *deployEntities.Service) error {
-	encoded, err := json.Marshal(service.Env)
-	if err != nil {
-		return err
-	}
-
-	values := map[string]string{
-		"repo": service.Source.Repo, "branch": service.Source.Branch,
-		"commit": service.Source.Commit, "path": service.Path,
-		"runtime": service.Runtime, "start": service.Start,
-		"port":            strconv.Itoa(service.Port),
-		"install":         strings.Join(service.Install, " && "),
-		"build":           strings.Join(service.Build, " && "),
-		"packages":        strings.Join(service.Packages, " "),
-		"health":          service.Health.Path,
-		"health-contains": service.Health.Contains,
-	}
-	if service.Health.Status != 0 {
-		values["health-status"] = strconv.Itoa(service.Health.Status)
-	}
-	if len(service.Env) > 0 {
-		values["env"] = string(encoded)
-	}
-
-	for key, value := range values {
-		if value != "" {
-			if err := s.instances.Annotate(ctx, container, annotation(service.Name, key), value); err != nil {
-				return err
-			}
+	for key, value := range service.Record() {
+		if err := s.instances.Annotate(ctx, container, annotation(service.Name, key), value); err != nil {
+			return err
 		}
 	}
 	return s.enrol(ctx, container, service.Name)
+}
+
+// adoptionFrom reads whether croft took a service on rather than deploying it.
+// It is only ever read from the container: a request cannot make a service
+// adopted by saying so, which would let it pick the unit croft restarts and the
+// user it hands the checkout to.
+func adoptionFrom(config map[string]string, service string) *deployEntities.Adoption {
+	unit := config[full(service, "adopted-unit")]
+	if unit == "" {
+		return nil
+	}
+	return &deployEntities.Adoption{
+		Unit: unit, RunAs: config[full(service, "run-as")], EnvFile: config[full(service, "env-file")],
+	}
+}
+
+// adopted carries a stored adoption onto a service built from a request. What
+// adoption fixes — where the code lives and whose environment it runs with —
+// comes from the record too, whatever the request said.
+func (s *Server) adopted(ctx context.Context, container string, service *deployEntities.Service) error {
+	config, err := s.instances.Annotations(ctx, container)
+	if err != nil {
+		return err
+	}
+	service.Adopted = adoptionFrom(config, service.Name)
+	if service.Adopted != nil {
+		service.Path = config[full(service.Name, "path")]
+		service.Env = nil
+	}
+	return nil
 }
 
 // enrol adds the service to the index if it is not already there.
@@ -445,6 +429,9 @@ func (s *Server) acceptService(r *http.Request) (string, *deployEntities.Service
 	if err != nil {
 		return "", nil, err
 	}
+	if err := s.adopted(r.Context(), name, service); err != nil {
+		return "", nil, err
+	}
 	return name, service, nil
 }
 
@@ -472,15 +459,30 @@ func (s *Server) listServices(w http.ResponseWriter, r *http.Request) {
 	names := stored(config)
 	out := make([]ServiceDTO, 0, len(names))
 	units := make([]string, 0, len(names))
+	taken := map[string]bool{}
 
 	for _, service := range names {
-		out = append(out, fromConfig(config, service))
-		units = append(units, "croft-"+service)
+		dto := fromConfig(config, service)
+		out = append(out, dto)
+
+		unit := "croft-" + service
+		if dto.Adopted != nil {
+			unit = dto.Adopted.Unit
+			taken[unit] = true
+		}
+		units = append(units, unit)
+	}
+
+	// An adopted unit is a service now, and is listed once, as one.
+	found := []string{}
+	for _, unit := range s.discoverUnits(ctx, name) {
+		if !taken[unit] {
+			found = append(found, unit)
+		}
 	}
 
 	// Ours and the ones found beside them are asked about in one question:
 	// what it costs to read a container must not grow with what is in it.
-	found := s.discoverUnits(ctx, name)
 	states := s.states(ctx, name, append(units, found...))
 
 	for i := range out {
@@ -633,8 +635,11 @@ func (s *Server) list(ctx context.Context, name, path string) []string {
 // commit records what was actually checked out, which is what going back to
 // the previous version needs.
 func (s *Server) commit(ctx context.Context, name string, service *deployEntities.Service) string {
+	// safe.directory for this command only: an adopted checkout belongs to
+	// the user its unit runs as, and git will not read one owned by someone
+	// else without being told it is expected.
 	out, err := s.host.Run(ctx, s.bin, "exec", name, "--",
-		"git", "-C", service.Path, "rev-parse", "HEAD")
+		"git", "-c", "safe.directory="+service.Path, "-C", service.Path, "rev-parse", "HEAD")
 	if err != nil {
 		return ""
 	}
@@ -753,7 +758,11 @@ func (s *Server) stored(r *http.Request) (string, *deployEntities.Service, error
 		return "", nil, err
 	}
 
-	dto := s.readService(r.Context(), name, service)
+	config, err := s.instances.Annotations(r.Context(), name)
+	if err != nil {
+		return "", nil, err
+	}
+	dto := fromConfig(config, service)
 	if dto.Repo == "" {
 		return "", nil, errors.New(service + " is not deployed on " + name)
 	}
@@ -762,6 +771,7 @@ func (s *Server) stored(r *http.Request) (string, *deployEntities.Service, error
 	if err != nil {
 		return "", nil, err
 	}
+	entity.Adopted = adoptionFrom(config, service)
 	return name, entity, nil
 }
 
@@ -959,7 +969,7 @@ func fromConfig(config map[string]string, name string) ServiceDTO {
 	port, _ := strconv.Atoi(read("port"))
 	status, _ := strconv.Atoi(read("health-status"))
 
-	return ServiceDTO{
+	dto := ServiceDTO{
 		Name: name, Repo: read("repo"), Branch: read("branch"), Path: read("path"),
 		Runtime: read("runtime"), Start: read("start"), Port: port,
 		Install:  commands(read("install")),
@@ -972,6 +982,10 @@ func fromConfig(config map[string]string, name string) ServiceDTO {
 		Commit:  read("commit"),
 		Healthy: read("healthy"),
 	}
+	if adoption := adoptionFrom(config, name); adoption != nil {
+		dto.Adopted = &AdoptedDTO{Unit: adoption.Unit, RunAs: adoption.RunAs, EnvFile: adoption.EnvFile}
+	}
+	return dto
 }
 
 // ── Removing a service ────────────────────────────────────────────────────────
@@ -1019,6 +1033,13 @@ func (s *Server) destroyPlan(ctx context.Context, container, name string) (plan.
 	planner, err := s.planner(ctx, container)
 	if err != nil {
 		return plan.Plan{}, "", err
+	}
+
+	// Croft did not put an adopted service there, so it does not take it
+	// away: letting go of one forgets what croft recorded and nothing else.
+	if adoptionFrom(config, name) != nil {
+		return planner.Release(keys, remaining),
+			"The unit, its code and its environment stay exactly where they are, running as they were.", nil
 	}
 
 	return planner.Destroy(service, keys, remaining, time.Now()), s.consequences(ctx, container, service), nil

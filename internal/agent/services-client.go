@@ -109,6 +109,22 @@ func (a *ServiceClient) UnitPower(ctx context.Context, container, unit string, a
 	return a.c.streamed(ctx, http.MethodPost, unitPath(container, unit, "/"+string(action)), nil, report)
 }
 
+func (a *ServiceClient) AdoptionOf(ctx context.Context, container, unit string) (AdoptionDTO, error) {
+	var found AdoptionDTO
+	err := a.c.call(ctx, http.MethodGet, unitPath(container, unit, "/adoption"), nil, &found)
+	return found, err
+}
+
+func (a *ServiceClient) AdoptPlan(ctx context.Context, container, unit string, answer AdoptDTO) (plan.Plan, error) {
+	var response PlanResponse
+	err := a.c.call(ctx, http.MethodPost, unitPath(container, unit, "/adopt/plan"), answer, &response)
+	return response.Plan, err
+}
+
+func (a *ServiceClient) Adopt(ctx context.Context, container, unit string, answer AdoptDTO, report func(int, string)) error {
+	return a.c.streamed(ctx, http.MethodPost, unitPath(container, unit, "/adopt"), answer, report)
+}
+
 func (a *ServiceClient) UnitLogs(ctx context.Context, container, unit string, lines int) (string, error) {
 	var response LogsResponse
 	err := a.c.call(ctx, http.MethodGet,

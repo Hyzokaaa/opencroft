@@ -23,6 +23,7 @@ export default function Container({
   onDestroy,
   onPowerService,
   onPowerUnit,
+  onAdopt,
   onAddDomain,
 }) {
   const { data, error, fetchedAt, read } = useServices(container.name)
@@ -143,8 +144,8 @@ export default function Container({
             {external.length > 0 && (
               <div className="border-t border-edge">
                 <p className="px-4 pt-3 pb-1 text-[11px] text-faint">
-                  Found on this container, not created by croft — no snapshots, no redeploy, but
-                  you can restart or stop what is already there.
+                  Found on this container, not created by croft. You can restart or stop what is
+                  already there — or take it on, so croft can redeploy it from its repository.
                 </p>
                 <ul className="divide-y divide-edge">
                   {external.map((unit) => (
@@ -153,6 +154,7 @@ export default function Container({
                       unit={unit}
                       onLogs={() => setLogs({ name: unit.name, kind: 'unit' })}
                       onPower={(action) => onPowerUnit(container, unit, action)}
+                      onAdopt={() => onAdopt(container, unit)}
                     />
                   ))}
                 </ul>
@@ -382,6 +384,15 @@ function Service({ service, onLogs, onDeploy, onDestroy, onPower }) {
             <StateDot state={service.state} />
             <span className="font-mono text-sm font-medium">{service.name}</span>
             {service.runtime && <Chip label={service.runtime} tone="border-edge text-muted" />}
+            {service.adopted && (
+              <Chip
+                label="adopted"
+                tone="border-yours/40 text-yours"
+                explain={`Found running and taken on. Croft fetches, builds and restarts it; the unit ${service.adopted.unit}${
+                  service.adopted.envFile ? ` and ${service.adopted.envFile}` : ''
+                } stay exactly as whoever wrote them.`}
+              />
+            )}
 
             {!running && service.state && (
               <span className="rounded border border-problem/40 px-1.5 py-px text-[11px] text-problem">
@@ -408,6 +419,7 @@ function Service({ service, onLogs, onDeploy, onDestroy, onPower }) {
 
           <p className="pl-[18px] font-mono text-[11px] text-muted">
             {service.path}
+            {service.adopted ? ` · ${service.adopted.unit}` : ''}
             {service.port ? ` · :${service.port}` : ''}
             {service.health?.path ? ` · ready on ${service.health.path}` : ''}
           </p>
@@ -437,12 +449,20 @@ function Service({ service, onLogs, onDeploy, onDestroy, onPower }) {
           <button onClick={onDeploy} className={SECONDARY}>
             Deploy again
           </button>
-          <button
-            onClick={onDestroy}
-            className="rounded border border-edge px-2 py-0.5 text-xs text-muted transition hover:border-problem/50 hover:text-problem"
-          >
-            Remove&hellip;
-          </button>
+          {/* Croft did not put an adopted service there, so it only lets go of
+              it — the button says which of the two it does. */}
+          {service.adopted ? (
+            <button onClick={onDestroy} className={SECONDARY}>
+              Release&hellip;
+            </button>
+          ) : (
+            <button
+              onClick={onDestroy}
+              className="rounded border border-edge px-2 py-0.5 text-xs text-muted transition hover:border-problem/50 hover:text-problem"
+            >
+              Remove&hellip;
+            </button>
+          )}
         </div>
       </div>
     </li>
@@ -452,7 +472,7 @@ function Service({ service, onLogs, onDeploy, onDestroy, onPower }) {
 // A unit croft found rather than deployed. No repo, no branch, no health
 // check — it never inspected the code to know any of that — so it gets the
 // verbs that need none of it: look, and bounce the process.
-function ExternalUnit({ unit, onLogs, onPower }) {
+function ExternalUnit({ unit, onLogs, onPower, onAdopt }) {
   const running = unit.state === 'active'
 
   return (
@@ -493,6 +513,9 @@ function ExternalUnit({ unit, onLogs, onPower }) {
               Start
             </button>
           )}
+          <button onClick={onAdopt} className={SECONDARY}>
+            Adopt&hellip;
+          </button>
         </div>
       </div>
     </li>

@@ -4,6 +4,7 @@ package container
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -96,7 +97,9 @@ func (p *Planner) Deploy(d Deployment) plan.Plan {
 
 	steps = append(steps, p.fetch(service))
 
-	if len(service.Env) > 0 {
+	// An adopted service's environment is the unit's own file, and croft
+	// never writes it — whatever a request carries.
+	if len(service.Env) > 0 && service.Adopted == nil {
 		steps = append(steps, p.writeEnv(service))
 	}
 
@@ -111,11 +114,23 @@ func (p *Planner) Deploy(d Deployment) plan.Plan {
 			counted("Build", i, len(service.Build)), p.inPath(service, command)))
 	}
 
-	steps = append(steps,
-		p.exec("Write the unit that keeps it running", p.unit(service)),
-		p.exec("Start "+service.Unit(), "systemctl daemon-reload && systemctl enable --now "+
-			service.Unit()+" && systemctl restart "+service.Unit()),
-	)
+	if adopted := service.Adopted; adopted != nil {
+		// Its unit was written by somebody else and stays as they wrote it.
+		// What changed is the code under it, which the build left owned by
+		// root; the unit runs as someone who expects to own it.
+		if adopted.RunAs != "" && adopted.RunAs != "root" {
+			steps = append(steps, p.exec(
+				"Give "+service.Path+" back to "+adopted.RunAs+", who "+service.Unit()+" runs as",
+				"chown -R "+adopted.RunAs+": "+service.Path))
+		}
+		steps = append(steps, p.exec("Restart "+service.Unit(), "systemctl restart "+service.Unit()))
+	} else {
+		steps = append(steps,
+			p.exec("Write the unit that keeps it running", p.unit(service)),
+			p.exec("Start "+service.Unit(), "systemctl daemon-reload && systemctl enable --now "+
+				service.Unit()+" && systemctl restart "+service.Unit()),
+		)
+	}
 
 	if service.Health.Wanted() {
 		steps = append(steps, p.check(service))
@@ -142,6 +157,19 @@ func (p *Planner) fetch(service *entities.Service) plan.Step {
 	target, at := "FETCH_HEAD", branch
 	if service.Source.Commit != "" {
 		target, at = service.Source.Commit, service.Source.Commit
+	}
+
+	// An adopted checkout was there before croft, and is fetched as it is:
+	// never cloned again, never made shallow, and fetched from the recorded
+	// repository rather than whatever origin says. It usually belongs to the
+	// user the unit runs as, and git refuses to touch a repository owned by
+	// someone else unless told this one is expected — told here, for this
+	// command only, rather than in anybody's configuration.
+	if service.Adopted != nil {
+		git := "git -c safe.directory=" + service.Path + " -C " + service.Path
+		return p.exec("Fetch "+service.Source.Repo+" at "+at+" into the existing checkout",
+			fmt.Sprintf("%s fetch %s %s && %s reset --hard %s",
+				git, service.Source.Repo, branch, git, target))
 	}
 
 	command := fmt.Sprintf(
@@ -353,6 +381,46 @@ func (p *Planner) Destroy(service *entities.Service, keys []string, remaining []
 			"rm -rf "+service.Path),
 	)
 
+	return plan.New(append(steps, p.forget(keys, remaining)...)...)
+}
+
+// Adopt writes down what croft now knows about a service it found running.
+// Nothing runs inside the container: taking something on is recording what it
+// is, and the first change to it is the next deployment — with its own plan
+// and its own snapshot.
+func (p *Planner) Adopt(service *entities.Service, index []string) plan.Plan {
+	record := service.Record()
+
+	keys := make([]string, 0, len(record))
+	for key := range record {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	steps := []plan.Step{}
+	for _, key := range keys {
+		steps = append(steps, plan.Command("Record "+key,
+			p.bin, "config", "set", p.container, entities.ServiceKey(service.Name, key), record[key]))
+	}
+	steps = append(steps, plan.Command("Add "+service.Name+" to the index",
+		p.bin, "config", "set", p.container, entities.IndexKey, strings.Join(index, " ")))
+
+	return plan.New(steps...)
+}
+
+// Release is how an adopted service is let go. Only croft's own notes are
+// forgotten: the unit, the code and the environment stay where they are,
+// running as they were, exactly as before croft took them on.
+func (p *Planner) Release(keys []string, remaining []string) plan.Plan {
+	return plan.New(p.forget(keys, remaining)...)
+}
+
+// forget removes what croft recorded about a service. It goes last in any
+// plan that ends a service, so a failure halfway leaves one the panel still
+// knows about — which can be looked at and tried again — rather than a
+// directory nobody remembers owning.
+func (p *Planner) forget(keys []string, remaining []string) []plan.Step {
+	steps := []plan.Step{}
 	for _, key := range keys {
 		steps = append(steps, plan.Optional("Forget "+key,
 			p.bin, "config", "unset", p.container, key))
@@ -367,6 +435,5 @@ func (p *Planner) Destroy(service *entities.Service, keys []string, remaining []
 		steps = append(steps, plan.Optional("Empty the index",
 			p.bin, "config", "unset", p.container, entities.IndexKey))
 	}
-
-	return plan.New(steps...)
+	return steps
 }

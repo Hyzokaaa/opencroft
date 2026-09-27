@@ -425,3 +425,126 @@ func TestTheIndexIsLeftSayingWhatRemains(t *testing.T) {
 		t.Errorf("the index would not match the container:\n%s", body)
 	}
 }
+
+func adoptedService() *entities.Service {
+	service := nodeService()
+	service.Path = "/opt/open-helpdesk/backend"
+	service.Source.Branch = "dev"
+	service.Start = ""
+	service.Adopted = &entities.Adoption{
+		Unit: "openhelpdesk-backend", RunAs: "openhelpdesk", EnvFile: "/opt/open-helpdesk/backend/.env",
+	}
+	return service
+}
+
+// Adopting is a bargain: croft takes over the code and leaves the unit and the
+// environment file as whoever wrote them left them. A redeploy that rewrote
+// either would break it — a unit written by hand carries User=, After= and
+// whatever else its author needed.
+func TestAnAdoptedServiceKeepsItsOwnUnitAndEnvironment(t *testing.T) {
+	service := adoptedService()
+	service.Env = map[string]string{"JWT_SECRET": "would-overwrite-theirs"}
+	body := text(deploy(t, service))
+
+	for _, forbidden := range []string{"/etc/systemd/system/", "CROFT_ENV", "croft-backend", "enable --now"} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("the plan touches %q:\n%s", forbidden, body)
+		}
+	}
+	if !strings.Contains(body, "systemctl restart openhelpdesk-backend") {
+		t.Errorf("its own unit is never restarted:\n%s", body)
+	}
+}
+
+// The build runs as root, so the files it writes are root's. The unit runs as
+// its own user, which is who the checkout is given back to — before the
+// restart, so the process never starts against files it cannot own.
+func TestAnAdoptedCheckoutIsGivenBackBeforeItRestarts(t *testing.T) {
+	steps := deploy(t, adoptedService()).Steps
+
+	given, restarted := -1, -1
+	for i, step := range steps {
+		if strings.Contains(step.Shell(), "chown -R openhelpdesk: /opt/open-helpdesk/backend") {
+			given = i
+		}
+		if strings.Contains(step.Shell(), "systemctl restart") {
+			restarted = i
+		}
+	}
+	if given < 0 || restarted < 0 || given > restarted {
+		t.Errorf("given back at %d, restarted at %d", given, restarted)
+	}
+}
+
+func TestNothingIsGivenBackToRoot(t *testing.T) {
+	for _, user := range []string{"", "root"} {
+		service := adoptedService()
+		service.Adopted.RunAs = user
+		if body := text(deploy(t, service)); strings.Contains(body, "chown") {
+			t.Errorf("RunAs %q still chowns:\n%s", user, body)
+		}
+	}
+}
+
+// The checkout was there before croft and belongs to someone else: it is
+// fetched as it is — never cloned over, never turned shallow — from the
+// repository croft recorded, with git told for this one command that the
+// owner is expected.
+func TestAnAdoptedCheckoutIsFetchedAsItIs(t *testing.T) {
+	var fetch string
+	for _, step := range deploy(t, adoptedService()).Steps {
+		if strings.HasPrefix(step.Describe, "Fetch") {
+			fetch = step.Shell()
+		}
+	}
+
+	for _, forbidden := range []string{"clone", "--depth"} {
+		if strings.Contains(fetch, forbidden) {
+			t.Errorf("the fetch uses %q: %s", forbidden, fetch)
+		}
+	}
+	for _, wanted := range []string{
+		"safe.directory=/opt/open-helpdesk/backend",
+		"fetch https://github.com/user/app.git dev",
+		"reset --hard FETCH_HEAD",
+	} {
+		if !strings.Contains(fetch, wanted) {
+			t.Errorf("the fetch lacks %q: %s", wanted, fetch)
+		}
+	}
+}
+
+// Taking something on changes nothing inside the container. The first change
+// is the next deployment, which has its own plan and its own snapshot.
+func TestAdoptingOnlyWritesDownWhatWasFound(t *testing.T) {
+	steps := planner().Adopt(adoptedService(), []string{"backend"}).Steps
+
+	for _, step := range steps {
+		if step.Argv[1] != "config" || step.Argv[2] != "set" {
+			t.Errorf("adopting would run %s", step.Shell())
+		}
+	}
+
+	body := text(plan.New(steps...))
+	for _, wanted := range []string{
+		"user.croft.service.backend.adopted-unit openhelpdesk-backend",
+		"user.croft.service.backend.run-as openhelpdesk",
+		"user.croft.service.backend.branch dev",
+		entities.IndexKey + " backend",
+	} {
+		if !strings.Contains(body, wanted) {
+			t.Errorf("never records %q:\n%s", wanted, body)
+		}
+	}
+}
+
+// Letting go of something croft did not create must not take it away. Only
+// croft's notes are forgotten.
+func TestReleasingTouchesNothingButWhatCroftRecorded(t *testing.T) {
+	keys := []string{"user.croft.service.backend.repo", "user.croft.service.backend.adopted-unit"}
+	for _, step := range planner().Release(keys, nil).Steps {
+		if step.Argv[1] != "config" {
+			t.Errorf("releasing would run %s", step.Shell())
+		}
+	}
+}

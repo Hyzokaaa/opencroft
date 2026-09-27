@@ -136,6 +136,9 @@ func (s *Server) Handler() http.Handler {
 			func(w http.ResponseWriter, r *http.Request) { s.unitPower(w, r, action) })
 	}
 	mux.HandleFunc("GET /instances/{name}/units/{unit}/logs", s.unitLogs)
+	mux.HandleFunc("GET /instances/{name}/units/{unit}/adoption", s.showAdoption)
+	mux.HandleFunc("POST /instances/{name}/units/{unit}/adopt/plan", s.planAdopt)
+	mux.HandleFunc("POST /instances/{name}/units/{unit}/adopt", s.adopt)
 	mux.HandleFunc("GET /instances/{name}/databases", s.listDatabases)
 	mux.HandleFunc("POST /instances/{name}/databases/plan", s.planProvision)
 	mux.HandleFunc("POST /instances/{name}/databases", s.provision)

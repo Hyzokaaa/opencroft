@@ -122,6 +122,7 @@ export default function DeployDialog({ container, service: deployed, onClose, on
           onChange={setService}
           onDeploy={() => setStage('deploying')}
           onEditSource={deployed ? () => setStage('source') : null}
+          adopted={deployed?.adopted}
         />
       )}
     </Frame>
@@ -155,11 +156,11 @@ function guessName(repo) {
   return last.replace(/\.git$/, '').toLowerCase()
 }
 
-function split(joined) {
+export function split(joined) {
   return joined.split('&&').map((c) => c.trim()).filter(Boolean)
 }
 
-function Frame({ title, onClose, children }) {
+export function Frame({ title, onClose, children }) {
   return (
     <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/60 px-4 py-10">
       <div className="w-full max-w-2xl rounded-lg border border-edge bg-panel shadow-2xl">
@@ -227,8 +228,9 @@ function Source({ value, name, onChange, error, onSubmit }) {
 
 // Everything here is editable on purpose. What was detected is a suggestion,
 // and a suggestion you cannot change is a decision made behind your back.
-function Found({ service, why, onChange, onDeploy, onEditSource }) {
+function Found({ service, why, onChange, onDeploy, onEditSource, adopted }) {
   const set = (key) => (v) => onChange({ ...service, [key]: v })
+  const runnable = Boolean(adopted) || Boolean(service.start?.trim())
 
   return (
     <>
@@ -260,8 +262,20 @@ function Found({ service, why, onChange, onDeploy, onEditSource }) {
           hint="Run in the checkout. Several commands joined with &&." />
         <Field label="Build — has to finish" value={service.build} onChange={set("build")} mono
           hint="Left empty, no build step happens." />
-        <Field label="Start — keeps running" value={service.start} onChange={set("start")} mono
-          hint="What systemd runs, and restarts if it exits. The server goes here, not above." />
+        {/* An adopted service runs the way its own unit says, with its own
+            environment file. Croft writes neither, so offering to edit them
+            here would be offering something it will not do. */}
+        {adopted ? (
+          <p className="rounded border border-edge px-3 py-2 text-xs text-muted">
+            Runs as <span className="font-mono">{adopted.unit}</span> says
+            {adopted.runAs ? <> (as <span className="font-mono">{adopted.runAs}</span>)</> : ''}, with its
+            environment from <span className="font-mono">{adopted.envFile || 'nowhere'}</span>. Both stay
+            exactly as they are — croft restarts the unit, and never rewrites it.
+          </p>
+        ) : (
+          <Field label="Start — keeps running" value={service.start} onChange={set("start")} mono
+            hint="What systemd runs, and restarts if it exits. The server goes here, not above." />
+        )}
 
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Port it listens on" type="number" value={service.port} onChange={set('port')} />
@@ -269,7 +283,7 @@ function Found({ service, why, onChange, onDeploy, onEditSource }) {
             hint="git and curl are always installed." />
         </div>
 
-        <EnvEditor value={service.env} onChange={set('env')} />
+        {!adopted && <EnvEditor value={service.env} onChange={set('env')} />}
 
         {/* Nothing reports readiness, so without somewhere to ask, a
             deployment is finished when the unit is up — which is a weaker
@@ -287,13 +301,13 @@ function Found({ service, why, onChange, onDeploy, onEditSource }) {
 
       <footer className="flex items-center justify-between gap-3 border-t border-edge px-5 py-3">
         <p className="text-xs text-faint">
-          {service.start?.trim()
+          {runnable
             ? 'A snapshot is taken first, so this can be undone.'
             : 'Nothing says how to start it, so there is no deployment to run.'}
         </p>
         <button
           onClick={onDeploy}
-          disabled={!service.start?.trim()}
+          disabled={!runnable}
           className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30 disabled:opacity-40"
         >
           Show me the deploy plan
@@ -303,7 +317,7 @@ function Found({ service, why, onChange, onDeploy, onEditSource }) {
   )
 }
 
-function Field({ label, hint, value, onChange, mono, type, placeholder, autoFocus }) {
+export function Field({ label, hint, value, onChange, mono, type, placeholder, autoFocus }) {
   return (
     <label className="block">
       <span className="mb-1 block text-xs text-muted">{label}</span>

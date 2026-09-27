@@ -60,7 +60,7 @@ func (f *fakeDeployer) RollbackPlan(context.Context, string, string) (plan.Plan,
 	return onePlan(), "", nil
 }
 func (f *fakeDeployer) Rollback(context.Context, string, string, func(int, string)) error { return nil }
-func (f *fakeDeployer) Logs(context.Context, string, string, int) (string, error)       { return "", nil }
+func (f *fakeDeployer) Logs(context.Context, string, string, int) (string, error)         { return "", nil }
 func (f *fakeDeployer) DestroyPlan(context.Context, string, string) (plan.Plan, string, error) {
 	return onePlan(), "", nil
 }
@@ -85,6 +85,18 @@ func (f *fakeDeployer) UnitPower(_ context.Context, container, unit string, acti
 func (f *fakeDeployer) UnitLogs(_ context.Context, container, unit string, _ int) (string, error) {
 	f.record("logs unit %s/%s", container, unit)
 	return "started", nil
+}
+func (f *fakeDeployer) AdoptionOf(_ context.Context, container, unit string) (agent.AdoptionDTO, error) {
+	f.record("inspect unit %s/%s", container, unit)
+	return agent.AdoptionDTO{Unit: unit}, nil
+}
+func (f *fakeDeployer) AdoptPlan(_ context.Context, container, unit string, answer agent.AdoptDTO) (plan.Plan, error) {
+	f.record("plan adopt %s/%s as %s", container, unit, answer.Name)
+	return onePlan(), nil
+}
+func (f *fakeDeployer) Adopt(_ context.Context, container, unit string, answer agent.AdoptDTO, _ func(int, string)) error {
+	f.record("run adopt %s/%s as %s", container, unit, answer.Name)
+	return nil
 }
 
 func testAPI() (http.Handler, *fakeDeployer, *job.Runner) {
@@ -144,6 +156,47 @@ func TestEveryPowerActionReachesTheAgent(t *testing.T) {
 					t.Fatalf("the job never asked the agent to do it: %v", fake.asked)
 				}
 			})
+		}
+	}
+}
+
+// Adopting is read, then planned, then run — each step a request of its own,
+// and each one has to reach the agent, which is the only half that can look.
+func TestAdoptingAUnitReachesTheAgent(t *testing.T) {
+	handler, fake, jobs := testAPI()
+	base := "/api/hosts/local/instances/helpdesk/units/openhelpdesk-backend/"
+
+	if code := request(t, handler, http.MethodGet, base+"adoption").Code; code != http.StatusOK {
+		t.Fatalf("inspecting was answered with %d", code)
+	}
+
+	post := func(path string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, path,
+			strings.NewReader(`{"name":"backend","build":["npm run build"]}`)))
+		return recorder
+	}
+
+	if code := post(base + "adopt?plan=1").Code; code != http.StatusOK {
+		t.Fatalf("planning was answered with %d", code)
+	}
+	started := post(base + "adopt")
+	if started.Code != http.StatusAccepted {
+		t.Fatalf("running was answered with %d: %s", started.Code, started.Body.String())
+	}
+	var body struct {
+		JobId string `json:"jobId"`
+	}
+	_ = json.Unmarshal(started.Body.Bytes(), &body)
+	finished(t, jobs, body.JobId)
+
+	for _, call := range []string{
+		"inspect unit helpdesk/openhelpdesk-backend",
+		"plan adopt helpdesk/openhelpdesk-backend as backend",
+		"run adopt helpdesk/openhelpdesk-backend as backend",
+	} {
+		if !fake.was(call) {
+			t.Errorf("never asked: %s (asked %v)", call, fake.asked)
 		}
 	}
 }

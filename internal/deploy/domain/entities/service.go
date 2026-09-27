@@ -11,7 +11,9 @@
 package entities
 
 import (
+	"encoding/json"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -109,6 +111,24 @@ type Service struct {
 	Env map[string]string
 
 	Health Health
+
+	// Adopted is set on a service croft found running and took on, rather
+	// than deployed. Nil for everything croft wrote itself.
+	Adopted *Adoption
+}
+
+// Adoption is what croft agreed not to touch when it took a service on. It
+// takes over the code — fetch, build, restart, snapshot — and leaves the unit
+// and the environment file exactly as whoever wrote them left them: the same
+// bargain it keeps with a vhost somebody edited by hand.
+type Adoption struct {
+	// Unit is the service's own unit, under the name it already had.
+	Unit string
+	// RunAs is the unit's User=. A build runs as root, so the checkout is
+	// given back to this user afterwards — what the unit expects to own.
+	RunAs string
+	// EnvFile is where the unit reads its environment. Shown, never written.
+	EnvFile string
 }
 
 type ServiceProps struct {
@@ -123,6 +143,7 @@ type ServiceProps struct {
 	Packages []string
 	Env      map[string]string
 	Health   Health
+	Adopted  *Adoption
 }
 
 func NewService(props ServiceProps) *Service {
@@ -143,7 +164,51 @@ func NewService(props ServiceProps) *Service {
 		Packages: props.Packages,
 		Env:      props.Env,
 		Health:   props.Health,
+		Adopted:  props.Adopted,
 	}
+}
+
+// Record is what croft writes onto the container about a service, key by key —
+// the same keys whether it deployed the service or adopted it, so reading one
+// back never needs to know which. Empty values are left out rather than
+// written as blanks.
+func (s *Service) Record() map[string]string {
+	values := map[string]string{
+		"repo": s.Source.Repo, "branch": s.Source.Branch, "commit": s.Source.Commit,
+		"path": s.Path, "runtime": s.Runtime, "start": s.Start,
+		"port":            strconv.Itoa(s.Port),
+		"install":         strings.Join(s.Install, " && "),
+		"build":           strings.Join(s.Build, " && "),
+		"packages":        strings.Join(s.Packages, " "),
+		"health":          s.Health.Path,
+		"health-contains": s.Health.Contains,
+	}
+	if s.Health.Status != 0 {
+		values["health-status"] = strconv.Itoa(s.Health.Status)
+	}
+	// One annotation, written and read as a whole: a partial write would
+	// leave a service with half its configuration.
+	if len(s.Env) > 0 {
+		encoded, _ := json.Marshal(s.Env)
+		values["env"] = string(encoded)
+	}
+	if a := s.Adopted; a != nil {
+		values["adopted-unit"] = a.Unit
+		values["run-as"] = a.RunAs
+		values["env-file"] = a.EnvFile
+	}
+
+	for key, value := range values {
+		if value == "" {
+			delete(values, key)
+		}
+	}
+	return values
+}
+
+// ServiceKey is one of a service's annotations, as the runtime spells it.
+func ServiceKey(name, key string) string {
+	return "user.croft.service." + name + "." + key
 }
 
 // DefaultPath keeps services out of each other's way without anybody having to
@@ -158,15 +223,23 @@ func DefaultPath(name string) string {
 // Unit is the systemd service inside the container. The name carries the
 // prefix so that a person reading `systemctl list-units` can tell what put it
 // there — the same courtesy the generated vhosts extend.
-func (s *Service) Unit() string { return "croft-" + s.Name }
+func (s *Service) Unit() string {
+	if s.Adopted != nil {
+		return s.Adopted.Unit
+	}
+	return "croft-" + s.Name
+}
 
 // EnvFile sits beside the code rather than in /etc, so that moving or removing
 // the checkout takes its configuration with it.
 func (s *Service) EnvFile() string { return s.Path + "/.env" }
 
 // Runnable is false when there is nothing to start, which is the one thing a
-// deployment cannot do without.
-func (s *Service) Runnable() bool { return strings.TrimSpace(s.Start) != "" }
+// deployment cannot do without. An adopted service starts the way its own
+// unit says, so it always has an answer.
+func (s *Service) Runnable() bool {
+	return s.Adopted != nil || strings.TrimSpace(s.Start) != ""
+}
 
 // EnvContent renders the environment file. Sorted, so that redeploying an
 // unchanged service produces an unchanged file and the plan does not show a

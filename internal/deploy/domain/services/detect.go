@@ -132,6 +132,22 @@ func static() Detection {
 	}
 }
 
+// ForRunning narrows a detection to what a service that is already running
+// needs on every deployment: its own install and build. The runtime it is
+// running on is on the machine already — reinstalling it each time would be a
+// slower deployment that proves nothing new.
+func (d Detection) ForRunning() Detection {
+	install := []string{}
+	for _, command := range d.Install {
+		if command != nodeSource {
+			install = append(install, command)
+		}
+	}
+	d.Install = install
+	d.Packages = nil
+	return d
+}
+
 // Apply turns a detection into an app, leaving anything already set alone.
 // A command somebody typed always wins over one we guessed.
 func Apply(detection Detection, existing *entities.Service) *entities.Service {

@@ -32,6 +32,9 @@ type Deployer interface {
 	UnitPowerPlan(ctx context.Context, container, unit string, action agent.PowerAction) (plan.Plan, error)
 	UnitPower(ctx context.Context, container, unit string, action agent.PowerAction, report func(int, string)) error
 	UnitLogs(ctx context.Context, container, unit string, lines int) (string, error)
+	AdoptionOf(ctx context.Context, container, unit string) (agent.AdoptionDTO, error)
+	AdoptPlan(ctx context.Context, container, unit string, answer agent.AdoptDTO) (plan.Plan, error)
+	Adopt(ctx context.Context, container, unit string, answer agent.AdoptDTO, report func(int, string)) error
 }
 
 func (d Deps) deployer(w http.ResponseWriter) (Deployer, bool) {
@@ -143,8 +146,9 @@ func (d Deps) deployService(w http.ResponseWriter, r *http.Request) {
 
 	if wantsPlan(r) {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"summary": summarise(name, body, d.crowding(r.Context(), name, body.Name)),
-			"plan":    p,
+			"summary": summarise(name, body, adoptionOf(r.Context(), deployer, name, body.Name),
+				d.crowding(r.Context(), name, body.Name)),
+			"plan": p,
 		})
 		return
 	}
@@ -160,12 +164,16 @@ func (d Deps) deployService(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": body.Name})
 }
 
-func summarise(container string, service agent.ServiceDTO, crowding string) string {
+func summarise(container string, service agent.ServiceDTO, adopted *agent.AdoptedDTO, crowding string) string {
 	sentence := fmt.Sprintf("Deploy %s to %s as %s", service.Repo, container, service.Name)
 	if service.Branch != "" {
 		sentence += " from " + service.Branch
 	}
-	sentence += ", starting it with `" + service.Start + "`"
+	if adopted != nil {
+		sentence += ", restarting its own unit " + adopted.Unit + " — which, like its environment, stays as it is"
+	} else {
+		sentence += ", starting it with `" + service.Start + "`"
+	}
 
 	if service.Port > 0 {
 		sentence += fmt.Sprintf(" on port %d", service.Port)
@@ -303,9 +311,15 @@ func (d Deps) destroyService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// An adopted service is let go, not removed: croft did not put it there.
+	kind := "destroy"
+	summary := fmt.Sprintf("Remove %s from %s, and everything it wrote beside its code.", service, name)
+	if adoptionOf(r.Context(), deployer, name, service) != nil {
+		kind = "release"
+		summary = fmt.Sprintf("Let go of %s: croft forgets what it recorded about it.", service)
+	}
+
 	if wantsPlan(r) {
-		summary := fmt.Sprintf(
-			"Remove %s from %s, and everything it wrote beside its code.", service, name)
 		if warning != "" {
 			summary += " " + warning
 		}
@@ -313,7 +327,7 @@ func (d Deps) destroyService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	started := d.Jobs.Start("destroy", name+"/"+service, p,
+	started := d.Jobs.Start(kind, name+"/"+service, p,
 		func(ctx context.Context, report func(int, string)) error {
 			if d.Simulated {
 				return d.rehearse(p, report)
@@ -322,6 +336,83 @@ func (d Deps) destroyService(w http.ResponseWriter, r *http.Request) {
 		})
 
 	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": service})
+}
+
+// adoptionOf says whether a service is one croft took on rather than deployed,
+// as the agent reads it off the container.
+func adoptionOf(ctx context.Context, deployer Deployer, container, service string) *agent.AdoptedDTO {
+	found, err := deployer.FindAll(ctx, container)
+	if err != nil {
+		return nil
+	}
+	for _, s := range found.Services {
+		if s.Name == service {
+			return s.Adopted
+		}
+	}
+	return nil
+}
+
+// showAdoption is what croft would record about a unit it found, read before
+// anything is agreed to. It changes nothing.
+func (d Deps) showAdoption(w http.ResponseWriter, r *http.Request) {
+	deployer, ok := d.deployer(w)
+	if !ok {
+		return
+	}
+	found, err := deployer.AdoptionOf(r.Context(), r.PathValue("name"), r.PathValue("unit"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, found)
+}
+
+// adoptUnit takes on a unit croft found running. Its plan is annotations and
+// nothing else: the container is untouched until the next deployment, which
+// comes with a plan and a snapshot of its own.
+func (d Deps) adoptUnit(w http.ResponseWriter, r *http.Request) {
+	if !d.writable(w) {
+		return
+	}
+	deployer, ok := d.deployer(w)
+	if !ok {
+		return
+	}
+
+	name, unit := r.PathValue("name"), r.PathValue("unit")
+	var answer agent.AdoptDTO
+	if err := readBody(r, &answer); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	p, err := deployer.AdoptPlan(r.Context(), name, unit, answer)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if wantsPlan(r) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"summary": fmt.Sprintf(
+				"Take on %s as %s. Nothing inside %s changes now: croft records what it found, and "+
+					"from the next deployment on it fetches, builds and restarts %s — leaving the unit "+
+					"and its environment file exactly as they are.", unit, answer.Name, name, unit),
+			"plan": p,
+		})
+		return
+	}
+
+	started := d.Jobs.Start("adopt", name+"/"+answer.Name, p,
+		func(ctx context.Context, report func(int, string)) error {
+			if d.Simulated {
+				return d.rehearse(p, report)
+			}
+			return deployer.Adopt(ctx, name, unit, answer, report)
+		})
+
+	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": answer.Name})
 }
 
 // powerService restarts, stops or starts a service croft deployed; powerUnit

@@ -10,6 +10,7 @@ import Settings from './components/Settings.jsx'
 import Login from './components/Login.jsx'
 import PlanDialog from './components/PlanDialog.jsx'
 import DeployDialog from './components/DeployDialog.jsx'
+import AdoptDialog from './components/AdoptDialog.jsx'
 import Container from './components/Container.jsx'
 import { useOverview, useCommandMode, useAuth } from './lib/useOverview.js'
 
@@ -44,6 +45,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
   const [highlighted, setHighlighted] = useState(null)
   const [dialog, setDialog] = useState(null)
   const [deploying, setDeploying] = useState(null)
+  const [adopting, setAdopting] = useState(null)
   const [opened, setOpened] = useState(null)
 
   // Subjects named by a problem, so the tables carry the same severity the
@@ -178,10 +180,13 @@ function Dashboard({ onSignOut, onSessionLost }) {
   // true — a domain pointing at its port, above all.
   function destroyService(container, service) {
     setDialog({
-      title: `Remove ${service.name} from ${container.name}`,
+      title: service.adopted
+        ? `Let go of ${service.name}`
+        : `Remove ${service.name} from ${container.name}`,
       url: `/api/hosts/local/instances/${container.name}/services/${service.name}`,
       method: 'DELETE',
-      destructive: true,
+      // Letting go of an adopted service removes nothing but croft's notes.
+      destructive: !service.adopted,
     })
   }
 
@@ -298,6 +303,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
           onDestroy={destroyService}
           onPowerService={powerService}
           onPowerUnit={powerUnit}
+          onAdopt={(container, unit) => setAdopting({ container, unit })}
           onAddDomain={addDomain}
         />
       )}
@@ -388,6 +394,15 @@ function Dashboard({ onSignOut, onSessionLost }) {
           container={deploying.container}
           service={deploying.service}
           onClose={() => { setDeploying(null); reload() }}
+          onFinished={reload}
+        />
+      )}
+
+      {adopting && (
+        <AdoptDialog
+          container={adopting.container}
+          unit={adopting.unit}
+          onClose={() => { setAdopting(null); reload() }}
           onFinished={reload}
         />
       )}
