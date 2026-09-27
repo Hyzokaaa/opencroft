@@ -136,9 +136,12 @@ func (s *Server) Handler() http.Handler {
 			func(w http.ResponseWriter, r *http.Request) { s.unitPower(w, r, action) })
 	}
 	mux.HandleFunc("GET /instances/{name}/units/{unit}/logs", s.unitLogs)
-	mux.HandleFunc("GET /instances/{name}/units/{unit}/adoption", s.showAdoption)
-	mux.HandleFunc("POST /instances/{name}/units/{unit}/adopt/plan", s.planAdopt)
-	mux.HandleFunc("POST /instances/{name}/units/{unit}/adopt", s.adopt)
+	for kind, key := range map[Adoptable]string{AdoptUnit: "{unit}", AdoptSite: "{site}"} {
+		base := "/instances/{name}/" + string(kind) + "/" + key
+		mux.HandleFunc("GET "+base+"/adoption", s.showAdoption(kind))
+		mux.HandleFunc("POST "+base+"/adopt/plan", s.planAdopt(kind))
+		mux.HandleFunc("POST "+base+"/adopt", s.adopt(kind))
+	}
 	mux.HandleFunc("GET /instances/{name}/databases", s.listDatabases)
 	mux.HandleFunc("POST /instances/{name}/databases/plan", s.planProvision)
 	mux.HandleFunc("POST /instances/{name}/databases", s.provision)

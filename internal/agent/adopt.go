@@ -46,7 +46,13 @@ type AdoptionDTO struct {
 	Build   []string `json:"build"`
 	Port    int      `json:"port"`
 
-	// Problem is why this unit cannot be taken on, when it cannot.
+	// Set only for a site: the domains it answers for, the directory the
+	// web server serves, and where in the checkout the build leaves that.
+	Domains []string `json:"domains,omitempty"`
+	Site    string   `json:"site,omitempty"`
+	Output  string   `json:"output,omitempty"`
+
+	// Problem is why this cannot be taken on, when it cannot.
 	Problem string `json:"problem,omitempty"`
 }
 
@@ -92,6 +98,14 @@ func (s *Server) inspectUnit(ctx context.Context, name, unit string) (AdoptionDT
 		return found, nil
 	}
 
+	s.readCheckout(ctx, name, &found)
+	return found, nil
+}
+
+// readCheckout fills in where the code came from and how to build it, from
+// the checkout at found.Path — the part of adopting a unit and a site that is
+// the same.
+func (s *Server) readCheckout(ctx context.Context, name string, found *AdoptionDTO) {
 	git := func(args ...string) string {
 		argv := append([]string{"exec", name, "--", "git", "-c", "safe.directory=" + found.Path, "-C", found.Path}, args...)
 		out, err := s.host.Run(ctx, s.bin, argv...)
@@ -118,8 +132,6 @@ func (s *Server) inspectUnit(ctx context.Context, name, unit string) (AdoptionDT
 	detection = detection.ForRunning()
 	found.Runtime, found.Why = detection.Runtime, detection.Why
 	found.Install, found.Build, found.Port = detection.Install, detection.Build, detection.Port
-
-	return found, nil
 }
 
 // unitProperties asks systemd for the handful of things adoption records, in
@@ -155,11 +167,28 @@ func argv(execStart string) string {
 	return strings.TrimSpace(command)
 }
 
+// Adoptable is what can be taken on: a unit, found by its name, or a site,
+// found by a domain its web server answers for.
+type Adoptable string
+
+const (
+	AdoptUnit Adoptable = "units"
+	AdoptSite Adoptable = "sites"
+)
+
+func (s *Server) inspectAdoptable(ctx context.Context, name string, kind Adoptable, key string) (AdoptionDTO, error) {
+	if kind == AdoptSite {
+		return s.inspectSite(ctx, name, key)
+	}
+	return s.inspectUnit(ctx, name, key)
+}
+
 // adoption turns what was found and what was answered into the service croft
 // will record. Every field is checked the way a deployment's is, because from
-// here on it is one.
-func (s *Server) adoption(ctx context.Context, name, unit string, answer AdoptDTO) (*deployEntities.Service, []string, error) {
-	found, err := s.inspectUnit(ctx, name, unit)
+// here on it is one. What adoption fixes comes from what was found, never from
+// the answer.
+func (s *Server) adoption(ctx context.Context, name string, kind Adoptable, key string, answer AdoptDTO) (*deployEntities.Service, []string, error) {
+	found, err := s.inspectAdoptable(ctx, name, kind, key)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -176,38 +205,65 @@ func (s *Server) adoption(ctx context.Context, name, unit string, answer AdoptDT
 		return nil, nil, errors.New(name + " already has a service called " + answer.Name)
 	}
 
-	service, err := ServiceDTO{
+	wanted := ServiceDTO{
 		Name: answer.Name, Repo: found.Repo, Branch: found.Branch, Commit: found.Commit,
 		Path: found.Path, Runtime: found.Runtime, Port: answer.Port,
 		Install: answer.Install, Build: answer.Build, Packages: answer.Packages,
 		Health: answer.Health,
-	}.entity()
+	}
+	// A site has no process to listen on a port or answer a readiness check:
+	// publishing its files is the whole deployment, and it refuses to publish
+	// a build with nothing to serve.
+	if found.Site != "" {
+		if strings.TrimSpace(answer.Health.Path) != "" {
+			return nil, nil, errors.New("a site has no process of its own to ask whether it is ready")
+		}
+		wanted.Port = 0
+	}
+
+	service, err := wanted.entity()
 	if err != nil {
 		return nil, nil, err
 	}
-	service.Adopted = &deployEntities.Adoption{Unit: unit, RunAs: found.RunAs, EnvFile: found.EnvFile}
-
+	service.Adopted = &deployEntities.Adoption{
+		Unit: found.Unit, Site: found.Site, Output: found.Output,
+		RunAs: found.RunAs, EnvFile: found.EnvFile,
+	}
 	return service, append(index, answer.Name), nil
 }
 
-func (s *Server) acceptAdoption(r *http.Request) (string, string, AdoptDTO, error) {
-	name, unit, err := s.acceptUnit(r)
-	if err != nil {
-		return "", "", AdoptDTO{}, err
+// acceptSubject reads which unit or site a request is about, checked before it
+// goes anywhere near a command line.
+func (s *Server) acceptSubject(r *http.Request, kind Adoptable) (string, string, error) {
+	if kind == AdoptUnit {
+		return s.acceptUnit(r)
 	}
-	var answer AdoptDTO
-	if err := json.NewDecoder(r.Body).Decode(&answer); err != nil {
-		return "", "", AdoptDTO{}, err
+	name := r.PathValue("name")
+	if err := validName(name); err != nil {
+		return "", "", err
 	}
-	return name, unit, answer, nil
+	site := r.PathValue("site")
+	if !domainPattern.MatchString(site) {
+		return "", "", errors.New("that is not a domain")
+	}
+	return name, site, nil
 }
 
-func (s *Server) adoptionPlan(ctx context.Context, name, unit string, answer AdoptDTO) (plan.Plan, error) {
-	service, index, err := s.adoption(ctx, name, unit, answer)
+func (s *Server) adoptionPlan(r *http.Request, kind Adoptable) (plan.Plan, error) {
+	name, key, err := s.acceptSubject(r, kind)
 	if err != nil {
 		return plan.Plan{}, err
 	}
-	planner, err := s.planner(ctx, name)
+	var answer AdoptDTO
+	if err := json.NewDecoder(r.Body).Decode(&answer); err != nil {
+		return plan.Plan{}, err
+	}
+
+	service, index, err := s.adoption(r.Context(), name, kind, key, answer)
+	if err != nil {
+		return plan.Plan{}, err
+	}
+	planner, err := s.planner(r.Context(), name)
 	if err != nil {
 		return plan.Plan{}, err
 	}
@@ -216,54 +272,50 @@ func (s *Server) adoptionPlan(ctx context.Context, name, unit string, answer Ado
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
-func (s *Server) showAdoption(w http.ResponseWriter, r *http.Request) {
-	name, unit, err := s.acceptUnit(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	found, err := s.inspectUnit(r.Context(), name, unit)
-	if err != nil {
-		writeError(w, http.StatusNotFound, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, found)
-}
-
-func (s *Server) planAdopt(w http.ResponseWriter, r *http.Request) {
-	name, unit, answer, err := s.acceptAdoption(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	p, err := s.adoptionPlan(r.Context(), name, unit, answer)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, PlanResponse{Plan: p})
-}
-
-func (s *Server) adopt(w http.ResponseWriter, r *http.Request) {
-	name, unit, answer, err := s.acceptAdoption(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	ctx := r.Context()
-	p, err := s.adoptionPlan(ctx, name, unit, answer)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-
-	s.stream(w, func(report func(int, string)) error {
-		for i, step := range p.Steps {
-			report(i+1, step.Describe)
-			if err := host.RunStep(ctx, s.host, step); err != nil {
-				return explain(step, err)
-			}
+func (s *Server) showAdoption(kind Adoptable) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		name, key, err := s.acceptSubject(r, kind)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
 		}
-		return nil
-	})
+		found, err := s.inspectAdoptable(r.Context(), name, kind, key)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, found)
+	}
+}
+
+func (s *Server) planAdopt(kind Adoptable) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, err := s.adoptionPlan(r, kind)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, PlanResponse{Plan: p})
+	}
+}
+
+func (s *Server) adopt(kind Adoptable) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, err := s.adoptionPlan(r, kind)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+
+		ctx := r.Context()
+		s.stream(w, func(report func(int, string)) error {
+			for i, step := range p.Steps {
+				report(i+1, step.Describe)
+				if err := host.RunStep(ctx, s.host, step); err != nil {
+					return explain(step, err)
+				}
+			}
+			return nil
+		})
+	}
 }

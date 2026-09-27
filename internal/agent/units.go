@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Hyzokaaa/opencroft/internal/deploy/infrastructure/container"
+	"github.com/Hyzokaaa/opencroft/internal/route/infrastructure/nginx"
 	"github.com/Hyzokaaa/opencroft/internal/shared/host"
 	"github.com/Hyzokaaa/opencroft/internal/shared/plan"
 )
@@ -68,29 +69,51 @@ var powerPlans = map[PowerAction]func(*container.Planner, string) plan.Plan{
 	PowerStart:   (*container.Planner).StartUnit,
 }
 
-// discoverUnits names what has a unit file of its own on the container that
-// croft did not write.
-func (s *Server) discoverUnits(ctx context.Context, name string) []string {
+// siteMarker separates the two answers the discovery script gives.
+const siteMarker = "#### croft: web server"
+
+// discover names what the container runs that croft did not put there: units
+// with a file of their own, and directories its own web server serves. Both
+// come from one command, so reading a container costs the same however much
+// is in it.
+func (s *Server) discover(ctx context.Context, name string) ([]string, []nginx.StaticSite) {
 	// The if, rather than a chain of &&, is deliberate: a for loop's exit
 	// status is whichever command ran last, and with && that would have been
 	// the test on the final file the glob happened to match — turning
 	// "the last unit alphabetically was a symlink" into "report nothing at
 	// all". An if with no else always exits 0, so the result depends only on
 	// what was printed, never on where a skipped entry landed in the sort.
+	// Likewise a container without nginx, or with a broken configuration,
+	// answers with no sites rather than with a failure.
 	out, err := s.host.Run(ctx, s.bin, "exec", name, "--", "sh", "-lc",
-		`for f in /etc/systemd/system/*.service; do if [ -f "$f" ] && [ ! -L "$f" ]; then basename "$f" .service; fi; done`)
+		`for f in /etc/systemd/system/*.service; do if [ -f "$f" ] && [ ! -L "$f" ]; then basename "$f" .service; fi; done; `+
+			`echo '`+siteMarker+`'; if command -v nginx >/dev/null 2>&1; then nginx -T 2>/dev/null || true; fi`)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 
-	found := []string{}
-	for _, unit := range strings.Fields(out.Stdout) {
+	listed, dump, _ := strings.Cut(out.Stdout, siteMarker)
+
+	units := []string{}
+	for _, unit := range strings.Fields(listed) {
 		if validUnit(unit) == nil {
-			found = append(found, unit)
+			units = append(units, unit)
 		}
 	}
-	sort.Strings(found)
-	return found
+	sort.Strings(units)
+
+	sites := []nginx.StaticSite{}
+	for _, site := range nginx.StaticSites(dump) {
+		if pathPattern.MatchString(site.Root) {
+			sites = append(sites, site)
+		}
+	}
+	return units, sites
+}
+
+func (s *Server) discoverUnits(ctx context.Context, name string) []string {
+	units, _ := s.discover(ctx, name)
+	return units
 }
 
 // ── Power, for any unit ───────────────────────────────────────────────────────

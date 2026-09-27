@@ -109,20 +109,24 @@ func (a *ServiceClient) UnitPower(ctx context.Context, container, unit string, a
 	return a.c.streamed(ctx, http.MethodPost, unitPath(container, unit, "/"+string(action)), nil, report)
 }
 
-func (a *ServiceClient) AdoptionOf(ctx context.Context, container, unit string) (AdoptionDTO, error) {
+func adoptPath(container string, kind Adoptable, key, suffix string) string {
+	return "/instances/" + url.PathEscape(container) + "/" + string(kind) + "/" + url.PathEscape(key) + suffix
+}
+
+func (a *ServiceClient) AdoptionOf(ctx context.Context, container string, kind Adoptable, key string) (AdoptionDTO, error) {
 	var found AdoptionDTO
-	err := a.c.call(ctx, http.MethodGet, unitPath(container, unit, "/adoption"), nil, &found)
+	err := a.c.call(ctx, http.MethodGet, adoptPath(container, kind, key, "/adoption"), nil, &found)
 	return found, err
 }
 
-func (a *ServiceClient) AdoptPlan(ctx context.Context, container, unit string, answer AdoptDTO) (plan.Plan, error) {
+func (a *ServiceClient) AdoptPlan(ctx context.Context, container string, kind Adoptable, key string, answer AdoptDTO) (plan.Plan, error) {
 	var response PlanResponse
-	err := a.c.call(ctx, http.MethodPost, unitPath(container, unit, "/adopt/plan"), answer, &response)
+	err := a.c.call(ctx, http.MethodPost, adoptPath(container, kind, key, "/adopt/plan"), answer, &response)
 	return response.Plan, err
 }
 
-func (a *ServiceClient) Adopt(ctx context.Context, container, unit string, answer AdoptDTO, report func(int, string)) error {
-	return a.c.streamed(ctx, http.MethodPost, unitPath(container, unit, "/adopt"), answer, report)
+func (a *ServiceClient) Adopt(ctx context.Context, container string, kind Adoptable, key string, answer AdoptDTO, report func(int, string)) error {
+	return a.c.streamed(ctx, http.MethodPost, adoptPath(container, kind, key, "/adopt"), answer, report)
 }
 
 func (a *ServiceClient) UnitLogs(ctx context.Context, container, unit string, lines int) (string, error) {

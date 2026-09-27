@@ -101,8 +101,11 @@ func api(deps Deps) *http.ServeMux {
 	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/services/{service}/logs", deps.showServiceLogs)
 	mux.HandleFunc("DELETE /api/hosts/{hostId}/instances/{name}/services/{service}", deps.destroyService)
 	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/units/{unit}/logs", deps.showUnitLogs)
-	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/units/{unit}/adoption", deps.showAdoption)
-	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/units/{unit}/adopt", deps.adoptUnit)
+	for kind, key := range map[agent.Adoptable]string{agent.AdoptUnit: "{unit}", agent.AdoptSite: "{site}"} {
+		base := "/api/hosts/{hostId}/instances/{name}/" + string(kind) + "/" + key
+		mux.HandleFunc("GET "+base+"/adoption", deps.showAdoption(kind))
+		mux.HandleFunc("POST "+base+"/adopt", deps.adopt(kind))
+	}
 
 	// From the agent's own list, so the panel cannot offer an action the agent
 	// does not serve — which is how restart once shipped as a button to nowhere.

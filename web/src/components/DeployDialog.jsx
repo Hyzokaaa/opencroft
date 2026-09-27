@@ -265,7 +265,16 @@ function Found({ service, why, onChange, onDeploy, onEditSource, adopted }) {
         {/* An adopted service runs the way its own unit says, with its own
             environment file. Croft writes neither, so offering to edit them
             here would be offering something it will not do. */}
-        {adopted ? (
+        {adopted?.site ? (
+          <p className="rounded border border-edge px-3 py-2 text-xs text-muted">
+            The build in <span className="font-mono">{adopted.output}/</span> is published to{' '}
+            <span className="font-mono">{adopted.site}</span>, which the web server already serves —
+            nothing is restarted. A build with no index.html is refused before anything is replaced.
+            {adopted.envFile && (
+              <> The build reads <span className="font-mono">{adopted.envFile}</span>, which croft never writes.</>
+            )}
+          </p>
+        ) : adopted ? (
           <p className="rounded border border-edge px-3 py-2 text-xs text-muted">
             Runs as <span className="font-mono">{adopted.unit}</span> says
             {adopted.runAs ? <> (as <span className="font-mono">{adopted.runAs}</span>)</> : ''}, with its
@@ -278,7 +287,9 @@ function Found({ service, why, onChange, onDeploy, onEditSource, adopted }) {
         )}
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Port it listens on" type="number" value={service.port} onChange={set('port')} />
+          {!adopted?.site && (
+            <Field label="Port it listens on" type="number" value={service.port} onChange={set('port')} />
+          )}
           <Field label="Packages to install first" value={service.packages} onChange={set('packages')} mono
             hint="git and curl are always installed." />
         </div>
@@ -287,16 +298,19 @@ function Found({ service, why, onChange, onDeploy, onEditSource, adopted }) {
 
         {/* Nothing reports readiness, so without somewhere to ask, a
             deployment is finished when the unit is up — which is a weaker
-            promise, and the panel says so rather than implying more. */}
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Ready when this answers" value={service.health} onChange={set('health')} mono
-            placeholder="/health"
-            hint={service.health.trim()
-              ? 'Asked from the host, for up to 30 seconds.'
-              : 'Left empty, the deployment ends when the unit starts.'} />
-          <Field label="…and the body contains" value={service.contains} onChange={set('contains')} mono
-            placeholder="optional" />
-        </div>
+            promise, and the panel says so rather than implying more. A site
+            has no process to ask at all. */}
+        {!adopted?.site && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Ready when this answers" value={service.health} onChange={set('health')} mono
+              placeholder="/health"
+              hint={service.health.trim()
+                ? 'Asked from the host, for up to 30 seconds.'
+                : 'Left empty, the deployment ends when the unit starts.'} />
+            <Field label="…and the body contains" value={service.contains} onChange={set('contains')} mono
+              placeholder="optional" />
+          </div>
+        )}
       </div>
 
       <footer className="flex items-center justify-between gap-3 border-t border-edge px-5 py-3">

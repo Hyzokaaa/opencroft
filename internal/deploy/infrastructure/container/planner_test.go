@@ -548,3 +548,51 @@ func TestReleasingTouchesNothingButWhatCroftRecorded(t *testing.T) {
 		}
 	}
 }
+
+func adoptedSite() *entities.Service {
+	service := nodeService()
+	service.Path = "/opt/open-helpdesk/client"
+	service.Start, service.Port = "", 0
+	service.Adopted = &entities.Adoption{Site: "/var/www/openhelpdesk", Output: "dist", RunAs: "root"}
+	return service
+}
+
+// A site is published whole or not at all: a build with nothing to serve is
+// refused before anything is touched, and the new files replace the old ones
+// by rename rather than by copying over them while they are being served.
+func TestASiteIsPublishedWholeOrNotAtAll(t *testing.T) {
+	var publish string
+	for _, step := range deploy(t, adoptedSite()).Steps {
+		if strings.HasPrefix(step.Describe, "Publish") {
+			publish = step.Shell()
+		}
+	}
+	if publish == "" {
+		t.Fatal("nothing publishes the site")
+	}
+
+	order := []string{
+		"test -f /opt/open-helpdesk/client/dist/index.html",
+		"cp -r /opt/open-helpdesk/client/dist /var/www/openhelpdesk.croft-new",
+		"--reference=/var/www/openhelpdesk",
+		"mv /var/www/openhelpdesk /var/www/openhelpdesk.croft-old",
+		"mv /var/www/openhelpdesk.croft-new /var/www/openhelpdesk",
+	}
+	at := -1
+	for _, fragment := range order {
+		next := strings.Index(publish, fragment)
+		if next <= at {
+			t.Fatalf("%q is missing or out of order in:\n%s", fragment, publish)
+		}
+		at = next
+	}
+}
+
+// A site has no process: nothing to restart, no unit to write, and no
+// readiness to wait for even if one was asked.
+func TestASiteDeploymentTouchesNoUnit(t *testing.T) {
+	site := withHealth(adoptedSite())
+	if body := text(deploy(t, site)); strings.Contains(body, "systemctl") {
+		t.Errorf("a site deployment touches a unit:\n%s", body)
+	}
+}

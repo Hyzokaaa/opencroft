@@ -122,12 +122,19 @@ type Service struct {
 // and the environment file exactly as whoever wrote them left them: the same
 // bargain it keeps with a vhost somebody edited by hand.
 type Adoption struct {
-	// Unit is the service's own unit, under the name it already had.
+	// Unit is the service's own unit, under the name it already had. Empty
+	// for a site, which has no process of its own.
 	Unit string
-	// RunAs is the unit's User=. A build runs as root, so the checkout is
-	// given back to this user afterwards — what the unit expects to own.
+	// Site is the directory a web server already in the container serves
+	// this service's build from. Set only for a site.
+	Site string
+	// Output is where the build leaves the files, relative to the checkout.
+	// Set only for a site.
+	Output string
+	// RunAs owns the checkout: the unit's User=, or for a site whoever owned
+	// it before. A build runs as root, so it is given back afterwards.
 	RunAs string
-	// EnvFile is where the unit reads its environment. Shown, never written.
+	// EnvFile is where its environment comes from. Shown, never written.
 	EnvFile string
 }
 
@@ -194,6 +201,8 @@ func (s *Service) Record() map[string]string {
 	}
 	if a := s.Adopted; a != nil {
 		values["adopted-unit"] = a.Unit
+		values["adopted-site"] = a.Site
+		values["output"] = a.Output
 		values["run-as"] = a.RunAs
 		values["env-file"] = a.EnvFile
 	}
@@ -229,6 +238,11 @@ func (s *Service) Unit() string {
 	}
 	return "croft-" + s.Name
 }
+
+// IsSite is true for a build a web server serves from disk. It has no process
+// of its own: nothing to start, stop or read a journal of — publishing the
+// files is the whole deployment.
+func (s *Service) IsSite() bool { return s.Adopted != nil && s.Adopted.Site != "" }
 
 // EnvFile sits beside the code rather than in /etc, so that moving or removing
 // the checkout takes its configuration with it.

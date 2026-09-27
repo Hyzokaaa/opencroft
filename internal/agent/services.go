@@ -102,9 +102,18 @@ type ServiceDTO struct {
 }
 
 type AdoptedDTO struct {
-	Unit    string `json:"unit"`
+	Unit    string `json:"unit,omitempty"`
+	Site    string `json:"site,omitempty"`
+	Output  string `json:"output,omitempty"`
 	RunAs   string `json:"runAs,omitempty"`
 	EnvFile string `json:"envFile,omitempty"`
+}
+
+// SiteDTO is a directory the container's own web server serves, found there
+// rather than published by croft.
+type SiteDTO struct {
+	Domains []string `json:"domains"`
+	Root    string   `json:"root"`
 }
 
 type ServicesResponse struct {
@@ -114,6 +123,9 @@ type ServicesResponse struct {
 	Snapshots []string `json:"snapshots"`
 	// External is what runs that croft did not deploy — found, not adopted.
 	External []UnitDTO `json:"external"`
+	// Sites are directories the container's web server serves, found the
+	// same way and not adopted either.
+	Sites []SiteDTO `json:"sites"`
 }
 
 // ── Validation ────────────────────────────────────────────────────────────────
@@ -313,12 +325,13 @@ func (s *Server) remember(ctx context.Context, container string, service *deploy
 // adopted by saying so, which would let it pick the unit croft restarts and the
 // user it hands the checkout to.
 func adoptionFrom(config map[string]string, service string) *deployEntities.Adoption {
-	unit := config[full(service, "adopted-unit")]
-	if unit == "" {
+	unit, site := config[full(service, "adopted-unit")], config[full(service, "adopted-site")]
+	if unit == "" && site == "" {
 		return nil
 	}
 	return &deployEntities.Adoption{
-		Unit: unit, RunAs: config[full(service, "run-as")], EnvFile: config[full(service, "env-file")],
+		Unit: unit, Site: site, Output: config[full(service, "output")],
+		RunAs: config[full(service, "run-as")], EnvFile: config[full(service, "env-file")],
 	}
 }
 
@@ -459,25 +472,37 @@ func (s *Server) listServices(w http.ResponseWriter, r *http.Request) {
 	names := stored(config)
 	out := make([]ServiceDTO, 0, len(names))
 	units := make([]string, 0, len(names))
-	taken := map[string]bool{}
+	adoptedUnits, adoptedSites := map[string]bool{}, map[string]bool{}
 
 	for _, service := range names {
 		dto := fromConfig(config, service)
 		out = append(out, dto)
 
 		unit := "croft-" + service
-		if dto.Adopted != nil {
+		switch {
+		case dto.Adopted != nil && dto.Adopted.Site != "":
+			// A site is up when the server that serves it is.
+			unit = "nginx"
+			adoptedSites[dto.Adopted.Site] = true
+		case dto.Adopted != nil:
 			unit = dto.Adopted.Unit
-			taken[unit] = true
+			adoptedUnits[unit] = true
 		}
 		units = append(units, unit)
 	}
 
-	// An adopted unit is a service now, and is listed once, as one.
+	// What was adopted is a service now, and is listed once, as one.
+	discovered, served := s.discover(ctx, name)
 	found := []string{}
-	for _, unit := range s.discoverUnits(ctx, name) {
-		if !taken[unit] {
+	for _, unit := range discovered {
+		if !adoptedUnits[unit] {
 			found = append(found, unit)
+		}
+	}
+	sites := []SiteDTO{}
+	for _, site := range served {
+		if !adoptedSites[site.Root] {
+			sites = append(sites, SiteDTO{Domains: site.Names, Root: site.Root})
 		}
 	}
 
@@ -494,7 +519,7 @@ func (s *Server) listServices(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, ServicesResponse{
-		Services: out, Snapshots: s.snapshots(ctx, name), External: external,
+		Services: out, Snapshots: s.snapshots(ctx, name), External: external, Sites: sites,
 	})
 }
 
@@ -714,8 +739,10 @@ func (s *Server) deploy(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Only now is this a version known to work, and only now is it worth
-		// keeping as the one to come back to.
-		if service.Health.Wanted() {
+		// keeping as the one to come back to. A site has no readiness to ask;
+		// its check is the publish itself, which refuses a build with nothing
+		// to serve and swaps in the whole of one that has.
+		if service.Health.Wanted() || service.IsSite() {
 			_ = s.instances.Annotate(ctx, name, annotation(service.Name, "healthy"), snapshot)
 		}
 		return nil
@@ -723,7 +750,7 @@ func (s *Server) deploy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) serviceLogs(w http.ResponseWriter, r *http.Request) {
-	name, service, err := s.stored(r)
+	name, unit, err := s.storedProcess(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -740,7 +767,7 @@ func (s *Server) serviceLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	step := planner.Logs(service, lines).Steps[0]
+	step := planner.LogsUnit(unit, lines).Steps[0]
 	out, _ := s.host.Run(r.Context(), step.Argv[0], step.Argv[1:]...)
 	writeJSON(w, http.StatusOK, LogsResponse{Lines: out.Stdout})
 }
@@ -782,21 +809,36 @@ func (s *Server) stored(r *http.Request) (string, *deployEntities.Service, error
 // it goes through the same code, looked up by name first.
 
 func (s *Server) planServicePower(w http.ResponseWriter, r *http.Request, action PowerAction) {
-	name, service, err := s.stored(r)
+	name, unit, err := s.storedProcess(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	s.writeUnitPlan(w, r, name, service.Unit(), action)
+	s.writeUnitPlan(w, r, name, unit, action)
 }
 
 func (s *Server) servicePower(w http.ResponseWriter, r *http.Request, action PowerAction) {
-	name, service, err := s.stored(r)
+	name, unit, err := s.storedProcess(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	s.runUnitPlan(w, r, name, service.Unit(), action)
+	s.runUnitPlan(w, r, name, unit, action)
+}
+
+// storedProcess is the unit of a stored service, for what acts on a running
+// process. A site has none — the container's web server serves it — so there
+// is nothing to restart and no journal of its own to read.
+func (s *Server) storedProcess(r *http.Request) (string, string, error) {
+	name, service, err := s.stored(r)
+	if err != nil {
+		return "", "", err
+	}
+	if service.IsSite() {
+		return "", "", errors.New(service.Name +
+			" is a site: the web server in the container serves it, and it has no process of its own")
+	}
+	return name, service.Unit(), nil
 }
 
 // ── Going back ────────────────────────────────────────────────────────────────
@@ -982,8 +1024,8 @@ func fromConfig(config map[string]string, name string) ServiceDTO {
 		Commit:  read("commit"),
 		Healthy: read("healthy"),
 	}
-	if adoption := adoptionFrom(config, name); adoption != nil {
-		dto.Adopted = &AdoptedDTO{Unit: adoption.Unit, RunAs: adoption.RunAs, EnvFile: adoption.EnvFile}
+	if a := adoptionFrom(config, name); a != nil {
+		dto.Adopted = &AdoptedDTO{Unit: a.Unit, Site: a.Site, Output: a.Output, RunAs: a.RunAs, EnvFile: a.EnvFile}
 	}
 	return dto
 }

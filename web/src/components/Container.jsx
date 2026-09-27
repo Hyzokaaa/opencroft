@@ -33,6 +33,7 @@ export default function Container({
 
   const services = data?.services ?? []
   const external = data?.external ?? []
+  const sites = data?.sites ?? []
   const snapshots = data?.snapshots ?? []
   const domains = routes.filter((r) => r.target === container.address)
 
@@ -111,7 +112,7 @@ export default function Container({
       >
         {!read ? (
           <Reading what="what is running inside" />
-        ) : services.length === 0 && external.length === 0 ? (
+        ) : services.length === 0 && external.length === 0 && sites.length === 0 ? (
           <Empty onDeploy={() => onDeploy(container)} />
         ) : (
           <>
@@ -141,7 +142,7 @@ export default function Container({
               </p>
             )}
 
-            {external.length > 0 && (
+            {(external.length > 0 || sites.length > 0) && (
               <div className="border-t border-edge">
                 <p className="px-4 pt-3 pb-1 text-[11px] text-faint">
                   Found on this container, not created by croft. You can restart or stop what is
@@ -154,7 +155,14 @@ export default function Container({
                       unit={unit}
                       onLogs={() => setLogs({ name: unit.name, kind: 'unit' })}
                       onPower={(action) => onPowerUnit(container, unit, action)}
-                      onAdopt={() => onAdopt(container, unit)}
+                      onAdopt={() => onAdopt(container, { kind: 'units', name: unit.name })}
+                    />
+                  ))}
+                  {sites.map((site) => (
+                    <FoundSite
+                      key={site.root}
+                      site={site}
+                      onAdopt={() => onAdopt(container, { kind: 'sites', name: site.domains[0] })}
                     />
                   ))}
                 </ul>
@@ -373,6 +381,7 @@ const SECONDARY =
 // colour, because colour alone reaches nobody who cannot see it.
 function Service({ service, onLogs, onDeploy, onDestroy, onPower }) {
   const running = service.state === 'active'
+  const site = service.adopted?.site
 
   return (
     <li className={`relative px-4 py-3 ${running ? '' : 'bg-problem/[0.04]'}`}>
@@ -384,13 +393,20 @@ function Service({ service, onLogs, onDeploy, onDestroy, onPower }) {
             <StateDot state={service.state} />
             <span className="font-mono text-sm font-medium">{service.name}</span>
             {service.runtime && <Chip label={service.runtime} tone="border-edge text-muted" />}
+            {site && <Chip label="site" tone="border-edge text-muted" />}
             {service.adopted && (
               <Chip
                 label="adopted"
                 tone="border-yours/40 text-yours"
-                explain={`Found running and taken on. Croft fetches, builds and restarts it; the unit ${service.adopted.unit}${
-                  service.adopted.envFile ? ` and ${service.adopted.envFile}` : ''
-                } stay exactly as whoever wrote them.`}
+                explain={
+                  site
+                    ? `Found being served and taken on. Croft fetches, builds and publishes it to ${site}; the web server's configuration${
+                        service.adopted.envFile ? ` and ${service.adopted.envFile}` : ''
+                      } stay exactly as whoever wrote them.`
+                    : `Found running and taken on. Croft fetches, builds and restarts it; the unit ${service.adopted.unit}${
+                        service.adopted.envFile ? ` and ${service.adopted.envFile}` : ''
+                      } stay exactly as whoever wrote them.`
+                }
               />
             )}
 
@@ -419,7 +435,7 @@ function Service({ service, onLogs, onDeploy, onDestroy, onPower }) {
 
           <p className="pl-[18px] font-mono text-[11px] text-muted">
             {service.path}
-            {service.adopted ? ` · ${service.adopted.unit}` : ''}
+            {site ? ` → ${site}` : service.adopted ? ` · ${service.adopted.unit}` : ''}
             {service.port ? ` · :${service.port}` : ''}
             {service.health?.path ? ` · ready on ${service.health.path}` : ''}
           </p>
@@ -429,22 +445,28 @@ function Service({ service, onLogs, onDeploy, onDestroy, onPower }) {
             so the prominent button follows the situation rather than the
             layout. */}
         <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
-          <button onClick={onLogs} className={running ? SECONDARY : PRIMARY}>
-            Logs
-          </button>
-          {running ? (
+          {/* A site is files the web server reads: there is no process of its
+              own to read a journal of, restart or stop. */}
+          {!site && (
             <>
-              <button onClick={() => onPower('restart')} className={SECONDARY}>
-                Restart
+              <button onClick={onLogs} className={running ? SECONDARY : PRIMARY}>
+                Logs
               </button>
-              <button onClick={() => onPower('stop')} className={SECONDARY}>
-                Stop
-              </button>
+              {running ? (
+                <>
+                  <button onClick={() => onPower('restart')} className={SECONDARY}>
+                    Restart
+                  </button>
+                  <button onClick={() => onPower('stop')} className={SECONDARY}>
+                    Stop
+                  </button>
+                </>
+              ) : (
+                <button onClick={() => onPower('start')} className={PRIMARY}>
+                  Start
+                </button>
+              )}
             </>
-          ) : (
-            <button onClick={() => onPower('start')} className={PRIMARY}>
-              Start
-            </button>
           )}
           <button onClick={onDeploy} className={SECONDARY}>
             Deploy again
@@ -472,6 +494,34 @@ function Service({ service, onLogs, onDeploy, onDestroy, onPower }) {
 // A unit croft found rather than deployed. No repo, no branch, no health
 // check — it never inspected the code to know any of that — so it gets the
 // verbs that need none of it: look, and bounce the process.
+// A directory the container's own web server serves, found in its
+// configuration. It has no process of its own, so the only thing to offer is
+// taking it on — which is what makes updating it possible from here.
+function FoundSite({ site, onAdopt }) {
+  return (
+    <li className="px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="size-2.5 shrink-0 rounded-sm border border-stopped" aria-hidden />
+            <span className="font-mono text-sm">{site.domains.join(', ')}</span>
+            <Chip label="site" tone="border-edge text-muted" />
+            <Chip
+              label="not created by croft"
+              tone="border-yours/40 text-yours"
+              explain="Found in the web server's configuration inside this container. Croft did not publish it, so it cannot rebuild it until it is taken on."
+            />
+          </div>
+          <p className="mt-1 pl-[18px] font-mono text-[11px] text-muted">served from {site.root}</p>
+        </div>
+        <button onClick={onAdopt} className={SECONDARY}>
+          Adopt&hellip;
+        </button>
+      </div>
+    </li>
+  )
+}
+
 function ExternalUnit({ unit, onLogs, onPower, onAdopt }) {
   const running = unit.state === 'active'
 

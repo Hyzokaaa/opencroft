@@ -239,3 +239,204 @@ func TestLettingGoOfAnAdoptedServiceRemovesNothing(t *testing.T) {
 		}
 	}
 }
+
+const client = "/opt/open-helpdesk/client"
+
+// aFoundSite is a container whose own nginx serves a build for one domain, as
+// an install script leaves it: the catch-all welcome page beside it, and the
+// code that built it in a checkout elsewhere.
+func aFoundSite() (*Server, *host.Fake) {
+	server, fake := testServer()
+	git := "lxc exec helpdesk -- git -c safe.directory=" + client + " -C " + client + " "
+
+	fake.Responses["lxc exec helpdesk -- sh -lc for f in"] = "openhelpdesk-backend\n" + siteMarker + "\n" +
+		"# configuration file /etc/nginx/sites-enabled/default:\n" +
+		"server {\n\tlisten 80 default_server;\n\troot /var/www/html;\n\tserver_name _;\n}\n" +
+		"# configuration file /etc/nginx/sites-enabled/openhelpdesk.conf:\n" +
+		"server {\n    listen 80;\n    server_name dev.openhelpdesk.dev;\n    root /var/www/openhelpdesk;\n" +
+		"    location /api/ {\n        proxy_pass http://localhost:3000/;\n    }\n}\n"
+	fake.Responses["lxc exec helpdesk -- sh -c want="] = client + " dist"
+	fake.Responses["lxc exec helpdesk -- stat -c %U "+client] = "root"
+	fake.Responses[git+"remote get-url origin"] = "https://github.com/user/client.git"
+	fake.Responses[git+"rev-parse --abbrev-ref HEAD"] = "dev"
+	fake.Responses[git+"rev-parse HEAD"] = "057c9f6e1b2c3d4e5f60718293a4b5c6d7e8f901"
+	fake.Responses["lxc exec helpdesk -- ls -A "+client] = "package.json package-lock.json index.html src"
+	fake.Responses["lxc exec helpdesk -- cat "+client+"/package.json"] = `{"scripts":{"build":"vite build"}}`
+
+	return server, fake
+}
+
+// A directory the container's own web server serves for a domain is listed
+// beside the units, found the same way. The distribution's catch-all is not a
+// site anybody put there.
+func TestASiteIsFoundBesideTheUnits(t *testing.T) {
+	server, _ := aFoundSite()
+
+	var body ServicesResponse
+	_ = json.Unmarshal(serve(server, http.MethodGet, "/instances/helpdesk/services", nil).Body.Bytes(), &body)
+
+	if len(body.Sites) != 1 || body.Sites[0].Root != "/var/www/openhelpdesk" ||
+		strings.Join(body.Sites[0].Domains, ",") != "dev.openhelpdesk.dev" {
+		t.Errorf("found sites %+v", body.Sites)
+	}
+	if len(body.External) != 1 || body.External[0].Name != "openhelpdesk-backend" {
+		t.Errorf("the units were lost on the way: %+v", body.External)
+	}
+}
+
+// The served files are a build; where it came from is proven by the files
+// themselves, not guessed from a directory name.
+func TestASiteIsTracedToTheCheckoutThatBuiltIt(t *testing.T) {
+	server, _ := aFoundSite()
+
+	recorder := serve(server, http.MethodGet, "/instances/helpdesk/sites/dev.openhelpdesk.dev/adoption", nil)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("answered %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var found AdoptionDTO
+	_ = json.Unmarshal(recorder.Body.Bytes(), &found)
+
+	if found.Problem != "" {
+		t.Fatalf("refused: %s", found.Problem)
+	}
+	if found.Path != client || found.Output != "dist" || found.Site != "/var/www/openhelpdesk" {
+		t.Errorf("traced to %+v", found)
+	}
+	if found.Repo != "https://github.com/user/client.git" || found.Branch != "dev" {
+		t.Errorf("the checkout was misread: %+v", found)
+	}
+	if strings.Join(found.Build, "") != "npm run build" {
+		t.Errorf("proposed build %v", found.Build)
+	}
+}
+
+// When no checkout built what is served, croft says so rather than picking
+// the likeliest directory.
+func TestASiteNothingBuiltIsNotTakenOnByGuessing(t *testing.T) {
+	server, fake := aFoundSite()
+	fake.Responses["lxc exec helpdesk -- sh -c want="] = ""
+
+	var found AdoptionDTO
+	_ = json.Unmarshal(serve(server, http.MethodGet,
+		"/instances/helpdesk/sites/dev.openhelpdesk.dev/adoption", nil).Body.Bytes(), &found)
+	if found.Problem == "" {
+		t.Error("adoptable without knowing where it comes from")
+	}
+
+	recorder := serve(server, http.MethodPost, "/instances/helpdesk/sites/dev.openhelpdesk.dev/adopt/plan",
+		AdoptDTO{Name: "web"})
+	if recorder.Code == http.StatusOK {
+		t.Error("adopted anyway")
+	}
+}
+
+func TestAdoptingASiteRecordsWhereItIsPublished(t *testing.T) {
+	server, _ := aFoundSite()
+
+	recorder := serve(server, http.MethodPost, "/instances/helpdesk/sites/dev.openhelpdesk.dev/adopt/plan",
+		AdoptDTO{Name: "web", Install: []string{"npm ci"}, Build: []string{"npm run build"}, Port: 5173})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("answered %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response PlanResponse
+	_ = json.Unmarshal(recorder.Body.Bytes(), &response)
+
+	body := ""
+	for _, step := range response.Plan.Steps {
+		if step.Argv[1] != "config" {
+			t.Errorf("adopting would run %s", step.Shell())
+		}
+		body += step.Shell() + "\n"
+	}
+	for _, wanted := range []string{
+		"service.web.adopted-site /var/www/openhelpdesk",
+		"service.web.output dist",
+		"service.web.path " + client,
+	} {
+		if !strings.Contains(body, wanted) {
+			t.Errorf("never records %q:\n%s", wanted, body)
+		}
+	}
+	for _, unwanted := range []string{"adopted-unit", "5173"} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("records %q for a site:\n%s", unwanted, body)
+		}
+	}
+}
+
+// A site has no process to ask whether it is ready.
+func TestASiteHasNoReadinessCheck(t *testing.T) {
+	server, _ := aFoundSite()
+
+	recorder := serve(server, http.MethodPost, "/instances/helpdesk/sites/dev.openhelpdesk.dev/adopt/plan",
+		AdoptDTO{Name: "web", Port: 80, Health: HealthDTO{Path: "/"}})
+	if recorder.Code == http.StatusOK {
+		t.Error("a readiness check was accepted for a site")
+	}
+}
+
+func siteOnHelpdesk(t *testing.T, server *Server) {
+	t.Helper()
+	ctx := context.Background()
+	for key, value := range map[string]string{
+		"services":                 "web",
+		"service.web.repo":         "https://github.com/user/client.git",
+		"service.web.branch":       "dev",
+		"service.web.path":         client,
+		"service.web.build":        "npm run build",
+		"service.web.adopted-site": "/var/www/openhelpdesk",
+		"service.web.output":       "dist",
+		"service.web.run-as":       "root",
+	} {
+		if err := server.instances.Annotate(ctx, "helpdesk", key, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// Deploying a site is fetching, building and publishing. Nothing is started,
+// stopped or restarted: the web server reads the new files on the next request.
+func TestASiteIsDeployedByPublishingIt(t *testing.T) {
+	server, _ := testServer()
+	siteOnHelpdesk(t, server)
+
+	request := aService()
+	request.Name, request.Start = "web", ""
+	recorder := serve(server, http.MethodPost, "/instances/helpdesk/services/deploy/plan", request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("answered %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response PlanResponse
+	_ = json.Unmarshal(recorder.Body.Bytes(), &response)
+
+	body := ""
+	for _, step := range response.Plan.Steps {
+		body += step.Shell() + "\n"
+	}
+	if strings.Contains(body, "systemctl") {
+		t.Errorf("a site deployment touches a unit:\n%s", body)
+	}
+	if !strings.Contains(body, "test -f "+client+"/dist/index.html") || !strings.Contains(body, "/var/www/openhelpdesk.croft-new") {
+		t.Errorf("nothing publishes it:\n%s", body)
+	}
+}
+
+// Restarting and reading a journal act on a process, and a site has none.
+func TestASiteHasNoProcessToRestart(t *testing.T) {
+	server, fake := testServer()
+	siteOnHelpdesk(t, server)
+
+	for _, path := range []string{
+		"/instances/helpdesk/services/web/restart/plan",
+		"/instances/helpdesk/services/web/logs",
+	} {
+		if code := serve(server, http.MethodGet, path, nil).Code; code == http.StatusOK {
+			t.Errorf("%s was answered", path)
+		}
+	}
+	for _, command := range fake.Commands {
+		if strings.Contains(command, "systemctl") || strings.Contains(command, "journalctl") {
+			t.Errorf("reached the container: %s", command)
+		}
+	}
+}

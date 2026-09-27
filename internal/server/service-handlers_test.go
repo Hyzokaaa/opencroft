@@ -86,16 +86,16 @@ func (f *fakeDeployer) UnitLogs(_ context.Context, container, unit string, _ int
 	f.record("logs unit %s/%s", container, unit)
 	return "started", nil
 }
-func (f *fakeDeployer) AdoptionOf(_ context.Context, container, unit string) (agent.AdoptionDTO, error) {
-	f.record("inspect unit %s/%s", container, unit)
-	return agent.AdoptionDTO{Unit: unit}, nil
+func (f *fakeDeployer) AdoptionOf(_ context.Context, container string, kind agent.Adoptable, key string) (agent.AdoptionDTO, error) {
+	f.record("inspect %s %s/%s", kind, container, key)
+	return agent.AdoptionDTO{}, nil
 }
-func (f *fakeDeployer) AdoptPlan(_ context.Context, container, unit string, answer agent.AdoptDTO) (plan.Plan, error) {
-	f.record("plan adopt %s/%s as %s", container, unit, answer.Name)
+func (f *fakeDeployer) AdoptPlan(_ context.Context, container string, kind agent.Adoptable, key string, answer agent.AdoptDTO) (plan.Plan, error) {
+	f.record("plan adopt %s %s/%s as %s", kind, container, key, answer.Name)
 	return onePlan(), nil
 }
-func (f *fakeDeployer) Adopt(_ context.Context, container, unit string, answer agent.AdoptDTO, _ func(int, string)) error {
-	f.record("run adopt %s/%s as %s", container, unit, answer.Name)
+func (f *fakeDeployer) Adopt(_ context.Context, container string, kind agent.Adoptable, key string, answer agent.AdoptDTO, _ func(int, string)) error {
+	f.record("run adopt %s %s/%s as %s", kind, container, key, answer.Name)
 	return nil
 }
 
@@ -162,42 +162,50 @@ func TestEveryPowerActionReachesTheAgent(t *testing.T) {
 
 // Adopting is read, then planned, then run — each step a request of its own,
 // and each one has to reach the agent, which is the only half that can look.
-func TestAdoptingAUnitReachesTheAgent(t *testing.T) {
-	handler, fake, jobs := testAPI()
-	base := "/api/hosts/local/instances/helpdesk/units/openhelpdesk-backend/"
-
-	if code := request(t, handler, http.MethodGet, base+"adoption").Code; code != http.StatusOK {
-		t.Fatalf("inspecting was answered with %d", code)
-	}
-
-	post := func(path string) *httptest.ResponseRecorder {
-		recorder := httptest.NewRecorder()
-		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, path,
-			strings.NewReader(`{"name":"backend","build":["npm run build"]}`)))
-		return recorder
-	}
-
-	if code := post(base + "adopt?plan=1").Code; code != http.StatusOK {
-		t.Fatalf("planning was answered with %d", code)
-	}
-	started := post(base + "adopt")
-	if started.Code != http.StatusAccepted {
-		t.Fatalf("running was answered with %d: %s", started.Code, started.Body.String())
-	}
-	var body struct {
-		JobId string `json:"jobId"`
-	}
-	_ = json.Unmarshal(started.Body.Bytes(), &body)
-	finished(t, jobs, body.JobId)
-
-	for _, call := range []string{
-		"inspect unit helpdesk/openhelpdesk-backend",
-		"plan adopt helpdesk/openhelpdesk-backend as backend",
-		"run adopt helpdesk/openhelpdesk-backend as backend",
+// A unit and a site go the same way, under paths of their own.
+func TestAdoptingReachesTheAgent(t *testing.T) {
+	for kind, key := range map[agent.Adoptable]string{
+		agent.AdoptUnit: "openhelpdesk-backend",
+		agent.AdoptSite: "dev.openhelpdesk.dev",
 	} {
-		if !fake.was(call) {
-			t.Errorf("never asked: %s (asked %v)", call, fake.asked)
-		}
+		t.Run(string(kind), func(t *testing.T) {
+			handler, fake, jobs := testAPI()
+			base := "/api/hosts/local/instances/helpdesk/" + string(kind) + "/" + key + "/"
+
+			if code := request(t, handler, http.MethodGet, base+"adoption").Code; code != http.StatusOK {
+				t.Fatalf("inspecting was answered with %d", code)
+			}
+
+			post := func(path string) *httptest.ResponseRecorder {
+				recorder := httptest.NewRecorder()
+				handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, path,
+					strings.NewReader(`{"name":"web","build":["npm run build"]}`)))
+				return recorder
+			}
+
+			if code := post(base + "adopt?plan=1").Code; code != http.StatusOK {
+				t.Fatalf("planning was answered with %d", code)
+			}
+			started := post(base + "adopt")
+			if started.Code != http.StatusAccepted {
+				t.Fatalf("running was answered with %d: %s", started.Code, started.Body.String())
+			}
+			var body struct {
+				JobId string `json:"jobId"`
+			}
+			_ = json.Unmarshal(started.Body.Bytes(), &body)
+			finished(t, jobs, body.JobId)
+
+			for _, call := range []string{
+				fmt.Sprintf("inspect %s helpdesk/%s", kind, key),
+				fmt.Sprintf("plan adopt %s helpdesk/%s as web", kind, key),
+				fmt.Sprintf("run adopt %s helpdesk/%s as web", kind, key),
+			} {
+				if !fake.was(call) {
+					t.Errorf("never asked: %s (asked %v)", call, fake.asked)
+				}
+			}
+		})
 	}
 }
 

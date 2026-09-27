@@ -303,7 +303,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
           onDestroy={destroyService}
           onPowerService={powerService}
           onPowerUnit={powerUnit}
-          onAdopt={(container, unit) => setAdopting({ container, unit })}
+          onAdopt={(container, subject) => setAdopting({ container, subject })}
           onAddDomain={addDomain}
         />
       )}
@@ -401,7 +401,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
       {adopting && (
         <AdoptDialog
           container={adopting.container}
-          unit={adopting.unit}
+          subject={adopting.subject}
           onClose={() => { setAdopting(null); reload() }}
           onFinished={reload}
         />

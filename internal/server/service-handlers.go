@@ -32,9 +32,9 @@ type Deployer interface {
 	UnitPowerPlan(ctx context.Context, container, unit string, action agent.PowerAction) (plan.Plan, error)
 	UnitPower(ctx context.Context, container, unit string, action agent.PowerAction, report func(int, string)) error
 	UnitLogs(ctx context.Context, container, unit string, lines int) (string, error)
-	AdoptionOf(ctx context.Context, container, unit string) (agent.AdoptionDTO, error)
-	AdoptPlan(ctx context.Context, container, unit string, answer agent.AdoptDTO) (plan.Plan, error)
-	Adopt(ctx context.Context, container, unit string, answer agent.AdoptDTO, report func(int, string)) error
+	AdoptionOf(ctx context.Context, container string, kind agent.Adoptable, key string) (agent.AdoptionDTO, error)
+	AdoptPlan(ctx context.Context, container string, kind agent.Adoptable, key string, answer agent.AdoptDTO) (plan.Plan, error)
+	Adopt(ctx context.Context, container string, kind agent.Adoptable, key string, answer agent.AdoptDTO, report func(int, string)) error
 }
 
 func (d Deps) deployer(w http.ResponseWriter) (Deployer, bool) {
@@ -169,9 +169,12 @@ func summarise(container string, service agent.ServiceDTO, adopted *agent.Adopte
 	if service.Branch != "" {
 		sentence += " from " + service.Branch
 	}
-	if adopted != nil {
+	switch {
+	case adopted != nil && adopted.Site != "":
+		sentence += ", publishing the build to " + adopted.Site + " — nothing is restarted, the web server serves the new files"
+	case adopted != nil:
 		sentence += ", restarting its own unit " + adopted.Unit + " — which, like its environment, stays as it is"
-	} else {
+	default:
 		sentence += ", starting it with `" + service.Start + "`"
 	}
 
@@ -353,66 +356,86 @@ func adoptionOf(ctx context.Context, deployer Deployer, container, service strin
 	return nil
 }
 
-// showAdoption is what croft would record about a unit it found, read before
-// anything is agreed to. It changes nothing.
-func (d Deps) showAdoption(w http.ResponseWriter, r *http.Request) {
-	deployer, ok := d.deployer(w)
-	if !ok {
-		return
+// subject is the unit or site a request is about.
+func subject(r *http.Request, kind agent.Adoptable) string {
+	if kind == agent.AdoptSite {
+		return r.PathValue("site")
 	}
-	found, err := deployer.AdoptionOf(r.Context(), r.PathValue("name"), r.PathValue("unit"))
-	if err != nil {
-		writeError(w, http.StatusNotFound, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, found)
+	return r.PathValue("unit")
 }
 
-// adoptUnit takes on a unit croft found running. Its plan is annotations and
+// showAdoption is what croft would record about something it found, read
+// before anything is agreed to. It changes nothing.
+func (d Deps) showAdoption(kind agent.Adoptable) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		deployer, ok := d.deployer(w)
+		if !ok {
+			return
+		}
+		found, err := deployer.AdoptionOf(r.Context(), r.PathValue("name"), kind, subject(r, kind))
+		if err != nil {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, found)
+	}
+}
+
+// adopt takes on a unit or a site croft found. Its plan is annotations and
 // nothing else: the container is untouched until the next deployment, which
 // comes with a plan and a snapshot of its own.
-func (d Deps) adoptUnit(w http.ResponseWriter, r *http.Request) {
-	if !d.writable(w) {
-		return
-	}
-	deployer, ok := d.deployer(w)
-	if !ok {
-		return
-	}
+func (d Deps) adopt(kind agent.Adoptable) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !d.writable(w) {
+			return
+		}
+		deployer, ok := d.deployer(w)
+		if !ok {
+			return
+		}
 
-	name, unit := r.PathValue("name"), r.PathValue("unit")
-	var answer agent.AdoptDTO
-	if err := readBody(r, &answer); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
+		name, key := r.PathValue("name"), subject(r, kind)
+		var answer agent.AdoptDTO
+		if err := readBody(r, &answer); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+
+		p, err := deployer.AdoptPlan(r.Context(), name, kind, key, answer)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+
+		if wantsPlan(r) {
+			writeJSON(w, http.StatusOK, map[string]any{"summary": taken(kind, key, answer.Name, name), "plan": p})
+			return
+		}
+
+		started := d.Jobs.Start("adopt", name+"/"+answer.Name, p,
+			func(ctx context.Context, report func(int, string)) error {
+				if d.Simulated {
+					return d.rehearse(p, report)
+				}
+				return deployer.Adopt(ctx, name, kind, key, answer, report)
+			})
+
+		writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": answer.Name})
 	}
+}
 
-	p, err := deployer.AdoptPlan(r.Context(), name, unit, answer)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
+func taken(kind agent.Adoptable, key, service, container string) string {
+	if kind == agent.AdoptSite {
+		return fmt.Sprintf(
+			"Take on the site at %s as %s. Nothing inside %s changes now: croft records what it found, "+
+				"and from the next deployment on it fetches, builds and publishes it — leaving the web "+
+				"server's configuration and the build's environment file exactly as they are.",
+			key, service, container)
 	}
-
-	if wantsPlan(r) {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"summary": fmt.Sprintf(
-				"Take on %s as %s. Nothing inside %s changes now: croft records what it found, and "+
-					"from the next deployment on it fetches, builds and restarts %s — leaving the unit "+
-					"and its environment file exactly as they are.", unit, answer.Name, name, unit),
-			"plan": p,
-		})
-		return
-	}
-
-	started := d.Jobs.Start("adopt", name+"/"+answer.Name, p,
-		func(ctx context.Context, report func(int, string)) error {
-			if d.Simulated {
-				return d.rehearse(p, report)
-			}
-			return deployer.Adopt(ctx, name, unit, answer, report)
-		})
-
-	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": answer.Name})
+	return fmt.Sprintf(
+		"Take on %s as %s. Nothing inside %s changes now: croft records what it found, and "+
+			"from the next deployment on it fetches, builds and restarts %s — leaving the unit "+
+			"and its environment file exactly as they are.", key, service, container, key)
 }
 
 // powerService restarts, stops or starts a service croft deployed; powerUnit

@@ -115,15 +115,19 @@ func (p *Planner) Deploy(d Deployment) plan.Plan {
 	}
 
 	if adopted := service.Adopted; adopted != nil {
-		// Its unit was written by somebody else and stays as they wrote it.
-		// What changed is the code under it, which the build left owned by
-		// root; the unit runs as someone who expects to own it.
+		// Whoever owned the checkout before still does. The build left what
+		// it wrote owned by root.
 		if adopted.RunAs != "" && adopted.RunAs != "root" {
 			steps = append(steps, p.exec(
-				"Give "+service.Path+" back to "+adopted.RunAs+", who "+service.Unit()+" runs as",
+				"Give "+service.Path+" back to "+adopted.RunAs+", who owned it",
 				"chown -R "+adopted.RunAs+": "+service.Path))
 		}
-		steps = append(steps, p.exec("Restart "+service.Unit(), "systemctl restart "+service.Unit()))
+		if service.IsSite() {
+			steps = append(steps, p.publish(service))
+		} else {
+			// Its unit was written by somebody else and stays as they wrote it.
+			steps = append(steps, p.exec("Restart "+service.Unit(), "systemctl restart "+service.Unit()))
+		}
 	} else {
 		steps = append(steps,
 			p.exec("Write the unit that keeps it running", p.unit(service)),
@@ -132,7 +136,7 @@ func (p *Planner) Deploy(d Deployment) plan.Plan {
 		)
 	}
 
-	if service.Health.Wanted() {
+	if service.Health.Wanted() && !service.IsSite() {
 		steps = append(steps, p.check(service))
 	}
 
@@ -181,6 +185,33 @@ func (p *Planner) fetch(service *entities.Service) plan.Step {
 		Depth, branch, service.Source.Repo, service.Path)
 
 	return p.exec("Fetch "+service.Source.Repo+" at "+at, command)
+}
+
+// publish puts a site's new build where the web server reads it.
+//
+// A build with no index.html is refused before anything is touched: a site
+// that published an empty directory would answer every request with an error,
+// and the check costs nothing. The new files are copied beside the old ones,
+// given the old directory's owner and mode, and swapped in by two renames —
+// so the site serves the whole old build or the whole new one, never a half
+// copy, and the gap between the renames is the only moment it serves neither.
+// Nothing is restarted: the server reads files from disk on each request.
+func (p *Planner) publish(service *entities.Service) plan.Step {
+	built := service.Path + "/" + service.Adopted.Output
+	site := service.Adopted.Site
+
+	command := strings.Join([]string{
+		"test -f " + built + "/index.html",
+		"rm -rf " + site + ".croft-new " + site + ".croft-old",
+		"cp -r " + built + " " + site + ".croft-new",
+		"chown -R --reference=" + site + " " + site + ".croft-new",
+		"chmod --reference=" + site + " " + site + ".croft-new",
+		"mv " + site + " " + site + ".croft-old",
+		"mv " + site + ".croft-new " + site,
+		"rm -rf " + site + ".croft-old",
+	}, " && ")
+
+	return p.exec("Publish "+built+" to "+site, command)
 }
 
 // writeEnv puts the configuration beside the code. Written after the checkout,
@@ -326,6 +357,8 @@ func (p *Planner) StartUnit(unit string) plan.Plan {
 	return plan.New(p.exec("Start "+unit, "systemctl start "+unit))
 }
 
+// LogsUnit is what a failed deployment leaves behind, and the first thing
+// anybody asks for.
 func (p *Planner) LogsUnit(unit string, lines int) plan.Plan {
 	return plan.New(p.exec(fmt.Sprintf("Read the last %d lines", lines),
 		fmt.Sprintf("journalctl -u %s -n %d --no-pager", unit, lines)))
@@ -339,12 +372,6 @@ func (p *Planner) Rollback(snapshot string) plan.Plan {
 		plan.Command("Restore "+snapshot+", including anything written since",
 			p.bin, "restore", p.container, snapshot),
 	)
-}
-
-// Logs is what a failed deployment leaves behind, and the first thing anybody
-// asks for.
-func (p *Planner) Logs(service *entities.Service, lines int) plan.Plan {
-	return p.LogsUnit(service.Unit(), lines)
 }
 
 func counted(describe string, i, total int) string {

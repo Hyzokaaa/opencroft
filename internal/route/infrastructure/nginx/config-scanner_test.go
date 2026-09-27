@@ -112,3 +112,54 @@ func TestExplicitPortIsRead(t *testing.T) {
 		t.Fatalf("expected 10.0.0.5:3000, got %s:%d", target, port)
 	}
 }
+
+// The shape an install script leaves inside a container: the distribution's
+// catch-all, and one site that serves a build and passes /api/ on. Only the
+// second is a site somebody put there.
+const insideAContainer = `# configuration file /etc/nginx/sites-enabled/default:
+server {
+	listen 80 default_server;
+	root /var/www/html;
+	server_name _;
+	location / {
+		try_files $uri $uri/ =404;
+	}
+}
+# configuration file /etc/nginx/sites-enabled/openhelpdesk.conf:
+server {
+    listen 80;
+    server_name dev.openhelpdesk.dev;
+
+    root /var/www/openhelpdesk/;
+    # root /var/www/old;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+    location /api/ {
+        proxy_pass http://localhost:3000/;
+    }
+}
+`
+
+func TestAStaticSiteIsTheDirectoryANamedServerServes(t *testing.T) {
+	sites := StaticSites(insideAContainer)
+
+	if len(sites) != 1 {
+		t.Fatalf("found %d sites: %+v", len(sites), sites)
+	}
+	if sites[0].Root != "/var/www/openhelpdesk" {
+		t.Errorf("root is %q", sites[0].Root)
+	}
+	if len(sites[0].Names) != 1 || sites[0].Names[0] != "dev.openhelpdesk.dev" {
+		t.Errorf("names are %v", sites[0].Names)
+	}
+}
+
+// A block that only passes requests on serves no directory of its own.
+func TestAProxyIsNotAStaticSite(t *testing.T) {
+	dump := "server {\n    server_name api.example.com;\n    location / { proxy_pass http://10.0.0.2:3000; }\n}\n"
+	if sites := StaticSites(dump); len(sites) != 0 {
+		t.Errorf("found %+v", sites)
+	}
+}
