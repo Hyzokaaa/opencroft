@@ -51,7 +51,10 @@ sin UI todavía.
 - [x] Asignación de IP estática y validación de que las rutas apuntan a la IP real
 - [x] Cabecera `managed-by: croft` con hash en todos los ficheros generados
 - [ ] Modo `--plan` y `--explain` en toda operación de escritura
-- [ ] Descubrimiento de recursos `unmanaged` y comando de adopción
+- [x] Descubrimiento de recursos `unmanaged`: contenedores, vhosts y certificados, y dentro
+      de cada contenedor las unidades systemd y los sitios estáticos que nadie creó con croft
+- [x] Adopción desde el panel: unidades y sitios, registrando solo lo que se lee del sistema
+- [ ] Comando de adopción en la CLI
 - [ ] Salida `--json` en todos los comandos de lectura
 - [x] Suite de tests con mocks y `FakeHost`
 
@@ -72,15 +75,17 @@ El 80% del valor percibido con el 0% del riesgo. Solo lectura.
 - [x] API HTTP con `hostId` en las rutas desde el principio
 - [x] Autenticación: usuarios locales y sesiones
 - [ ] Tokens de API para automatización
-- [x] SQLite para estado propio (usuarios y sesiones; tokens y auditoría pendientes)
+- [x] SQLite para estado propio (usuarios, sesiones e historial de trabajos; tokens pendientes)
 - [x] Separación en dos procesos: `croft agent` (root) y `croft serve` (sin privilegios), por unix socket
 - [x] UI en React + Vite + Tailwind, embebida con `go:embed`
 - [x] Dashboard: instancias, estado, rutas y hallazgos
 - [x] **Avisos**: certificados que caducan pronto, rutas que apuntan a instancias caídas o
       inexistentes, instancias sin dominio, drift detectado
 - [x] Los recursos externos se listan y se distinguen
-- [ ] Adoptarlos explícitamente
-- [ ] Log de auditoría consultable
+- [x] Adoptarlos explícitamente (servicios y sitios dentro de un contenedor)
+- [x] Historial consultable de lo que croft hizo: cada trabajo con su resultado, el paso
+      en el que se detuvo y por qué (vista *Activity*, en SQLite, sin secretos)
+- [ ] Quién hizo cada cosa — llega con los equipos, en la fase 5
 
 **Entregable**: un panel que te dice qué hay corriendo en tu servidor y qué está mal.
 **Valor**: esto solo ya justifica el producto. Un vhost apuntando a un contenedor muerto o
@@ -113,8 +118,10 @@ lógica de negocio en un handler HTTP, está mal puesta.
 Lo que convierte un panel en una herramienta que se usa todos los días.
 
 - [ ] Consola web por websocket contra `lxc exec`
-- [ ] Visor de logs del contenedor
-- [ ] Snapshots: crear, listar, restaurar, programar (`lxc snapshot`)
+- [x] Visor de logs de cada servicio (`journalctl`), también de las unidades encontradas
+- [x] Restart, stop y start de un servicio sin redesplegarlo
+- [x] Snapshots: listar y restaurar (uno se toma antes de cada despliegue)
+- [ ] Snapshots: crear a mano y programar
 - [ ] Métricas históricas de CPU, memoria y disco
 - [ ] Explorador de ficheros del contenedor
 - [x] Renovación automática de certificados
@@ -171,9 +178,15 @@ las recetas, y sin ella el catálogo habrían sido diez scripts a medida.
 - [x] Comprobación de salud antes de dar un despliegue por terminado
 - [x] Snapshot antes de cada despliegue, con poda visible y marcado del que funcionó
 - [x] Rollback por snapshot, y commit fijado para volver sin tocar el resto
+- [x] Redeploy con la configuración guardada, sin formulario (el plan se sigue mostrando)
+- [x] Cambiar rama o repositorio de un servicio desde sus propiedades sin perder su entorno
+- [x] Adoptar lo instalado a mano: un backend en systemd sigue en su unidad y su `.env`; un
+      frontend compilado se publica en el nginx que ya lo servía, localizando el código que
+      lo construyó por el contenido de su `index.html`
 - [ ] Secretos generados (contraseñas, JWT) en vez de escritos a mano
 - [ ] Claves de despliegue para repositorios privados
-- [ ] Sitios estáticos con nginx dentro del contenedor, sin trucos
+- [ ] Sitios estáticos con nginx dentro del contenedor, sin trucos — ya al adoptar; falta al
+      desplegar uno desde cero
 - [ ] Limpieza de snapshots de servicios abandonados
 - [ ] Webhooks de despliegue (GitHub, GitLab)
 - [x] Módulo `database`: PostgreSQL, MySQL y Redis **dentro** del contenedor que los usa

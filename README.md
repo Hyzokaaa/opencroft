@@ -8,7 +8,10 @@ process.
 
 > **Status: early but usable.** Containers, domains and TLS certificates are managed from
 > the panel, behind a login, with the plan shown before anything runs. Certificates renew
-> themselves. Snapshots, logs and a console are not built yet. See [ROADMAP.md](./ROADMAP.md).
+> themselves. Projects deploy from git into a container, with a snapshot before every
+> deployment, a database beside them if they need one, and a history of every deployment
+> that says which failed and why. Software you installed by hand can be taken on without
+> reinstalling it. A console is not built yet. See [ROADMAP.md](./ROADMAP.md).
 
 ## Install
 
@@ -93,7 +96,20 @@ rm /var/lib/croft/croft.db && systemctl restart croft
 ```
 
 State that matters lives on the resources themselves, as LXD user annotations. Delete
-OpenCroft's database and it rediscovers your infrastructure on the next start.
+OpenCroft's database and it rediscovers your infrastructure on the next start. What you
+lose is only what the system cannot tell it: users, sessions, and the history of what it
+did.
+
+## What you installed yourself
+
+A container you set up by hand — an install script that left a backend in systemd and a
+built frontend in `/var/www` — is not a second-class citizen. OpenCroft lists the units
+and sites it finds there as *not created by croft*, and you can bounce them as they are.
+Taking one on records only what it reads off the machine: the unit, its user, its checkout
+and the branch it follows — and for a site, the checkout whose build produced the very
+`index.html` being served. From then on it redeploys them, with a snapshot first, and
+leaves the unit, its `.env` and the nginx configuration exactly as you wrote them. Letting
+go of one forgets OpenCroft's notes and removes nothing.
 
 ## How it works
 

@@ -264,7 +264,7 @@ Conviven dos familias de implementaciones y la distinción es deliberada:
 | `RouteRepository` | `NginxRouteRepository` | ficheros de nginx |
 | `CertificateRepository` | `FileCertificateRepository` | los propios ficheros PEM |
 | `UserRepository` | `SQLiteUserRepository` | SQLite (dato propio de OpenCroft) |
-| `AuditRepository` | `SQLiteAuditRepository` | SQLite (dato propio de OpenCroft) |
+| `job.Journal` | `JobJournal` | SQLite (lo que OpenCroft hizo — dato propio) |
 
 Si un repositorio de infraestructura necesita SQLite, es señal de alarma: significa que
 OpenCroft está intentando poseer estado que pertenece al sistema.
@@ -475,6 +475,39 @@ escritos a mano, certificados emitidos por otro medio. Todos aparecen listados c
 `unmanaged`. Adoptarlos es una operación explícita que solo añade anotaciones — no
 reescribe nada.
 
+Dentro de un contenedor, lo mismo vale para lo que corre en él. Una instalación hecha a
+mano —un `install.sh` que deja un backend en systemd y un frontend compilado en
+`/var/www`— aparece en el panel como *found, not created by croft*, con dos reglas de
+descubrimiento que leen el sistema en vez de adivinar:
+
+- **Unidades**: un `*.service` escrito directamente en `/etc/systemd/system/` es algo que
+  una persona o un script puso ahí. Los de la distribución viven en `/lib` o `/usr/lib`, y
+  los que un paquete enlaza en `/etc/systemd/system` (syslog, dbus, open-vm-tools) son
+  symlinks — se excluyen: se apuntaron ahí, no se escribieron. `croft-*` también se
+  excluye: eso ya es un servicio nuestro.
+- **Sitios**: los bloques `server` del nginx *de dentro* del contenedor (`nginx -T`) que
+  sirven un directorio con `root`. El catch-all `_` de la distribución no es un sitio de
+  nadie.
+
+Unidades y sitios salen de **una sola ejecución** dentro del contenedor, y el estado de
+todas las unidades de **una sola pregunta** a `systemctl`: leer un contenedor cuesta lo
+mismo tenga lo que tenga.
+
+Un sitio publicado no dice de dónde viene — los ficheros servidos son un build, y el código
+vive en otro sitio. OpenCroft **se lo pregunta a los ficheros**: el checkout cuyo
+`dist/index.html` es idéntico byte a byte al `index.html` servido es el que lo produjo.
+Eso es una prueba, no una conjetura; si nada coincide, lo dice y no elige el directorio más
+probable.
+
+Adoptar es un trato con límites claros. OpenCroft **toma el ciclo de vida del código**
+—fetch, build, restart o publicación, snapshot, rollback— y **deja como estaba lo que otro
+escribió**: la unidad (con su `User=`, sus `After=`), el `.env`, la configuración de nginx.
+Es el mismo contrato que con un vhost editado a mano. Todo lo que se registra se lee del
+contenedor —directorio, usuario, rama, repositorio— y nunca de la petición: un navegador no
+puede declarar que algo está adoptado para elegir qué unidad reinicia croft o a quién le
+entrega los ficheros. Soltar un servicio adoptado (*Release*) olvida las anotaciones y
+nada más, porque croft no lo puso ahí.
+
 ### `croft explain`
 
 Cada operación sabe imprimir su equivalente manual:
@@ -514,10 +547,23 @@ la IP real de la instancia, y avisa si no coincide. El puerto interno es configu
 Crear un contenedor, emitir un certificado o construir una imagen tardan minutos. No
 pueden vivir en una petición HTTP.
 
-Toda operación larga se encola como `Job` con estado persistido en SQLite y logs en
-streaming por SSE. El CLI consume el mismo stream, así que `croft instance create` en modo
-síncrono y la barra de progreso de la UI son la misma fuente. Si cierras el navegador, el
-trabajo sigue.
+Toda operación larga corre como `Job` en el daemon, con su progreso en streaming por SSE.
+Si cierras el navegador, el trabajo sigue.
+
+Cada trabajo **se escribe en SQLite al empezar y otra vez al terminar**, con su plan, lo
+que narró cada paso y el error si falló. Es lo único que el sistema no puede devolver: un
+contenedor dice qué corre ahora, no que el despliegue anterior falló en su build. La vista
+*Activity* del panel lo lee — cada despliegue con su resultado, hasta qué paso llegó y por
+qué se detuvo.
+
+- Al arrancar, lo que quedó como `running` de una ejecución anterior del daemon pasa a
+  `interrupted`: se abandonó, no terminó, y decir otra cosa sería mentir.
+- Un paso marcado `Secret` (el que escribe el `.env`) se muestra antes de correr, como
+  todos, pero **no se escribe después**: ni su comando ni el error que lo cita. Del resto
+  se guarda todo, porque el comando exacto y la salida de un paso fallido son justo lo que
+  hace falta para saber por qué falló.
+- Se conservan los últimos mil. Borrar la base cuesta el historial — nunca la
+  infraestructura.
 
 ## Seguridad
 
@@ -545,7 +591,8 @@ Otras decisiones:
 
 - Autenticación local con sesiones, tokens de API para automatización, OIDC opcional más
   adelante.
-- Log de auditoría de toda operación de escritura: quién, qué, cuándo, desde dónde.
+- Historial de toda operación de escritura: qué, sobre qué, cuándo y cómo terminó (ver
+  *Trabajos y streaming*). Quién y desde dónde llegan con los equipos (fase 5).
 - Los ficheros de metadatos nunca se leen con `source` (los scripts actuales lo hacen, y
   como corren con root eso es ejecución de código arbitrario). Formato parseado, no
   ejecutado.
@@ -574,6 +621,14 @@ Para la capa de infraestructura, un `FakeHost` que registra los comandos ejecuta
 devuelve salidas preparadas. Así se puede verificar que `CreateInstance` produce
 exactamente la secuencia de comandos esperada, sin ejecutar ninguno.
 
+Y un tercer nivel que costó aprenderlo: **el puente entre los dos procesos**. El panel
+registra cada ruta a mano y reenvía al agente, y cada mitad probada por separado pasaba sus
+tests mientras un botón del panel no llegaba a ningún sitio (restart salió así en v0.21.0).
+Los tests del paquete `server` recorren cada acción desde la ruta del panel hasta el
+agente, con un agente falso que registra lo que se le pidió. Las acciones de un conjunto
+cerrado —restart, stop, start— se registran en ambos lados desde la misma lista, para que
+no puedan desincronizarse.
+
 ## Módulo `deploy`
 
 Un contenedor corre **servicios**, en plural. Un servicio es un origen en git, unos
@@ -583,10 +638,15 @@ comandos para construirlo y uno para arrancarlo. No es una entidad nueva junto a
 ```
 internal/deploy/
   domain/
-    entities/      service.go, snapshot.go
+    entities/      service.go, snapshot.go — incluida la Adoption
     services/      detect.go — propone, nunca decide
   infrastructure/
     container/     planner.go — convierte un Service en comandos
+
+internal/agent/
+  units.go         descubrir unidades y sitios; restart, stop, start de cualquier unidad
+  adopt.go         inspeccionar y adoptar una unidad
+  adopt_site.go    inspeccionar y adoptar un sitio, rastreando el checkout que lo construyó
 ```
 
 ### Desplegar son dos planes, no uno
@@ -613,9 +673,41 @@ user.croft.service.<nombre>.install|build|start
 user.croft.service.<nombre>.env            JSON, escrito y leído entero
 user.croft.service.<nombre>.health         ruta, código, texto esperado
 user.croft.service.<nombre>.healthy        el snapshot que pasó su comprobación
+
+# solo si se adoptó en vez de desplegarse
+user.croft.service.<nombre>.adopted-unit   la unidad que ya tenía, con su nombre
+user.croft.service.<nombre>.adopted-site   el directorio que ya servía su nginx
+user.croft.service.<nombre>.output         dónde deja el build los ficheros (un sitio)
+user.croft.service.<nombre>.run-as         dueño del checkout, al que se le devuelve
+user.croft.service.<nombre>.env-file       su entorno — se muestra, nunca se escribe
 ```
 
-Sin el índice no hay forma de enumerar: solo de preguntar por nombres ya conocidos.
+Sin el índice no hay forma de enumerar: solo de preguntar por nombres ya conocidos. La
+lista de claves la da una sola función (`Service.Record`), la misma para lo desplegado y
+lo adoptado, y la configuración **solo se registra cuando un despliegue termina bien**: un
+despliegue que falla no deja escrita la configuración que lo rompió.
+
+### Redesplegar
+
+*Redeploy* es el despliegue de todos los días: lo que el contenedor ya tiene anotado
+—repositorio, rama, comandos, entorno— sin formulario y sin que la petición lleve nada. Se
+salta el formulario, no el plan: se muestra y se aprueba igual. Sigue la rama: el commit
+anotado dice qué se desplegó la última vez, no qué desplegar ahora. Cambiar rama, comandos
+o entorno es *Properties*, que es el mismo despliegue con el formulario delante.
+
+### Servicios adoptados y sitios
+
+Un servicio adoptado se despliega donde ya estaba: se hace fetch del checkout existente
+(nunca se vuelve a clonar ni se vuelve shallow, con `safe.directory` solo para ese
+comando, porque suele ser de otro usuario), se construye, se le devuelven los ficheros a
+su dueño y se reinicia **su** unidad. No se escribe unidad ni `.env`.
+
+Un sitio no tiene proceso propio: desplegarlo es construir y **publicar**. El build nuevo
+se copia junto al viejo, toma su dueño y sus permisos, y entra por dos `mv` — el sitio
+sirve el build viejo entero o el nuevo entero, nunca una copia a medias. Un build sin
+`index.html` se rechaza antes de tocar nada. No se reinicia nada: nginx lee del disco en
+cada petición. Por eso a un sitio no se le ofrece restart, stop ni logs, y no tiene
+comprobación de disponibilidad: su comprobación es la propia publicación.
 
 ### Saber cuándo termina un despliegue
 
@@ -669,8 +761,11 @@ vez en el plan de rollback, nombrando qué más se revierte.
 
 - Los snapshots de un nombre de servicio abandonado no se podan nunca: la poda solo
   alcanza al servicio que se está desplegando.
-- Un sitio estático se sirve hoy con un truco (`serve`) porque no escribimos configuración
-  de nginx dentro del contenedor.
+- Un sitio estático *desplegado desde cero* se sirve todavía con un truco (`serve`) porque
+  croft no escribe configuración de nginx dentro del contenedor. Uno *adoptado* ya se
+  publica en el nginx que tenía; el paso natural es ofrecer lo mismo al desplegar, cuando
+  el contenedor ya tiene un nginx.
+- La adopción es solo desde el panel: no hay comando de CLI todavía.
 - Repos privados: `AuthKind` y `Source.Private()` existen, las claves de despliegue no.
 
 ## Camino a PaaS

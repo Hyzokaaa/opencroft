@@ -14,6 +14,12 @@ descargó.
 
 ## No publicado
 
+- docs: bring the readme, architecture and roadmap up to adoption and history
+- feat: keep a history of what croft did, and say which deployment failed and why
+- feat: redeploy a service as it is configured, with no form to fill in
+- feat: take on a site the container's own web server serves, and publish it
+- feat: take on a service croft found running, and redeploy it from then on
+
 ### v0.22.0 — 2026-09-26
 - docs: file v0.21.0 and v0.22.0 in the changelog
 - fix: forward restart, stop and start from the panel to the agent
