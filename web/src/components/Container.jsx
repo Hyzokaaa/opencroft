@@ -22,6 +22,7 @@ export default function Container({
   onRollback,
   onDestroy,
   onPowerService,
+  onRedeploy,
   onPowerUnit,
   onAdopt,
   onAddDomain,
@@ -124,6 +125,7 @@ export default function Container({
                     service={service}
                     onLogs={() => setLogs({ name: service.name, kind: 'service' })}
                     onDeploy={() => onDeploy(container, service)}
+                    onRedeploy={() => onRedeploy(container, service)}
                     onDestroy={() => onDestroy(container, service)}
                     onPower={(action) => onPowerService(container, service, action)}
                   />
@@ -379,7 +381,7 @@ const SECONDARY =
 // State comes from the machine, not from what we recorded. A service croft
 // deployed and that then died must look dead here — and in more than one
 // colour, because colour alone reaches nobody who cannot see it.
-function Service({ service, onLogs, onDeploy, onDestroy, onPower }) {
+function Service({ service, onLogs, onDeploy, onRedeploy, onDestroy, onPower }) {
   const running = service.state === 'active'
   const site = service.adopted?.site
 
@@ -468,8 +470,14 @@ function Service({ service, onLogs, onDeploy, onDestroy, onPower }) {
               )}
             </>
           )}
+          {/* Redeploy is the everyday one: what is configured, from the tip of
+              its branch, straight to the plan. Properties is for changing
+              what is configured first. */}
+          <button onClick={onRedeploy} className={SECONDARY}>
+            Redeploy
+          </button>
           <button onClick={onDeploy} className={SECONDARY}>
-            Deploy again
+            Properties&hellip;
           </button>
           {/* Croft did not put an adopted service there, so it only lets go of
               it — the button says which of the two it does. */}

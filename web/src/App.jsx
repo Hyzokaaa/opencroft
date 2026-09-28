@@ -203,6 +203,16 @@ function Dashboard({ onSignOut, onSessionLost }) {
     })
   }
 
+  // Deploying again as it is configured: no form, straight to the plan. What is
+  // deployed is what the container records, not anything this page sends.
+  function redeploy(container, service) {
+    setDialog({
+      title: `Redeploy ${service.name}`,
+      url: `/api/hosts/local/instances/${container.name}/services/${service.name}/redeploy`,
+      method: 'POST',
+    })
+  }
+
   // Same three verbs, on a unit croft found rather than deployed — a
   // different path because its name carries no croft- prefix to trust.
   function powerUnit(container, unit, action) {
@@ -302,6 +312,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
           onRollback={rollback}
           onDestroy={destroyService}
           onPowerService={powerService}
+          onRedeploy={redeploy}
           onPowerUnit={powerUnit}
           onAdopt={(container, subject) => setAdopting({ container, subject })}
           onAddDomain={addDomain}

@@ -80,6 +80,18 @@ func (a *ServiceClient) Destroy(ctx context.Context, container, service string, 
 		servicePath(container, "/"+url.PathEscape(service)), nil, report)
 }
 
+func (a *ServiceClient) RedeployPlan(ctx context.Context, container, service string) (plan.Plan, error) {
+	var response PlanResponse
+	err := a.c.call(ctx, http.MethodGet,
+		servicePath(container, "/"+url.PathEscape(service)+"/redeploy/plan"), nil, &response)
+	return response.Plan, err
+}
+
+func (a *ServiceClient) Redeploy(ctx context.Context, container, service string, report func(int, string)) error {
+	return a.c.streamed(ctx, http.MethodPost,
+		servicePath(container, "/"+url.PathEscape(service)+"/redeploy"), nil, report)
+}
+
 func (a *ServiceClient) PowerPlan(ctx context.Context, container, service string, action PowerAction) (plan.Plan, error) {
 	var response PlanResponse
 	err := a.c.call(ctx, http.MethodGet,

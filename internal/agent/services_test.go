@@ -378,3 +378,58 @@ func TestAUnitNameCannotCarryAnythingElse(t *testing.T) {
 		}
 	}
 }
+
+// A redeploy is what the container already records, with nothing asked and
+// nothing sent — including its environment. It follows the branch: the commit
+// on record says what was deployed last time, not what to deploy now.
+func TestARedeployIsWhatTheContainerRecords(t *testing.T) {
+	server, _ := testServer()
+	ctx := context.Background()
+	for key, value := range map[string]string{
+		"services":                "backend",
+		"service.backend.repo":    "https://github.com/user/app.git",
+		"service.backend.branch":  "dev",
+		"service.backend.path":    "/srv/backend",
+		"service.backend.install": "npm ci",
+		"service.backend.start":   "node dist/main",
+		"service.backend.port":    "3000",
+		"service.backend.env":     `{"JWT_SECRET":"s3cret"}`,
+		"service.backend.commit":  "2a7851ea3887c21d2634dcc3f05c3d6ede92406a",
+	} {
+		_ = server.instances.Annotate(ctx, "helpdesk", key, value)
+	}
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder,
+		httptest.NewRequest(http.MethodGet, "/instances/helpdesk/services/backend/redeploy/plan", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("answered %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	var response PlanResponse
+	_ = json.Unmarshal(recorder.Body.Bytes(), &response)
+	body := ""
+	for _, step := range response.Plan.Steps {
+		body += step.Shell() + "\n"
+	}
+
+	for _, wanted := range []string{"origin dev", "reset --hard FETCH_HEAD", "node dist/main", "JWT_SECRET=s3cret", "npm ci"} {
+		if !strings.Contains(body, wanted) {
+			t.Errorf("the redeploy lacks %q:\n%s", wanted, body)
+		}
+	}
+	if strings.Contains(body, "2a7851e") {
+		t.Errorf("the redeploy goes back to the recorded commit instead of the branch:\n%s", body)
+	}
+}
+
+func TestOnlyADeployedServiceCanBeRedeployed(t *testing.T) {
+	server, _ := testServer()
+
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder,
+		httptest.NewRequest(http.MethodGet, "/instances/helpdesk/services/nothing/redeploy/plan", nil))
+	if recorder.Code == http.StatusOK {
+		t.Error("a service that is not there was planned")
+	}
+}

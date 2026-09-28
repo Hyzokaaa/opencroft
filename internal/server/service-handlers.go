@@ -27,6 +27,8 @@ type Deployer interface {
 	Logs(ctx context.Context, container, service string, lines int) (string, error)
 	DestroyPlan(ctx context.Context, container, service string) (plan.Plan, string, error)
 	Destroy(ctx context.Context, container, service string, report func(int, string)) error
+	RedeployPlan(ctx context.Context, container, service string) (plan.Plan, error)
+	Redeploy(ctx context.Context, container, service string, report func(int, string)) error
 	PowerPlan(ctx context.Context, container, service string, action agent.PowerAction) (plan.Plan, error)
 	Power(ctx context.Context, container, service string, action agent.PowerAction, report func(int, string)) error
 	UnitPowerPlan(ctx context.Context, container, unit string, action agent.PowerAction) (plan.Plan, error)
@@ -162,6 +164,51 @@ func (d Deps) deployService(w http.ResponseWriter, r *http.Request) {
 		})
 
 	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": body.Name})
+}
+
+// redeployService deploys again what the container already records, with
+// nothing asked: the same repository, branch, commands and environment, at the
+// tip of the branch. The plan is still shown — only the form is skipped.
+func (d Deps) redeployService(w http.ResponseWriter, r *http.Request) {
+	if !d.writable(w) {
+		return
+	}
+	deployer, ok := d.deployer(w)
+	if !ok {
+		return
+	}
+
+	name, service := r.PathValue("name"), r.PathValue("service")
+	p, err := deployer.RedeployPlan(r.Context(), name, service)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if wantsPlan(r) {
+		summary := fmt.Sprintf("Redeploy %s in %s as it is configured.", service, name)
+		if found, err := deployer.FindAll(r.Context(), name); err == nil {
+			for _, s := range found.Services {
+				if s.Name == service {
+					summary = fmt.Sprintf(
+						"Redeploy %s from the tip of %s, with the commands and environment it already has. "+
+							"A snapshot is taken first, so this can be undone.", service, s.Branch)
+				}
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"summary": summary, "plan": p})
+		return
+	}
+
+	started := d.Jobs.Start("deploy", name+"/"+service, p,
+		func(ctx context.Context, report func(int, string)) error {
+			if d.Simulated {
+				return d.rehearse(p, report)
+			}
+			return deployer.Redeploy(ctx, name, service, report)
+		})
+
+	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": service})
 }
 
 func summarise(container string, service agent.ServiceDTO, adopted *agent.AdoptedDTO, crowding string) string {

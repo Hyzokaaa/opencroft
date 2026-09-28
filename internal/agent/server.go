@@ -135,6 +135,8 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("POST /instances/{name}/units/{unit}/"+verb,
 			func(w http.ResponseWriter, r *http.Request) { s.unitPower(w, r, action) })
 	}
+	mux.HandleFunc("GET /instances/{name}/services/{service}/redeploy/plan", s.planRedeploy)
+	mux.HandleFunc("POST /instances/{name}/services/{service}/redeploy", s.redeploy)
 	mux.HandleFunc("GET /instances/{name}/units/{unit}/logs", s.unitLogs)
 	for kind, key := range map[Adoptable]string{AdoptUnit: "{unit}", AdoptSite: "{site}"} {
 		base := "/instances/{name}/" + string(kind) + "/" + key

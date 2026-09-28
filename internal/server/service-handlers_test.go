@@ -66,6 +66,17 @@ func (f *fakeDeployer) DestroyPlan(context.Context, string, string) (plan.Plan, 
 }
 func (f *fakeDeployer) Destroy(context.Context, string, string, func(int, string)) error { return nil }
 
+func (f *fakeDeployer) RedeployPlan(_ context.Context, container, service string) (plan.Plan, error) {
+	f.record("plan redeploy %s/%s", container, service)
+	return onePlan(), nil
+}
+func (f *fakeDeployer) Redeploy(_ context.Context, container, service string, _ func(int, string)) error {
+	f.record("run redeploy %s/%s", container, service)
+	if service == "broken" {
+		return fmt.Errorf("Build: exit status 1")
+	}
+	return nil
+}
 func (f *fakeDeployer) PowerPlan(_ context.Context, container, service string, action agent.PowerAction) (plan.Plan, error) {
 	f.record("plan %s service %s/%s", action, container, service)
 	return onePlan(), nil
@@ -251,4 +262,31 @@ func finished(t *testing.T, jobs *job.Runner, id string) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("job %s never finished", id)
+}
+
+// Redeploying skips the form, not the plan: the plan is asked for, then run,
+// and nothing about the service travels in the request — the agent reads it
+// off the container.
+func TestARedeployReachesTheAgentWithNothingInIt(t *testing.T) {
+	handler, fake, jobs := testAPI()
+	base := "/api/hosts/local/instances/helpdesk/services/web/redeploy"
+
+	if code := request(t, handler, http.MethodPost, base+"?plan=1").Code; code != http.StatusOK {
+		t.Fatalf("planning was answered with %d", code)
+	}
+	started := request(t, handler, http.MethodPost, base)
+	if started.Code != http.StatusAccepted {
+		t.Fatalf("running was answered with %d: %s", started.Code, started.Body.String())
+	}
+	var body struct {
+		JobId string `json:"jobId"`
+	}
+	_ = json.Unmarshal(started.Body.Bytes(), &body)
+	finished(t, jobs, body.JobId)
+
+	for _, call := range []string{"plan redeploy helpdesk/web", "run redeploy helpdesk/web"} {
+		if !fake.was(call) {
+			t.Errorf("never asked: %s (asked %v)", call, fake.asked)
+		}
+	}
 }

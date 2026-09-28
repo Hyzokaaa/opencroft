@@ -677,6 +677,51 @@ func (s *Server) planDeploy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	s.writeDeployPlan(w, r, name, service)
+}
+
+// deploy walks the very plan that planDeploy returned.
+func (s *Server) deploy(w http.ResponseWriter, r *http.Request) {
+	name, service, err := s.acceptService(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.runDeployment(w, r, name, service)
+}
+
+// A redeploy is a deployment of what the container already records — the same
+// repository, branch, commands and environment — with nothing asked and
+// nothing sent. It follows the branch: the recorded commit says what was
+// deployed last time, not what to deploy now.
+func (s *Server) recorded(r *http.Request) (string, *deployEntities.Service, error) {
+	name, service, err := s.stored(r)
+	if err != nil {
+		return "", nil, err
+	}
+	service.Source.Commit = ""
+	return name, service, nil
+}
+
+func (s *Server) planRedeploy(w http.ResponseWriter, r *http.Request) {
+	name, service, err := s.recorded(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.writeDeployPlan(w, r, name, service)
+}
+
+func (s *Server) redeploy(w http.ResponseWriter, r *http.Request) {
+	name, service, err := s.recorded(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.runDeployment(w, r, name, service)
+}
+
+func (s *Server) writeDeployPlan(w http.ResponseWriter, r *http.Request, name string, service *deployEntities.Service) {
 	if !service.Runnable() {
 		writeError(w, http.StatusBadRequest,
 			errors.New("nothing says how to start it, so there is no deployment to run"))
@@ -693,15 +738,10 @@ func (s *Server) planDeploy(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// deploy walks the very plan that planDeploy returned. What is recorded on the
+// runDeployment walks the plan writeDeployPlan shows. What is recorded on the
 // container, and what counts as the last version that worked, are both written
 // only once the plan has run through.
-func (s *Server) deploy(w http.ResponseWriter, r *http.Request) {
-	name, service, err := s.acceptService(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
+func (s *Server) runDeployment(w http.ResponseWriter, r *http.Request, name string, service *deployEntities.Service) {
 	if !service.Runnable() {
 		writeError(w, http.StatusBadRequest,
 			errors.New("nothing says how to start it, so there is no deployment to run"))
