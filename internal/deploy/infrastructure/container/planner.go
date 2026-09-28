@@ -218,10 +218,12 @@ func (p *Planner) publish(service *entities.Service) plan.Step {
 // because cloning into a directory that already has files in it fails, and
 // readable only by its owner because it is where the secrets are.
 func (p *Planner) writeEnv(service *entities.Service) plan.Step {
-	return p.exec(
+	step := p.exec(
 		fmt.Sprintf("Write %s (%d variables)", service.EnvFile(), len(service.Env)),
 		"cat > "+service.EnvFile()+" <<'CROFT_ENV'\n"+service.EnvContent()+"CROFT_ENV\n"+
 			"chmod 600 "+service.EnvFile())
+	step.Secret = true
+	return step
 }
 
 func (p *Planner) inPath(service *entities.Service, command string) string {

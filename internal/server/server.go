@@ -127,6 +127,7 @@ func api(deps Deps) *http.ServeMux {
 	mux.HandleFunc("GET /api/hosts/{hostId}/dns", deps.showDNS)
 	mux.HandleFunc("POST /api/hosts/{hostId}/dns", deps.saveDNS)
 
+	mux.HandleFunc("GET /api/jobs", deps.listJobs)
 	mux.HandleFunc("GET /api/jobs/{id}", deps.showJob)
 	mux.HandleFunc("GET /api/jobs/{id}/events", deps.streamJob)
 	mux.HandleFunc("POST /api/jobs/{id}/cancel", deps.cancelJob)

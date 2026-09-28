@@ -11,6 +11,7 @@ import Login from './components/Login.jsx'
 import PlanDialog from './components/PlanDialog.jsx'
 import DeployDialog from './components/DeployDialog.jsx'
 import AdoptDialog from './components/AdoptDialog.jsx'
+import Activity from './components/Activity.jsx'
 import Container from './components/Container.jsx'
 import { useOverview, useCommandMode, useAuth } from './lib/useOverview.js'
 
@@ -395,7 +396,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
 
       {!opened && section === 'settings' && <Settings onExpose={exposePanel} />}
 
-      {!opened && section === 'activity' && <NotBuilt section={section} />}
+      {!opened && section === 'activity' && <Activity commandMode={commandMode} />}
 
       {/* Deploying has a step in the middle — look at the repository, then
           decide — so it runs its own flow and hands off to the same plan
@@ -445,17 +446,6 @@ function SeeAll({ onClick }) {
     <button onClick={onClick} className="text-xs text-muted transition hover:text-ink">
       See all
     </button>
-  )
-}
-
-function NotBuilt({ section }) {
-  return (
-    <div className="rounded-lg border border-dashed border-edge px-5 py-12 text-center">
-      <p className="text-sm text-muted">{section} is not built yet.</p>
-      <p className="mt-1 text-xs text-faint">
-        It is on the roadmap. This panel would rather say so than invent something.
-      </p>
-    </div>
   )
 }
 

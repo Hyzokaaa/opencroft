@@ -113,7 +113,7 @@ func (f *fakeDeployer) Adopt(_ context.Context, container string, kind agent.Ado
 func testAPI() (http.Handler, *fakeDeployer, *job.Runner) {
 	fake := &fakeDeployer{}
 	next := 0
-	jobs := job.NewRunner(func() string { next++; return fmt.Sprint(next) })
+	jobs := job.NewRunner(func() string { next++; return fmt.Sprint(next) }, nil)
 	return api(Deps{Services: fake, Jobs: jobs}), fake, jobs
 }
 
@@ -288,5 +288,40 @@ func TestARedeployReachesTheAgentWithNothingInIt(t *testing.T) {
 		if !fake.was(call) {
 			t.Errorf("never asked: %s (asked %v)", call, fake.asked)
 		}
+	}
+}
+
+// The history is how anybody learns a deployment failed: each one listed with
+// what it was, what it ran on, how it ended, and why when it did not work.
+func TestTheHistorySaysWhichDeploymentFailedAndWhy(t *testing.T) {
+	handler, _, jobs := testAPI()
+
+	for _, service := range []string{"web", "broken"} {
+		started := request(t, handler, http.MethodPost,
+			"/api/hosts/local/instances/helpdesk/services/"+service+"/redeploy")
+		var body struct {
+			JobId string `json:"jobId"`
+		}
+		_ = json.Unmarshal(started.Body.Bytes(), &body)
+		finished(t, jobs, body.JobId)
+	}
+
+	var history struct {
+		Jobs []jobSummary `json:"jobs"`
+	}
+	recorder := request(t, handler, http.MethodGet, "/api/jobs")
+	if err := json.Unmarshal(recorder.Body.Bytes(), &history); err != nil {
+		t.Fatal(err)
+	}
+
+	outcome := map[string]jobSummary{}
+	for _, j := range history.Jobs {
+		outcome[j.Subject] = j
+	}
+	if got := outcome["helpdesk/web"]; got.Kind != "deploy" || got.Status != job.StatusDone {
+		t.Errorf("the one that worked reads %+v", got)
+	}
+	if got := outcome["helpdesk/broken"]; got.Status != job.StatusFailed || !strings.Contains(got.Error, "Build") {
+		t.Errorf("the one that failed reads %+v", got)
 	}
 }

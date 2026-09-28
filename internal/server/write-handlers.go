@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	instanceCommands "github.com/Hyzokaaa/opencroft/internal/instance/application/commands"
@@ -14,6 +15,7 @@ import (
 	instanceServices "github.com/Hyzokaaa/opencroft/internal/instance/domain/services"
 	routeEnums "github.com/Hyzokaaa/opencroft/internal/route/domain/enums"
 	routeServices "github.com/Hyzokaaa/opencroft/internal/route/domain/services"
+	"github.com/Hyzokaaa/opencroft/internal/shared/job"
 	"github.com/Hyzokaaa/opencroft/internal/shared/plan"
 )
 
@@ -135,6 +137,50 @@ func (d Deps) rehearse(p plan.Plan, report func(int, string)) error {
 		time.Sleep(400 * time.Millisecond)
 	}
 	return nil
+}
+
+// jobSummary is one line of the history: what ran, on what, and whether it
+// worked — without every event of every job, which is one click further.
+type jobSummary struct {
+	Id      string     `json:"id"`
+	Kind    string     `json:"kind"`
+	Subject string     `json:"subject"`
+	Status  job.Status `json:"status"`
+	Error   string     `json:"error,omitempty"`
+	Started time.Time  `json:"started"`
+	Ended   time.Time  `json:"ended,omitzero"`
+	// Steps and Reached say how far it got: a failure at step 6 of 7 is a
+	// different story from one at step 1.
+	Steps   int `json:"steps"`
+	Reached int `json:"reached"`
+}
+
+func (d Deps) listJobs(w http.ResponseWriter, r *http.Request) {
+	limit := 200
+	if asked, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && asked > 0 && asked <= 1000 {
+		limit = asked
+	}
+
+	found, err := d.Jobs.Recent(limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	summaries := make([]jobSummary, len(found))
+	for i, s := range found {
+		reached := 0
+		for _, event := range s.Events {
+			if event.Step > reached {
+				reached = event.Step
+			}
+		}
+		summaries[i] = jobSummary{
+			Id: s.Id, Kind: s.Kind, Subject: s.Subject, Status: s.Status, Error: s.Error,
+			Started: s.Started, Ended: s.Ended, Steps: len(s.Plan.Steps), Reached: reached,
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"jobs": summaries})
 }
 
 func (d Deps) showJob(w http.ResponseWriter, r *http.Request) {

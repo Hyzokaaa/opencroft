@@ -32,6 +32,17 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 CREATE INDEX IF NOT EXISTS sessions_expires ON sessions (expires);
+
+CREATE TABLE IF NOT EXISTS jobs (
+    id      TEXT PRIMARY KEY,
+    kind    TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    status  TEXT NOT NULL,
+    started TEXT NOT NULL,
+    body    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS jobs_started ON jobs (started);
 `
 
 type Store struct {

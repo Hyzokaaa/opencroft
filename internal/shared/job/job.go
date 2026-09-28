@@ -8,6 +8,7 @@ package job
 import (
 	"context"
 	"fmt"
+	"log"
 	"sort"
 	"sync"
 	"time"
@@ -21,7 +22,20 @@ const (
 	StatusRunning Status = "running"
 	StatusDone    Status = "done"
 	StatusFailed  Status = "failed"
+	// StatusInterrupted is a job the daemon stopped being around for. It may
+	// have finished, failed or stopped halfway — what it did is on the machine,
+	// and the snapshot it took first is still there.
+	StatusInterrupted Status = "interrupted"
 )
+
+// Journal is where work is written down, so that what was done outlives the
+// daemon that did it. A job is recorded when it starts and again when it ends.
+type Journal interface {
+	Record(Snapshot) error
+	// Recent is the newest first.
+	Recent(limit int) ([]Snapshot, error)
+	Find(id string) (Snapshot, bool, error)
+}
 
 type Event struct {
 	At      time.Time `json:"at"`
@@ -92,13 +106,31 @@ func (j *Job) snapshotLocked() Snapshot {
 // not a restart of the daemon — which is honest: a restart is exactly when you
 // want to look at the system itself rather than at our record of it.
 type Runner struct {
-	mu   sync.Mutex
-	jobs map[string]*Job
-	next func() string
+	mu      sync.Mutex
+	jobs    map[string]*Job
+	next    func() string
+	journal Journal
 }
 
-func NewRunner(idGenerator func() string) *Runner {
-	return &Runner{jobs: map[string]*Job{}, next: idGenerator}
+// NewRunner keeps its jobs in memory, and in the journal when there is one. A
+// nil journal keeps nothing beyond this process.
+func NewRunner(idGenerator func() string, journal Journal) *Runner {
+	return &Runner{jobs: map[string]*Job{}, next: idGenerator, journal: journal}
+}
+
+// record writes a job down. A journal that cannot be written to must not stop
+// the work it was meant to remember, so the failure is logged and no more.
+func (r *Runner) record(j *Job) {
+	if r.journal == nil {
+		return
+	}
+	j.mu.Lock()
+	snapshot := j.snapshotLocked()
+	j.mu.Unlock()
+
+	if err := r.journal.Record(snapshot.Kept()); err != nil {
+		log.Printf("job %s could not be written down: %v", snapshot.Id, err)
+	}
 }
 
 // Start runs the work in the background and returns immediately. The step
@@ -121,6 +153,7 @@ func (r *Runner) Start(kind, subject string, p plan.Plan, work func(ctx context.
 	r.jobs[j.Id] = j
 	r.forget()
 	r.mu.Unlock()
+	r.record(j)
 
 	go func() {
 		// Detached from the request on purpose: closing the browser must not
@@ -156,6 +189,7 @@ func (r *Runner) Start(kind, subject string, p plan.Plan, work func(ctx context.
 			Text:   finalText(err),
 			Failed: err != nil,
 		})
+		r.record(j)
 		j.closeListeners()
 	}()
 
@@ -199,17 +233,91 @@ func (r *Runner) forget() {
 	}
 }
 
+// Find looks in memory first — a running job's events are only there — and in
+// the journal for anything older than this process or than Keep.
 func (r *Runner) Find(id string) (Snapshot, bool) {
 	r.mu.Lock()
 	j, ok := r.jobs[id]
 	r.mu.Unlock()
-	if !ok {
-		return Snapshot{}, false
+	if ok {
+		j.mu.Lock()
+		defer j.mu.Unlock()
+		return j.snapshotLocked(), true
 	}
 
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	return j.snapshotLocked(), true
+	if r.journal == nil {
+		return Snapshot{}, false
+	}
+	found, ok, err := r.journal.Find(id)
+	if err != nil {
+		log.Printf("reading job %s: %v", id, err)
+		return Snapshot{}, false
+	}
+	return found, ok
+}
+
+// Recent is the newest jobs first: from the journal when there is one, since
+// it holds everything including what this process ran, and from memory when
+// there is not.
+func (r *Runner) Recent(limit int) ([]Snapshot, error) {
+	if r.journal != nil {
+		return r.journal.Recent(limit)
+	}
+
+	r.mu.Lock()
+	all := make([]Snapshot, 0, len(r.jobs))
+	for _, j := range r.jobs {
+		j.mu.Lock()
+		all = append(all, j.snapshotLocked())
+		j.mu.Unlock()
+	}
+	r.mu.Unlock()
+
+	sort.Slice(all, func(a, b int) bool { return all[a].Started.After(all[b].Started) })
+	if len(all) > limit {
+		all = all[:limit]
+	}
+	return all, nil
+}
+
+// Kept is what is written down about a job: all of it, except what a step
+// marked secret carries — its command, and the error it failed with, which
+// quotes the command.
+func (s Snapshot) Kept() Snapshot {
+	kept := s
+	secret := map[int]bool{}
+
+	kept.Plan = plan.Plan{Steps: make([]plan.Step, len(s.Plan.Steps))}
+	for i, step := range s.Plan.Steps {
+		if step.Secret {
+			secret[i+1] = true
+			step = plan.Step{Describe: step.Describe, Secret: true}
+		}
+		kept.Plan.Steps[i] = step
+	}
+
+	failedAt := 0
+	kept.Events = make([]Event, len(s.Events))
+	for i, event := range s.Events {
+		if secret[event.Step] {
+			event.Command = ""
+		}
+		if event.Step > 0 {
+			failedAt = event.Step
+		}
+		kept.Events[i] = event
+	}
+
+	if s.Status == StatusFailed && secret[failedAt] {
+		kept.Error = s.Plan.Steps[failedAt-1].Describe +
+			" failed. What it said is not kept, because its command carries secrets."
+		for i := range kept.Events {
+			if kept.Events[i].Failed {
+				kept.Events[i].Text = "Stopped: " + kept.Error
+			}
+		}
+	}
+	return kept
 }
 
 func (r *Runner) job(id string) (*Job, bool) {

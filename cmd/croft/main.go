@@ -207,7 +207,15 @@ func serve(ctx context.Context, args []string) {
 
 	d := wire(ctx, *demo, *nginxDir, *agentSocket)
 	auth := wireAuth(*dbPath)
-	jobs := job.NewRunner(id.NewULIDGenerator().Create)
+
+	// What was done is kept beside the users and sessions. Anything the last
+	// run of this daemon left running was walked away from, not finished.
+	journal := sqlite.NewJobJournal(auth.store)
+	if err := journal.Settle(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, "[ERROR] reading the job history:", err)
+		os.Exit(1)
+	}
+	jobs := job.NewRunner(id.NewULIDGenerator().Create, journal)
 
 	handler := server.Handler(server.Deps{
 		Overview: overviewQueries.NewOverviewQuery(

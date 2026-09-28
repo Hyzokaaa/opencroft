@@ -19,6 +19,9 @@ type Step struct {
 	// Optional steps are allowed to fail. Overriding an inherited device is
 	// one: it errors when the device is already local, which is fine.
 	Optional bool `json:"optional,omitempty"`
+	// Secret steps carry secrets in the command itself. They are shown before
+	// they run, like every step — and never written down afterwards.
+	Secret bool `json:"secret,omitempty"`
 }
 
 func Command(describe string, argv ...string) Step {

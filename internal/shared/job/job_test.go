@@ -24,7 +24,7 @@ func onestep() plan.Plan {
 // was a way to say the second, a command that was never going to finish held
 // everything until something far away gave up.
 func TestCancellingReachesTheWorkItself(t *testing.T) {
-	runner := NewRunner(counter())
+	runner := NewRunner(counter(), nil)
 	started, stopped := make(chan struct{}), make(chan struct{})
 
 	j := runner.Start("deploy", "app", onestep(), func(ctx context.Context, _ func(int, string)) error {
@@ -49,7 +49,7 @@ func TestCancellingReachesTheWorkItself(t *testing.T) {
 // A job that already finished has nothing to stop, and saying so is better
 // than reporting success for doing nothing.
 func TestCancellingSomethingThatIsNotRunningSaysSo(t *testing.T) {
-	runner := NewRunner(counter())
+	runner := NewRunner(counter(), nil)
 
 	done := make(chan struct{})
 	j := runner.Start("deploy", "app", onestep(), func(context.Context, func(int, string)) error {
@@ -79,7 +79,7 @@ func TestCancellingSomethingThatIsNotRunningSaysSo(t *testing.T) {
 // which is what makes a lost connection cost the live narration and nothing
 // else.
 func TestSubscribingLateStillSeesWhatHappened(t *testing.T) {
-	runner := NewRunner(counter())
+	runner := NewRunner(counter(), nil)
 	ready := make(chan struct{})
 
 	j := runner.Start("deploy", "app", onestep(), func(ctx context.Context, report func(int, string)) error {

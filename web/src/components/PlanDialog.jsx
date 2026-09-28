@@ -335,7 +335,7 @@ function FileStep({ step }) {
   )
 }
 
-function Progress({ steps, events, error, done }) {
+export function Progress({ steps, events, error, done }) {
   // How far along, not how much was said. A single step can narrate several
   // times — obtaining a certificate talks to the authority, waits for DNS to
   // propagate, and stores the result, all as step one.
