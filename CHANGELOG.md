@@ -14,6 +14,8 @@ descargó.
 
 ## No publicado
 
+### v0.23.0 — 2026-09-27
+- docs: file v0.23.0 in the changelog
 - docs: bring the readme, architecture and roadmap up to adoption and history
 - feat: keep a history of what croft did, and say which deployment failed and why
 - feat: redeploy a service as it is configured, with no form to fill in
