@@ -50,6 +50,24 @@ func TestEveryLocationLetsAWebsocketUpgrade(t *testing.T) {
 	}
 }
 
+// A return written beside the locations runs before nginx looks at any of
+// them, so Let's Encrypt would be redirected away from its token. On https the
+// redirect has to be a location of its own.
+func TestTheChallengeIsNotRedirectedAway(t *testing.T) {
+	body := render(entities.NewRoute(entities.RouteProps{
+		Domain: "app.example.com", Target: "10.0.0.200", Port: 80, SSL: true,
+	}))
+
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(line, "    return") {
+			t.Fatalf("a return at server level:\n%s", body)
+		}
+	}
+	if !strings.Contains(body, "location / {\n        return 301 https://$host$request_uri;") {
+		t.Errorf("port 80 no longer sends visitors to https:\n%s", body)
+	}
+}
+
 // A stripped path reaches its backend without the prefix; one that is not
 // stripped keeps it. The difference is one slash in proxy_pass.
 func TestAPathIsPassedOnWithOrWithoutItsPrefix(t *testing.T) {

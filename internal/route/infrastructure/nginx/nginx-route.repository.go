@@ -234,7 +234,11 @@ func render(route *entities.Route) string {
     server_name %s;
 
 %s
-    return 301 https://$host$request_uri;
+    # Inside a location, not beside it: a return at server level runs before
+    # nginx picks a location, and the challenge would be redirected too.
+    location / {
+        return 301 https://$host$request_uri;
+    }
 }
 
 server {
