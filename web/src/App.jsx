@@ -154,6 +154,16 @@ function Dashboard({ onSignOut, onSessionLost }) {
     })
   }
 
+  // Taking over a vhost somebody wrote by hand: croft writes its own for the
+  // same domain and moves theirs aside, so the domain can have paths.
+  function takeOver(domain) {
+    setDialog({
+      title: `Take over ${domain}`,
+      url: `/api/hosts/local/routes/${domain}/takeover`,
+      method: 'POST',
+    })
+  }
+
   function removeDomain(domain) {
     setDialog({
       title: `Stop serving ${domain}`,
@@ -302,6 +312,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
     onEditDomain: editDomain,
     onAddPath: addPath,
     onRemovePath: removePath,
+    onTakeOver: takeOver,
     instances: data.instances,
   }
 

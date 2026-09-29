@@ -378,6 +378,19 @@ func (r *RouteClient) EnableTLS(ctx context.Context, domain string, report func(
 		"/routes/"+url.PathEscape(domain)+"/tls", nil, report)
 }
 
+// ── Taking over a hand-written vhost ─────────────────────────────────────────
+
+func (r *RouteClient) TakeOverPlan(ctx context.Context, domain string) (plan.Plan, error) {
+	var response PlanResponse
+	err := r.client.call(ctx, http.MethodGet, "/routes/"+url.PathEscape(domain)+"/takeover/plan", nil, &response)
+	return response.Plan, err
+}
+
+func (r *RouteClient) TakeOver(ctx context.Context, domain string, report func(int, string)) error {
+	return r.client.streamed(ctx, http.MethodPost,
+		"/routes/"+url.PathEscape(domain)+"/takeover", nil, report)
+}
+
 func (c *Client) StartPlan(name string) plan.Plan {
 	return c.powerPlan(name, "start")
 }

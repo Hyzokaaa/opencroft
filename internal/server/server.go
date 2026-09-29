@@ -94,6 +94,7 @@ func api(deps Deps) *http.ServeMux {
 
 	mux.HandleFunc("PUT /api/hosts/{hostId}/routes/{domain}", deps.editRoute)
 	mux.HandleFunc("POST /api/hosts/{hostId}/routes/{domain}/tls", deps.enableTLS)
+	mux.HandleFunc("POST /api/hosts/{hostId}/routes/{domain}/takeover", deps.takeOver)
 	mux.HandleFunc("PUT /api/hosts/{hostId}/routes/{domain}/paths", deps.setPath)
 	mux.HandleFunc("DELETE /api/hosts/{hostId}/routes/{domain}/paths", deps.removePath)
 

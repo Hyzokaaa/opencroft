@@ -1,7 +1,7 @@
 import Chip from './Chip.jsx'
 import { OWNERSHIP } from '../lib/vocabulary.js'
 
-export default function RouteTable({ routes, instances, problems, highlighted, onHover, onFocus, onRemoveDomain, onEnableTLS, onEditDomain, onAddPath, onRemovePath, compact }) {
+export default function RouteTable({ routes, instances, problems, highlighted, onHover, onFocus, onRemoveDomain, onEnableTLS, onEditDomain, onAddPath, onRemovePath, onTakeOver, compact }) {
   if (!routes.length) {
     return <p className="px-4 py-8 text-center text-sm text-muted">No domains routed yet.</p>
   }
@@ -82,10 +82,16 @@ export default function RouteTable({ routes, instances, problems, highlighted, o
 
               {!compact && (
                 <td className="px-4 py-2.5 text-right">
-                  {/* A vhost we did not write is not ours to remove, and the
-                      button says so instead of failing when pressed. */}
+                  {/* A vhost we did not write is not ours to edit or remove.
+                      What is on offer is taking it over — explicitly, with a
+                      plan, and the original moved aside rather than lost. */}
                   {r.state === 'unmanaged' ? (
-                    <span className="text-xs text-faint">not ours</span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onTakeOver?.(r.domain) }}
+                      className="rounded border border-edge px-2 py-0.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
+                    >
+                      Take over&hellip;
+                    </button>
                   ) : (
                     <div className="flex justify-end gap-1.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
                       {/* Only offered where it is missing: a domain already
