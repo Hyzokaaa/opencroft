@@ -308,7 +308,7 @@ func (s *Server) adopt(kind Adoptable) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
-		s.stream(w, func(report func(int, string)) error {
+		s.streamOn(w, r, r.PathValue("name"), func(report func(int, string)) error {
 			for i, step := range p.Steps {
 				report(i+1, step.Describe)
 				if err := host.RunStep(ctx, s.host, step); err != nil {

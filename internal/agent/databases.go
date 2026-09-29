@@ -168,7 +168,7 @@ func (s *Server) provision(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	steps := s.provisionPlan(ctx, container, database, index).Steps
 
-	s.stream(w, func(report func(int, string)) error {
+	s.streamOn(w, r, container, func(report func(int, string)) error {
 		for i, step := range steps {
 			report(i+1, step.Describe)
 
@@ -227,7 +227,7 @@ func (s *Server) destroyDatabase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.stream(w, func(report func(int, string)) error {
+	s.streamOn(w, r, r.PathValue("name"), func(report func(int, string)) error {
 		for i, step := range p.Steps {
 			report(i+1, step.Describe)
 

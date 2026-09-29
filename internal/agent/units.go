@@ -147,7 +147,7 @@ func (s *Server) runUnitPlan(w http.ResponseWriter, r *http.Request, name, unit 
 		return
 	}
 
-	s.stream(w, func(report func(int, string)) error {
+	s.streamOn(w, r, name, func(report func(int, string)) error {
 		for i, step := range p.Steps {
 			report(i+1, step.Describe)
 			if err := host.RunStep(ctx, s.host, step); err != nil {

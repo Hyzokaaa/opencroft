@@ -65,7 +65,9 @@ func readProgress(body *bufio.Reader, report func(int, string)) error {
 					return errors.New(p.Error)
 				case p.Done:
 					return nil
-				case p.Step > 0 && report != nil:
+				// Step zero is said before any step runs — waiting for
+				// another job on the same container, say.
+				case p.Describe != "" && report != nil:
 					report(p.Step, p.Describe)
 				}
 			}

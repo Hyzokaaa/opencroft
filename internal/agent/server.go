@@ -34,6 +34,8 @@ type Server struct {
 	// bin is the runtime command, lxc or incus. The agent is the only half
 	// that knows it, because it is the only half allowed to run it.
 	bin string
+
+	turns *turns
 }
 
 func NewServer(
@@ -54,6 +56,7 @@ func NewServer(
 		version:      version,
 		defaultImage: instances.DefaultImage(),
 		bin:          bin,
+		turns:        newTurns(),
 	}
 }
 
@@ -218,7 +221,7 @@ func (s *Server) destroy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.stream(w, func(report func(int, string)) error {
+	s.streamOn(w, r, name, func(report func(int, string)) error {
 		if narrator, ok := s.instances.(reporter); ok {
 			return narrator.DeleteWithProgress(r.Context(), name, report)
 		}

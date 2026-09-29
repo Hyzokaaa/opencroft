@@ -31,7 +31,7 @@ func (s *Server) power(w http.ResponseWriter, r *http.Request, stop bool) {
 		return
 	}
 
-	s.stream(w, func(report func(int, string)) error {
+	s.streamOn(w, r, name, func(report func(int, string)) error {
 		p := s.powerPlan(name, stop)
 		for i, step := range p.Steps {
 			report(i+1, step.Describe)

@@ -755,11 +755,14 @@ func (s *Server) runDeployment(w http.ResponseWriter, r *http.Request, name stri
 		return
 	}
 
-	deployment := s.deployment(ctx, name, service)
-	steps := planner.Deploy(deployment).Steps
-	snapshot := deployEntities.SnapshotName(service.Name, deployment.At)
+	s.streamOn(w, r, name, func(report func(int, string)) error {
+		// Worked out once it is this deployment's turn: what there is to
+		// prune depends on the snapshots that exist when it runs, not when
+		// it started waiting behind another one.
+		deployment := s.deployment(ctx, name, service)
+		steps := planner.Deploy(deployment).Steps
+		snapshot := deployEntities.SnapshotName(service.Name, deployment.At)
 
-	s.stream(w, func(report func(int, string)) error {
 		for i, step := range steps {
 			report(i+1, step.Describe)
 
@@ -973,7 +976,7 @@ func (s *Server) rollback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.stream(w, func(report func(int, string)) error {
+	s.streamOn(w, r, name, func(report func(int, string)) error {
 		for i, step := range p.Steps {
 			report(i+1, step.Describe)
 			if err := host.RunStep(ctx, s.host, step); err != nil {
@@ -1176,7 +1179,7 @@ func (s *Server) destroyService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.stream(w, func(report func(int, string)) error {
+	s.streamOn(w, r, r.PathValue("name"), func(report func(int, string)) error {
 		for i, step := range p.Steps {
 			report(i+1, step.Describe)
 
