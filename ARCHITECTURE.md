@@ -501,8 +501,9 @@ probable.
 
 Adoptar es un trato con límites claros. OpenCroft **toma el ciclo de vida del código**
 —fetch, build, restart o publicación, snapshot, rollback— y **deja como estaba lo que otro
-escribió**: la unidad (con su `User=`, sus `After=`), el `.env`, la configuración de nginx.
-Es el mismo contrato que con un vhost editado a mano. Todo lo que se registra se lee del
+escribió**: la unidad (con su `User=`, sus `After=`) y la configuración de nginx. El `.env`
+solo cambia cuando se edita desde el panel, y entonces solo en las líneas que se tocaron
+(ver *El entorno vive en su archivo*). Es el mismo contrato que con un vhost editado a mano. Todo lo que se registra se lee del
 contenedor —directorio, usuario, rama, repositorio— y nunca de la petición: un navegador no
 puede declarar que algo está adoptado para elegir qué unidad reinicia croft o a quién le
 entrega los ficheros. Soltar un servicio adoptado (*Release*) olvida las anotaciones y
@@ -549,6 +550,13 @@ pueden vivir en una petición HTTP.
 
 Toda operación larga corre como `Job` en el daemon, con su progreso en streaming por SSE.
 Si cierras el navegador, el trabajo sigue.
+
+**Un trabajo a la vez por contenedor.** Dos despliegues en el mismo contenedor a la vez
+chocan: un snapshot congela el contenedor y el siguiente comando del otro falla con
+*"Instance is frozen"*; y aunque no, los dos pelearían por el lock de apt y cada uno
+fotografiaría al otro a medias. El agente da turnos por contenedor: el segundo espera, y lo
+dice en su progreso. Trabajos en contenedores distintos siguen corriendo a la vez — por eso
+separar recursos en contenedores es la forma de desplegarlos en paralelo.
 
 Cada trabajo **se escribe en SQLite al empezar y otra vez al terminar**, con su plan, lo
 que narró cada paso y el error si falló. Es lo único que el sistema no puede devolver: un
@@ -670,7 +678,6 @@ user.croft.services                        "backend client"  ← el índice
 user.croft.service.<nombre>.repo           origen
 user.croft.service.<nombre>.commit         lo desplegado ahora mismo
 user.croft.service.<nombre>.install|build|start
-user.croft.service.<nombre>.env            JSON, escrito y leído entero
 user.croft.service.<nombre>.health         ruta, código, texto esperado
 user.croft.service.<nombre>.healthy        el snapshot que pasó su comprobación
 
@@ -687,6 +694,33 @@ lista de claves la da una sola función (`Service.Record`), la misma para lo des
 lo adoptado, y la configuración **solo se registra cuando un despliegue termina bien**: un
 despliegue que falla no deja escrita la configuración que lo rompió.
 
+### El entorno vive en su archivo
+
+Las variables de un servicio están en **un solo sitio**: el archivo que lee su unidad al
+arrancar (`<path>/.env` para lo desplegado por croft, el `EnvironmentFile=` de una unidad
+adoptada) o, para un sitio, el que lee su build. No hay copia en las anotaciones — hasta la
+0.23 la había, como JSON, y se borra en el siguiente despliegue: era un segundo lugar para
+los secretos y una verdad que se separaba del archivo en cuanto alguien lo editaba.
+
+El panel es un editor de ese archivo:
+
+- **Cambia solo lo que se tocó.** Comentarios, líneas en blanco, orden, un `export` delante,
+  las comillas que alguien eligió: todo queda igual. Una variable nueva va al final.
+- **Nunca pisa otra edición.** Lo que se lee lleva el hash del archivo, y el cambio se
+  rechaza si el archivo ya no tiene exactamente eso — comprobado otra vez en el último
+  momento, ya dentro del turno del contenedor. Una edición hecha por ssh mientras el panel
+  estaba abierto no se pierde.
+- **Se escribe por base64, no con un heredoc.** El contenido es lo que el archivo ya tenía,
+  y una línea que coincidiera con el marcador de cierre del heredoc lo cortaría y ejecutaría
+  el resto como root: un servicio capaz de escribir su propio `.env` podría así ejecutar
+  cualquier cosa la próxima vez que alguien lo editara desde el panel. Escribir *dentro* del
+  archivo conserva su dueño y sus permisos; uno nuevo nace legible solo por su dueño.
+- **Se aplica como lo lee cada uno:** un proceso, reiniciando su unidad; un sitio,
+  reconstruyendo y publicando. Con snapshot antes, como todo cambio a un servicio.
+
+El primer despliegue escribe el entorno inicial que se le da. Después, un despliegue
+**nunca** lo reescribe: el archivo manda.
+
 ### Redesplegar
 
 *Redeploy* es el despliegue de todos los días: lo que el contenedor ya tiene anotado
@@ -700,7 +734,7 @@ o entorno es *Properties*, que es el mismo despliegue con el formulario delante.
 Un servicio adoptado se despliega donde ya estaba: se hace fetch del checkout existente
 (nunca se vuelve a clonar ni se vuelve shallow, con `safe.directory` solo para ese
 comando, porque suele ser de otro usuario), se construye, se le devuelven los ficheros a
-su dueño y se reinicia **su** unidad. No se escribe unidad ni `.env`.
+su dueño y se reinicia **su** unidad. Un despliegue no escribe unidad ni `.env`.
 
 Un sitio no tiene proceso propio: desplegarlo es construir y **publicar**. El build nuevo
 se copia junto al viejo, toma su dueño y sus permisos, y entra por dos `mv` — el sitio

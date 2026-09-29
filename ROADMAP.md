@@ -175,6 +175,9 @@ las recetas, y sin ella el catálogo habrían sido diez scripts a medida.
 - [x] Módulo `deploy`: origen git, servicios por contenedor, despliegue en dos planes
 - [x] Detección de runtime que propone y no decide (node, go, estático)
 - [x] Variables de entorno por servicio, escritas junto al código
+- [x] El `.env` como única fuente de verdad, editable desde el panel también en lo adoptado:
+      solo cambia lo tocado, y nunca pisa una edición hecha por ssh
+- [x] Un trabajo a la vez por contenedor; en contenedores distintos, en paralelo
 - [x] Comprobación de salud antes de dar un despliegue por terminado
 - [x] Snapshot antes de cada despliegue, con poda visible y marcado del que funcionó
 - [x] Rollback por snapshot, y commit fijado para volver sin tocar el resto

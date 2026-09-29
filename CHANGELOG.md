@@ -14,6 +14,10 @@ descargó.
 
 ## No publicado
 
+- docs: describe the environment file and the container's turn
+- feat: edit a service's environment in the file it already lives in
+- fix: wait for the container instead of colliding with another job on it
+
 ### v0.23.0 — 2026-09-27
 - docs: file v0.23.0 in the changelog
 - docs: bring the readme, architecture and roadmap up to adoption and history
