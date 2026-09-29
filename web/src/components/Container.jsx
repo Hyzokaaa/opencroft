@@ -37,7 +37,14 @@ export default function Container({
   const external = data?.external ?? []
   const sites = data?.sites ?? []
   const snapshots = data?.snapshots ?? []
-  const domains = routes.filter((r) => r.target === container.address)
+  // What reaches this container: whole domains, and prefixes of domains that
+  // send one path here while the rest goes elsewhere.
+  const domains = routes.flatMap((r) => [
+    ...(r.target === container.address ? [{ key: r.domain, domain: r.domain, ssl: r.ssl, port: r.port }] : []),
+    ...(r.paths ?? [])
+      .filter((p) => p.target === container.address)
+      .map((p) => ({ key: r.domain + p.prefix, domain: r.domain + p.prefix, ssl: r.ssl, port: p.port })),
+  ])
 
   return (
     <>
@@ -94,7 +101,7 @@ export default function Container({
         ) : (
           <ul className="divide-y divide-edge">
             {domains.map((route) => (
-              <li key={route.domain} className="flex items-center justify-between px-4 py-2.5">
+              <li key={route.key} className="flex items-center justify-between px-4 py-2.5">
                 <span className="font-mono text-xs">
                   <span className="text-muted">{route.ssl ? 'https://' : 'http://'}</span>
                   {route.domain}

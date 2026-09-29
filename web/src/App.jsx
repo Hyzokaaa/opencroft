@@ -125,6 +125,35 @@ function Dashboard({ onSignOut, onSessionLost }) {
     })
   }
 
+  // A prefix of the domain served from somewhere of its own: /api/ to a backend
+  // while the web keeps the rest. Stripping is what an app mounted behind a
+  // prefix it knows nothing about needs — /api/tickets arriving as /tickets.
+  function addPath(route) {
+    const names = (data?.instances ?? []).filter((i) => i.address).map((i) => i.name)
+    setDialog({
+      title: `Send a path of ${route.domain} elsewhere`,
+      url: `/api/hosts/local/routes/${route.domain}/paths`,
+      method: 'PUT',
+      fields: [
+        { name: 'prefix', label: 'Path', placeholder: '/api/', autoFocus: true,
+          hint: 'A prefix that starts and ends with a slash. The rest of the domain keeps going where it goes.' },
+        { name: 'target', label: 'Container', options: names },
+        { name: 'port', label: 'Port inside it', type: 'number' },
+        { name: 'strip', label: 'Take the prefix off before passing it on', type: 'checkbox',
+          hint: 'For a backend that answers /tickets, not /api/tickets.' },
+      ],
+      defaults: { prefix: '/api/', target: names[0] ?? '', port: 3000, strip: true },
+    })
+  }
+
+  function removePath(route, prefix) {
+    setDialog({
+      title: `Serve ${route.domain}${prefix} like the rest of it`,
+      url: `/api/hosts/local/routes/${route.domain}/paths?prefix=${encodeURIComponent(prefix)}`,
+      method: 'DELETE',
+    })
+  }
+
   function removeDomain(domain) {
     setDialog({
       title: `Stop serving ${domain}`,
@@ -271,6 +300,8 @@ function Dashboard({ onSignOut, onSessionLost }) {
     onRemoveDomain: removeDomain,
     onEnableTLS: enableTLS,
     onEditDomain: editDomain,
+    onAddPath: addPath,
+    onRemovePath: removePath,
     instances: data.instances,
   }
 

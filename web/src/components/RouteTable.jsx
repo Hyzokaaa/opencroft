@@ -1,7 +1,7 @@
 import Chip from './Chip.jsx'
 import { OWNERSHIP } from '../lib/vocabulary.js'
 
-export default function RouteTable({ routes, instances, problems, highlighted, onHover, onFocus, onRemoveDomain, onEnableTLS, onEditDomain, compact }) {
+export default function RouteTable({ routes, instances, problems, highlighted, onHover, onFocus, onRemoveDomain, onEnableTLS, onEditDomain, onAddPath, onRemovePath, compact }) {
   if (!routes.length) {
     return <p className="px-4 py-8 text-center text-sm text-muted">No domains routed yet.</p>
   }
@@ -44,6 +44,26 @@ export default function RouteTable({ routes, instances, problems, highlighted, o
                     <Chip label={ownership.label} tone={ownership.tone} explain={ownership.explain} />
                   )}
                 </div>
+                {/* A prefix served from somewhere of its own, under the domain
+                    it belongs to — that is where a person looks for /api/. */}
+                {(r.paths ?? []).map((p) => (
+                  <div key={p.prefix} className="mt-1 flex items-center gap-2 pl-5 text-xs">
+                    <span className="font-mono text-muted">{p.prefix}</span>
+                    <span className="text-faint">→</span>
+                    <span className="font-mono">{nameFor(p.target) ?? p.target}</span>
+                    <span className="text-faint">:{p.port}</span>
+                    {p.strip && <span className="text-faint">without {p.prefix}</span>}
+                    {!compact && r.state === 'managed' && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onRemovePath?.(r, p.prefix) }}
+                        aria-label={`Stop sending ${p.prefix} elsewhere`}
+                        className="text-faint transition hover:text-problem"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                ))}
               </td>
 
               <td className="px-4 py-2.5 text-xs">
@@ -76,6 +96,14 @@ export default function RouteTable({ routes, instances, problems, highlighted, o
                       >
                         Edit
                       </button>
+                      {r.state === 'managed' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onAddPath?.(r) }}
+                          className="rounded border border-edge px-2 py-0.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
+                        >
+                          Add path
+                        </button>
+                      )}
                       {!r.ssl && (
                         <button
                           onClick={(e) => { e.stopPropagation(); onEnableTLS?.(r.domain) }}

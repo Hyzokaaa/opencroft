@@ -33,14 +33,15 @@ type Deps struct {
 	// Instances and Host are what a write actually touches; Jobs runs the
 	// plan in the background. Simulated swaps execution for a rehearsal, so
 	// the plan screen can be shown on a machine with no runtime.
-	Instances instanceRepositories.InstanceRepository
-	Routes    routeRepositories.RouteRepository
-	AddRoute  *routeServices.AddRoute
-	EditRoute *routeServices.EditRoute
-	Host      host.Host
-	Jobs      *job.Runner
-	DNS       DNSConfig
-	Expose    any
+	Instances  instanceRepositories.InstanceRepository
+	Routes     routeRepositories.RouteRepository
+	AddRoute   *routeServices.AddRoute
+	EditRoute  *routeServices.EditRoute
+	RoutePaths *routeServices.RoutePaths
+	Host       host.Host
+	Jobs       *job.Runner
+	DNS        DNSConfig
+	Expose     any
 	// Services is the deploy side of the agent, held as any for the same
 	// reason Expose is: a host with no runtime has none, and says so.
 	Services any
@@ -93,6 +94,8 @@ func api(deps Deps) *http.ServeMux {
 
 	mux.HandleFunc("PUT /api/hosts/{hostId}/routes/{domain}", deps.editRoute)
 	mux.HandleFunc("POST /api/hosts/{hostId}/routes/{domain}/tls", deps.enableTLS)
+	mux.HandleFunc("PUT /api/hosts/{hostId}/routes/{domain}/paths", deps.setPath)
+	mux.HandleFunc("DELETE /api/hosts/{hostId}/routes/{domain}/paths", deps.removePath)
 
 	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/services", deps.listServices)
 	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/services/inspect", deps.inspectService)

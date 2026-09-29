@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/Hyzokaaa/opencroft/internal/route/domain/entities"
@@ -51,6 +52,17 @@ func (r *NginxRouteRepository) FindAll(ctx context.Context) ([]*entities.Route, 
 
 	for _, block := range scanServerBlocks(out.Stdout) {
 		target, port := upstream(block.Body)
+		paths := []entities.PathRoute{}
+		for _, loc := range proxiedLocations(block.Body) {
+			if loc.Prefix == "/" {
+				target, port = loc.Host, loc.Port
+				continue
+			}
+			paths = append(paths, entities.PathRoute{
+				Prefix: loc.Prefix, Target: loc.Host, Port: loc.Port, Strip: loc.Strip,
+			})
+		}
+		certificates := certificateDir(block.Body)
 
 		for _, domain := range serverNames(block.Body) {
 			existing, seen := merged[domain]
@@ -68,8 +80,12 @@ func (r *NginxRouteRepository) FindAll(ctx context.Context) ([]*entities.Route, 
 				existing.Target = target
 				existing.Port = port
 			}
+			if len(paths) > 0 && len(existing.Paths) == 0 {
+				existing.Paths = paths
+			}
 			if servesTLS(block.Body) {
 				existing.SSL = true
+				existing.Certificates = certificates
 			}
 		}
 	}
@@ -209,22 +225,8 @@ func render(route *entities.Route) string {
     server_name %s;
 
 %s
-    location / {
-        proxy_pass http://%s:%d;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # Anything that streams — progress while a plan runs, logs as they
-        # arrive — comes event by event or not at all. Buffering holds it all
-        # back until the work finishes, and the default read timeout would cut
-        # a quiet connection off after a minute.
-        proxy_buffering off;
-        proxy_read_timeout 3600s;
-    }
-}
-`, route.Domain, acmeChallenge, route.Target, route.Port)
+%s}
+`, route.Domain, acmeChallenge, locations(route))
 	}
 
 	return fmt.Sprintf(`server {
@@ -242,12 +244,48 @@ server {
     ssl_certificate %s/fullchain.pem;
     ssl_certificate_key %s/privkey.pem;
 
-    location / {
-        proxy_pass http://%s:%d;
+%s}
+`, route.Domain, acmeChallenge, route.Domain, route.CertDir(), route.CertDir(), locations(route))
+}
+
+// locations is the whole domain first, then each path of its own. nginx takes
+// the longest prefix that matches wherever it is written, so the order is only
+// for whoever reads the file — sorted, so the same route is always the same
+// file and its hash does not change for nothing.
+func locations(route *entities.Route) string {
+	out := location("/", route.Target, route.Port, false)
+
+	paths := append([]entities.PathRoute{}, route.Paths...)
+	sort.Slice(paths, func(a, b int) bool { return paths[a].Prefix < paths[b].Prefix })
+	for _, p := range paths {
+		out += "\n" + location(p.Prefix, p.Target, p.Port, p.Strip)
+	}
+	return out
+}
+
+// location passes one prefix on. With strip, proxy_pass carries a URI of its
+// own, "/", and nginx replaces the matched prefix with it: /api/tickets
+// reaches the backend as /tickets.
+func location(prefix, target string, port int, strip bool) string {
+	uri := ""
+	if strip {
+		uri = "/"
+	}
+
+	return fmt.Sprintf(`    location %s {
+        proxy_pass http://%s:%d%s;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+
+        # A websocket starts as HTTP and asks to switch protocol. nginx drops
+        # the two headers that ask unless it is told to pass them on, and the
+        # backend then refuses the upgrade — realtime falls back to polling,
+        # or stops. HTTP/1.1 is what can carry the switch at all.
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $http_connection;
 
         # Anything that streams — progress while a plan runs, logs as they
         # arrive — comes event by event or not at all. Buffering holds it all
@@ -256,8 +294,7 @@ server {
         proxy_buffering off;
         proxy_read_timeout 3600s;
     }
-}
-`, route.Domain, acmeChallenge, route.Domain, route.CertDir(), route.CertDir(), route.Target, route.Port)
+`, prefix, target, port, uri)
 }
 
 // WritePlan is what adding a domain does, in the order it happens. Validating

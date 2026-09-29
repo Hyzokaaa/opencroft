@@ -244,6 +244,7 @@ func (s *Server) listRoutes(w http.ResponseWriter, r *http.Request) {
 		out[i] = RouteDTO{
 			Domain: route.Domain, Target: route.Target, Port: route.Port,
 			SSL: route.SSL, State: string(route.State), File: route.File,
+			Certificates: route.Certificates, Paths: toRoutePathDTOs(route.Paths),
 		}
 	}
 
@@ -272,7 +273,13 @@ var (
 	namePattern    = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$`)
 	imagePattern   = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$`)
 	addressPattern = regexp.MustCompile(`^\d{1,3}(\.\d{1,3}){3}$`)
-	memoryPattern  = regexp.MustCompile(`^\d{1,6}(B|KB|MB|GB|TB|KiB|MiB|GiB|TiB)?$`)
+	// A prefix goes into a location line of a file nginx loads as root. It
+	// ends in a slash so /api/ cannot also swallow /apiary.
+	prefixPattern = regexp.MustCompile(`^/([A-Za-z0-9_~-][A-Za-z0-9._~-]*/)+$`)
+	// nginx reads the certificate as root, so where from is not open-ended:
+	// croft's own directory, or certbot's for a domain it set up first.
+	certificatesPattern = regexp.MustCompile(`^(/var/lib/croft/certificates|/etc/letsencrypt/live)/[A-Za-z0-9][A-Za-z0-9.-]*$`)
+	memoryPattern       = regexp.MustCompile(`^\d{1,6}(B|KB|MB|GB|TB|KiB|MiB|GiB|TiB)?$`)
 
 	// Loose on purpose: this rejects obvious mistakes, not unusual but valid
 	// names. Whether a domain resolves is a question only DNS can answer.
@@ -379,10 +386,38 @@ func (s *Server) acceptRoute(r *http.Request) (*routeEntities.Route, error) {
 	if dto.Port < 1 || dto.Port > 65535 {
 		return nil, errors.New("the port must be between 1 and 65535")
 	}
+	if dto.Certificates != "" && !certificatesPattern.MatchString(dto.Certificates) {
+		return nil, errors.New("a certificate is read from croft's own directory or certbot's, nowhere else")
+	}
+
+	paths := make([]routeEntities.PathRoute, 0, len(dto.Paths))
+	seen := map[string]bool{}
+	for _, p := range dto.Paths {
+		if !prefixPattern.MatchString(p.Prefix) || seen[p.Prefix] {
+			return nil, errors.New(p.Prefix + " is not a path croft can route")
+		}
+		if !addressPattern.MatchString(p.Target) {
+			return nil, errors.New("a path must point at an IPv4 address")
+		}
+		if p.Port < 1 || p.Port > 65535 {
+			return nil, errors.New("the port must be between 1 and 65535")
+		}
+		seen[p.Prefix] = true
+		paths = append(paths, routeEntities.PathRoute{Prefix: p.Prefix, Target: p.Target, Port: p.Port, Strip: p.Strip})
+	}
 
 	return routeEntities.NewRoute(routeEntities.RouteProps{
 		Domain: dto.Domain, Target: dto.Target, Port: dto.Port, SSL: dto.SSL,
+		Certificates: dto.Certificates, Paths: paths,
 	}), nil
+}
+
+func toRoutePathDTOs(paths []routeEntities.PathRoute) []PathDTO {
+	out := make([]PathDTO, len(paths))
+	for i, p := range paths {
+		out[i] = PathDTO{Prefix: p.Prefix, Target: p.Target, Port: p.Port, Strip: p.Strip}
+	}
+	return out
 }
 
 func (s *Server) planRoute(w http.ResponseWriter, r *http.Request) {

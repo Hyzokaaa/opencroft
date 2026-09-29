@@ -42,6 +42,7 @@ func (s *Server) tlsRouteFor(ctx context.Context, domain string) (*routeEntities
 		Target: existing.Target,
 		Port:   existing.Port,
 		SSL:    true,
+		Paths:  existing.Paths,
 		State:  routeEnums.StateManaged,
 	}), nil
 }

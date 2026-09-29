@@ -109,21 +109,80 @@ func upstream(body string) (string, int) {
 		return "", 0
 	}
 
-	target := m[1]
+	return hostPort(m[1])
+}
+
+func servesTLS(body string) bool {
+	return sslCertDirective.MatchString(body)
+}
+
+var certificateLine = regexp.MustCompile(`(?m)^\s*ssl_certificate\s+(\S+)/fullchain\.pem\s*;`)
+
+// certificateDir is where a block reads its certificate from, when it is laid
+// out the way croft's template expects: fullchain.pem and privkey.pem side by
+// side, as certbot and croft both leave them. Empty when it is not.
+func certificateDir(body string) string {
+	m := certificateLine.FindStringSubmatch(body)
+	if m == nil {
+		return ""
+	}
+	return m[1]
+}
+
+var (
+	locationOpener = regexp.MustCompile(`^location\s+(\S+)\s*\{`)
+	proxyPassLine  = regexp.MustCompile(`^proxy_pass\s+https?://([^;/\s]+)(\S*?)\s*;`)
+)
+
+// proxied is one location of a server block and where it passes requests.
+type proxied struct {
+	Prefix string
+	Host   string
+	Port   int
+	Strip  bool
+}
+
+// proxiedLocations reads the locations of a server block that pass requests
+// on, with where to. A location that serves files — the ACME challenge — has
+// no proxy_pass and is not one of them.
+func proxiedLocations(body string) []proxied {
+	found := []proxied{}
+	depth, prefix := 0, ""
+
+	for _, line := range strings.Split(body, "\n") {
+		code, _, _ := strings.Cut(strings.TrimSpace(line), "#")
+		code = strings.TrimSpace(code)
+
+		if depth == 1 {
+			if m := locationOpener.FindStringSubmatch(code); m != nil {
+				prefix = m[1]
+			}
+		}
+		if prefix != "" {
+			if m := proxyPassLine.FindStringSubmatch(code); m != nil {
+				host, port := hostPort(m[1])
+				found = append(found, proxied{Prefix: prefix, Host: host, Port: port, Strip: m[2] == "/"})
+			}
+		}
+
+		depth += strings.Count(code, "{") - strings.Count(code, "}")
+		if depth <= 1 {
+			prefix = ""
+		}
+	}
+	return found
+}
+
+func hostPort(target string) (string, int) {
 	host, port, found := strings.Cut(target, ":")
 	if !found {
 		return host, 80
 	}
-
 	number, err := strconv.Atoi(port)
 	if err != nil {
 		return host, 80
 	}
 	return host, number
-}
-
-func servesTLS(body string) bool {
-	return sslCertDirective.MatchString(body)
 }
 
 var rootDirective = regexp.MustCompile(`(?m)^\s*root\s+([^;\s]+)\s*;`)

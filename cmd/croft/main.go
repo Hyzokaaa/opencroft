@@ -234,6 +234,7 @@ func serve(ctx context.Context, args []string) {
 		Routes:          d.routes,
 		AddRoute:        routeServices.NewAddRoute(d.routes, d.instances),
 		EditRoute:       routeServices.NewEditRoute(d.routes, d.instances),
+		RoutePaths:      routeServices.NewRoutePaths(d.routes, d.instances),
 		Host:            host.NewLocal(),
 		Jobs:            jobs,
 		DNS:             d.dns,

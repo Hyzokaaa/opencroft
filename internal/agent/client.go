@@ -195,8 +195,13 @@ func (c *Client) Routes(ctx context.Context) ([]*routeEntities.Route, error) {
 
 	out := make([]*routeEntities.Route, 0, len(dtos))
 	for _, dto := range dtos {
+		paths := make([]routeEntities.PathRoute, len(dto.Paths))
+		for i, p := range dto.Paths {
+			paths[i] = routeEntities.PathRoute{Prefix: p.Prefix, Target: p.Target, Port: p.Port, Strip: p.Strip}
+		}
 		out = append(out, routeEntities.NewRoute(routeEntities.RouteProps{
 			Domain: dto.Domain, Target: dto.Target, Port: dto.Port, SSL: dto.SSL,
+			Certificates: dto.Certificates, Paths: paths,
 			State: routeEnums.ManagedState(dto.State), File: dto.File,
 		}))
 	}
@@ -267,6 +272,7 @@ func toRouteDTO(route *routeEntities.Route) RouteDTO {
 	return RouteDTO{
 		Domain: route.Domain, Target: route.Target, Port: route.Port,
 		SSL: route.SSL, State: string(route.State), File: route.File,
+		Certificates: route.Certificates, Paths: toRoutePathDTOs(route.Paths),
 	}
 }
 

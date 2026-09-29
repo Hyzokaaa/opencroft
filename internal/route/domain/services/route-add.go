@@ -59,7 +59,7 @@ func (s *AddRoute) Prepare(ctx context.Context, props AddRouteProps) (*entities.
 		return nil, plan.Plan{}, fmt.Errorf("%w: %s", ErrDomainTaken, existing.File)
 	}
 
-	target, err := s.target(ctx, props.Target)
+	target, err := containerNamed(ctx, s.instances, props.Target)
 	if err != nil {
 		return nil, plan.Plan{}, err
 	}
@@ -93,8 +93,10 @@ func (s *AddRoute) Execute(ctx context.Context, props AddRouteProps) (*entities.
 	return route, nil
 }
 
-func (s *AddRoute) target(ctx context.Context, name string) (*instanceEntities.Instance, error) {
-	found, err := s.instances.FindByName(ctx, name)
+// containerNamed is the container a route points at, which has to exist and
+// have an address to point at.
+func containerNamed(ctx context.Context, instances instanceRepositories.InstanceRepository, name string) (*instanceEntities.Instance, error) {
+	found, err := instances.FindByName(ctx, name)
 	if err != nil {
 		return nil, err
 	}

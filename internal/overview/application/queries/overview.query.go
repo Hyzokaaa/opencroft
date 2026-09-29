@@ -39,13 +39,21 @@ type CertificateView struct {
 }
 
 type RouteView struct {
-	Domain  string `json:"domain"`
-	Target  string `json:"target"`
-	Port    int    `json:"port"`
-	SSL     bool   `json:"ssl"`
-	State   string `json:"state"`
-	File    string `json:"file"`
-	Answers bool   `json:"answers"`
+	Domain  string     `json:"domain"`
+	Target  string     `json:"target"`
+	Port    int        `json:"port"`
+	SSL     bool       `json:"ssl"`
+	Paths   []PathView `json:"paths"`
+	State   string     `json:"state"`
+	File    string     `json:"file"`
+	Answers bool       `json:"answers"`
+}
+
+type PathView struct {
+	Prefix string `json:"prefix"`
+	Target string `json:"target"`
+	Port   int    `json:"port"`
+	Strip  bool   `json:"strip"`
 }
 
 type OverviewResponse struct {
@@ -135,9 +143,13 @@ func (q *OverviewQuery) Execute(ctx context.Context) (OverviewResponse, error) {
 	}
 
 	for _, r := range routes {
+		paths := make([]PathView, len(r.Paths))
+		for i, p := range r.Paths {
+			paths[i] = PathView{Prefix: p.Prefix, Target: p.Target, Port: p.Port, Strip: p.Strip}
+		}
 		response.Routes = append(response.Routes, RouteView{
 			Domain: r.Domain, Target: r.Target, Port: r.Port,
-			SSL: r.SSL, State: string(r.State), File: r.File,
+			SSL: r.SSL, Paths: paths, State: string(r.State), File: r.File,
 			Answers: answersOf(r),
 		})
 	}

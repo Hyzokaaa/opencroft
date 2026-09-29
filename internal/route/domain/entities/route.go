@@ -2,7 +2,8 @@ package entities
 
 import "github.com/Hyzokaaa/opencroft/internal/route/domain/enums"
 
-// Route maps a domain to a container address and port.
+// Route maps a domain to a container address and port — and, optionally, some
+// of its paths somewhere else.
 type Route struct {
 	Domain string
 	Target string
@@ -10,12 +11,26 @@ type Route struct {
 	SSL    bool
 	// Certificates overrides where the certificate is read from.
 	Certificates string
-	State        enums.ManagedState
-	File         string
-	Content      string
+	// Paths send a prefix of the domain elsewhere: /api/ to a backend while
+	// the rest goes to the web. The longest prefix that matches wins, which is
+	// how nginx itself decides.
+	Paths   []PathRoute
+	State   enums.ManagedState
+	File    string
+	Content string
 
 	// nil when nobody checked whether anything is listening.
 	answers *bool
+}
+
+// PathRoute is one prefix of a domain, served from somewhere of its own.
+type PathRoute struct {
+	Prefix string
+	Target string
+	Port   int
+	// Strip takes the prefix off before passing the request on, for a backend
+	// that answers /tickets and knows nothing of being mounted under /api/.
+	Strip bool
 }
 
 type RouteProps struct {
@@ -24,6 +39,7 @@ type RouteProps struct {
 	Port         int
 	SSL          bool
 	Certificates string
+	Paths        []PathRoute
 	State        enums.ManagedState
 	File         string
 	Content      string
@@ -36,10 +52,46 @@ func NewRoute(props RouteProps) *Route {
 		Port:         props.Port,
 		SSL:          props.SSL,
 		Certificates: props.Certificates,
+		Paths:        props.Paths,
 		State:        props.State,
 		File:         props.File,
 		Content:      props.Content,
 	}
+}
+
+// WithPath is the route with prefix served from p, replacing whatever that
+// prefix pointed at before.
+func (r *Route) WithPath(p PathRoute) *Route {
+	next := *r
+	next.Paths = []PathRoute{}
+	for _, existing := range r.Paths {
+		if existing.Prefix != p.Prefix {
+			next.Paths = append(next.Paths, existing)
+		}
+	}
+	next.Paths = append(next.Paths, p)
+	return &next
+}
+
+// WithoutPath is the route with prefix served like the rest of the domain.
+func (r *Route) WithoutPath(prefix string) *Route {
+	next := *r
+	next.Paths = []PathRoute{}
+	for _, existing := range r.Paths {
+		if existing.Prefix != prefix {
+			next.Paths = append(next.Paths, existing)
+		}
+	}
+	return &next
+}
+
+func (r *Route) Path(prefix string) (PathRoute, bool) {
+	for _, p := range r.Paths {
+		if p.Prefix == prefix {
+			return p, true
+		}
+	}
+	return PathRoute{}, false
 }
 
 // Editable reports whether we may rewrite this file without asking.

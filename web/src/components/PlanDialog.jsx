@@ -249,7 +249,21 @@ function Form({ fields, values, onChange, error, onSubmit }) {
       }}
       className="space-y-3"
     >
-      {fields.map((field) => (
+      {fields.map((field) =>
+        field.type === 'checkbox' ? (
+          <label key={field.name} className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              checked={Boolean(values[field.name])}
+              onChange={(e) => onChange({ ...values, [field.name]: e.target.checked })}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="block text-xs">{field.label}</span>
+              {field.hint && <span className="block text-xs text-faint">{field.hint}</span>}
+            </span>
+          </label>
+        ) : (
         <label key={field.name} className="block">
           <span className="mb-1 block text-xs text-muted">{field.label}</span>
           {field.options ? (
@@ -281,7 +295,8 @@ function Form({ fields, values, onChange, error, onSubmit }) {
           )}
           {field.hint && <span className="mt-1 block text-xs text-faint">{field.hint}</span>}
         </label>
-      ))}
+        ),
+      )}
 
       {error && (
         <p className="rounded border border-problem/30 bg-problem/[0.06] px-3 py-2 text-xs text-problem">

@@ -40,10 +40,21 @@ type RouteDTO struct {
 	Target string `json:"target"`
 	Port   int    `json:"port"`
 	SSL    bool   `json:"ssl"`
-	State  string `json:"state"`
-	File   string `json:"file"`
+	// Certificates is where the certificate is read from when it is not
+	// croft's own — certbot's, for a domain taken over from a vhost it set up.
+	Certificates string    `json:"certificates,omitempty"`
+	Paths        []PathDTO `json:"paths,omitempty"`
+	State        string    `json:"state"`
+	File         string    `json:"file"`
 	// Answers is false when nothing accepts a connection at Target:Port.
 	Answers bool `json:"answers"`
+}
+
+type PathDTO struct {
+	Prefix string `json:"prefix"`
+	Target string `json:"target"`
+	Port   int    `json:"port"`
+	Strip  bool   `json:"strip"`
 }
 
 type PlanResponse struct {

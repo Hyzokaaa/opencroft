@@ -34,7 +34,8 @@ func NewEditRoute(routes repositories.RouteRepository, instances instanceReposit
 
 // Prepare keeps everything the route already had except what is being
 // changed. TLS in particular survives an edit: a domain that was on https
-// stays on https, pointed somewhere else.
+// stays on https, pointed somewhere else, with the same certificate — and its
+// paths stay where they were.
 func (s *EditRoute) Prepare(ctx context.Context, props EditRouteProps) (*entities.Route, plan.Plan, error) {
 	existing, err := s.routes.FindByDomain(ctx, props.Domain)
 	if err != nil {
@@ -79,11 +80,13 @@ func (s *EditRoute) Prepare(ctx context.Context, props EditRouteProps) (*entitie
 	}
 
 	route := entities.NewRoute(entities.RouteProps{
-		Domain: props.Domain,
-		Target: target,
-		Port:   port,
-		SSL:    existing.SSL,
-		State:  enums.StateManaged,
+		Domain:       props.Domain,
+		Target:       target,
+		Port:         port,
+		SSL:          existing.SSL,
+		Certificates: existing.Certificates,
+		Paths:        existing.Paths,
+		State:        enums.StateManaged,
 	})
 
 	return route, s.routes.WritePlan(route), nil

@@ -69,9 +69,10 @@ func (d Deps) editRoute(w http.ResponseWriter, r *http.Request) {
 
 func editStatusFor(err error) int {
 	switch {
-	case errors.Is(err, routeServices.ErrRouteUnknown), errors.Is(err, routeServices.ErrTargetUnknown):
+	case errors.Is(err, routeServices.ErrRouteUnknown), errors.Is(err, routeServices.ErrTargetUnknown),
+		errors.Is(err, routeServices.ErrPathUnknown):
 		return http.StatusNotFound
-	case errors.Is(err, routeServices.ErrRouteForeign):
+	case errors.Is(err, routeServices.ErrRouteForeign), errors.Is(err, routeServices.ErrRouteAdopted):
 		return http.StatusForbidden
 	default:
 		return http.StatusBadRequest
