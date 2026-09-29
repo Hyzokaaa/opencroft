@@ -14,6 +14,11 @@ descargó.
 
 ## No publicado
 
+### v0.24.1 — 2026-09-29
+- docs: file v0.24.1 in the changelog
+- fix: answer the certificate challenge instead of redirecting it
+- fix: keep a new variable's row and show the text view plainly
+
 ### v0.24.0 — 2026-09-29
 - docs: file v0.24.0 in the changelog
 - docs: describe paths, websockets and taking over a vhost
