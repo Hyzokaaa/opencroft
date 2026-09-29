@@ -14,6 +14,11 @@ descargó.
 
 ## No publicado
 
+### v0.24.0 — 2026-09-29
+- docs: file v0.24.0 in the changelog
+- docs: describe paths, websockets and taking over a vhost
+- feat: take over a domain whose vhost was written by hand
+- feat: send a path of a domain somewhere of its own, with websockets passed through
 - docs: describe the environment file and the container's turn
 - feat: edit a service's environment in the file it already lives in
 - fix: wait for the container instead of colliding with another job on it
