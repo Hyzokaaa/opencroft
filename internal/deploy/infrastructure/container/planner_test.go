@@ -1,6 +1,7 @@
 package container
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 	"time"
@@ -190,16 +191,43 @@ func TestEachServiceGetsItsOwnUnitAndPath(t *testing.T) {
 }
 
 func TestTheEnvironmentIsWrittenBesideTheCodeAndKeptPrivate(t *testing.T) {
-	body := text(deploy(t, withEnv(nodeService())))
+	var write plan.Step
+	for _, step := range deploy(t, withEnv(nodeService())).Steps {
+		if strings.Contains(step.Shell(), "base64 -d > /srv/backend/.env") {
+			write = step
+		}
+	}
+	if write.Describe == "" {
+		t.Fatal("the environment file is not written beside the code")
+	}
 
-	if !strings.Contains(body, "/srv/backend/.env") {
-		t.Error("the environment file is not beside the code")
+	encoded := strings.SplitN(strings.SplitN(write.Shell(), "printf %s '", 2)[1], "'", 2)[0]
+	decoded, _ := base64.StdEncoding.DecodeString(encoded)
+	if !strings.Contains(string(decoded), "JWT_SECRET=s3cret") {
+		t.Errorf("the variables are not written: %q", decoded)
 	}
-	if !strings.Contains(body, "JWT_SECRET=s3cret") {
-		t.Error("the variables are not written")
+	if !strings.Contains(write.Shell(), "umask 077") {
+		t.Error("a new file holding the secrets would be readable by others")
 	}
-	if !strings.Contains(body, "chmod 600") {
-		t.Error("the file holding the secrets is left world-readable")
+	if !write.Secret {
+		t.Error("the step carrying the secrets would be written into the history")
+	}
+}
+
+// Whatever the file holds is written back byte for byte, however it looks — a
+// line that reads like the end of a heredoc included. In a heredoc, that line
+// would end the file and run the rest as root.
+func TestNothingInTheFileCanEndItEarly(t *testing.T) {
+	hostile := "PORT=3000\nCROFT_ENV\nEOF\n'; rm -rf / #\n"
+	step := planner().WriteEnvironment(nodeService(), "/srv/backend/.env", hostile, 1)
+
+	encoded := strings.SplitN(strings.SplitN(step.Shell(), "printf %s '", 2)[1], "'", 2)[0]
+	decoded, _ := base64.StdEncoding.DecodeString(encoded)
+	if string(decoded) != hostile {
+		t.Errorf("written as %q", decoded)
+	}
+	if strings.Contains(step.Shell(), "rm -rf") {
+		t.Errorf("the content reaches the shell as it is:\n%s", step.Shell())
 	}
 }
 
@@ -216,8 +244,26 @@ func TestTheEnvironmentFileIsStable(t *testing.T) {
 }
 
 func TestNoEnvironmentMeansNoStepAtAll(t *testing.T) {
-	if strings.Contains(text(deploy(t, nodeService())), ".env <<") {
+	if strings.Contains(text(deploy(t, nodeService())), "base64 -d") {
 		t.Error("an empty environment file would be written for no reason")
+	}
+}
+
+// A changed environment takes effect the way that service reads it: a process
+// at start, a site's build when it is built.
+func TestAChangedEnvironmentTakesEffect(t *testing.T) {
+	process := text(planner().ChangeEnvironment(nodeService(), "/srv/backend/.env", "PORT=1\n", 1, when(1)))
+	if !strings.Contains(process, "systemctl restart croft-backend") {
+		t.Errorf("the process is never restarted:\n%s", process)
+	}
+
+	site := text(planner().ChangeEnvironment(adoptedSite(), "/opt/open-helpdesk/client/.env", "VITE_X=1\n", 1, when(1)))
+	if strings.Contains(site, "systemctl") || !strings.Contains(site, "npm run build") ||
+		!strings.Contains(site, "/var/www/openhelpdesk.croft-new") {
+		t.Errorf("the site is not rebuilt and published:\n%s", site)
+	}
+	if !strings.Contains(site, "snapshot") {
+		t.Error("no way back from a variable deleted by mistake")
 	}
 }
 

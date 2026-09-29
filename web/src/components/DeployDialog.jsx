@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import PlanDialog from './PlanDialog.jsx'
-import EnvEditor, { toObject, fromObject } from './EnvEditor.jsx'
+import EnvEditor, { toObject } from './EnvEditor.jsx'
 
 // Deploying is two plans, not one, because you cannot know how to build code
 // you have not seen. First: "I am going to look at the repository" — the git
@@ -126,6 +126,7 @@ export default function DeployDialog({ container, service: deployed, onClose, on
           onDeploy={() => setStage('deploying')}
           onEditSource={deployed ? () => setStage('source') : null}
           adopted={deployed?.adopted}
+          existing={Boolean(deployed)}
         />
       )}
     </Frame>
@@ -147,7 +148,7 @@ function remembered(deployed) {
     runtime: deployed.runtime ?? '',
     port: deployed.port ?? 0,
     packages: (deployed.packages ?? []).join(' '),
-    env: fromObject(deployed.env),
+    env: '',
     health: deployed.health?.path ?? '',
     contains: deployed.health?.contains ?? '',
   }
@@ -231,7 +232,7 @@ function Source({ value, name, onChange, error, onSubmit }) {
 
 // Everything here is editable on purpose. What was detected is a suggestion,
 // and a suggestion you cannot change is a decision made behind your back.
-function Found({ service, why, onChange, onDeploy, onEditSource, adopted }) {
+function Found({ service, why, onChange, onDeploy, onEditSource, adopted, existing }) {
   const set = (key) => (v) => onChange({ ...service, [key]: v })
   const runnable = Boolean(adopted) || Boolean(service.start?.trim())
 
@@ -297,7 +298,16 @@ function Found({ service, why, onChange, onDeploy, onEditSource, adopted }) {
             hint="git and curl are always installed." />
         </div>
 
-        {!adopted && <EnvEditor value={service.env} onChange={set('env')} />}
+        {/* Once a service exists its environment is its file, edited from
+            Environment… and never written over by a deployment. Only the
+            first deployment is given one here. */}
+        {existing ? (
+          <p className="text-xs text-faint">
+            The environment is its own file now — change it from Environment&hellip; on the service.
+          </p>
+        ) : (
+          <EnvEditor value={service.env} onChange={set('env')} />
+        )}
 
         {/* Nothing reports readiness, so without somewhere to ask, a
             deployment is finished when the unit is up — which is a weaker

@@ -78,10 +78,9 @@ func TestTheAgentRefusesDangerousServiceFields(t *testing.T) {
 // the rest to be run.
 func TestTheEnvironmentCannotEscapeItsFile(t *testing.T) {
 	cases := map[string]map[string]string{
-		"a value spanning lines":   {"TOKEN": "a\nrm -rf /"},
-		"a value carrying the end": {"TOKEN": "x\nCROFT_ENV\nid"},
-		"a key that is not one":    {"TOKEN=x; id": "y"},
-		"a key with a space":       {"MY TOKEN": "y"},
+		"a value spanning lines": {"TOKEN": "a\nrm -rf /"},
+		"a key that is not one":  {"TOKEN=x; id": "y"},
+		"a key with a space":     {"MY TOKEN": "y"},
 	}
 
 	for name, env := range cases {
@@ -380,8 +379,10 @@ func TestAUnitNameCannotCarryAnythingElse(t *testing.T) {
 }
 
 // A redeploy is what the container already records, with nothing asked and
-// nothing sent — including its environment. It follows the branch: the commit
-// on record says what was deployed last time, not what to deploy now.
+// nothing sent. It follows the branch: the commit on record says what was
+// deployed last time, not what to deploy now. And it leaves the environment
+// file alone — a copy of the variables kept by a version before 0.24 is not
+// written back over what the file says now.
 func TestARedeployIsWhatTheContainerRecords(t *testing.T) {
 	server, _ := testServer()
 	ctx := context.Background()
@@ -413,13 +414,16 @@ func TestARedeployIsWhatTheContainerRecords(t *testing.T) {
 		body += step.Shell() + "\n"
 	}
 
-	for _, wanted := range []string{"origin dev", "reset --hard FETCH_HEAD", "node dist/main", "JWT_SECRET=s3cret", "npm ci"} {
+	for _, wanted := range []string{"origin dev", "reset --hard FETCH_HEAD", "node dist/main", "npm ci"} {
 		if !strings.Contains(body, wanted) {
 			t.Errorf("the redeploy lacks %q:\n%s", wanted, body)
 		}
 	}
 	if strings.Contains(body, "2a7851e") {
 		t.Errorf("the redeploy goes back to the recorded commit instead of the branch:\n%s", body)
+	}
+	if strings.Contains(body, "base64 -d > /srv/backend/.env") {
+		t.Errorf("the redeploy writes the environment over its file:\n%s", body)
 	}
 }
 

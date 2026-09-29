@@ -219,9 +219,9 @@ func (dto ServiceDTO) entity() (*deployEntities.Service, error) {
 	}), nil
 }
 
-// environment is checked hard because it is written into a file that a shell
-// reads. A key that is not a key, or a value spanning lines, would end the
-// heredoc early and leave the rest as commands.
+// environment is checked because it becomes lines of a file that systemd and
+// dotenv readers parse one per line: a key that is not a key, or a value that
+// spans lines, would turn into something else when read back.
 func environment(env map[string]string) (map[string]string, error) {
 	out := map[string]string{}
 
@@ -231,9 +231,6 @@ func environment(env map[string]string) (map[string]string, error) {
 		}
 		if strings.ContainsAny(value, "\n\r\x00") {
 			return nil, errors.New(key + " has a value spanning several lines")
-		}
-		if strings.Contains(value, "CROFT_ENV") {
-			return nil, errors.New(key + " contains the marker that ends the file")
 		}
 		out[key] = value
 	}
@@ -296,26 +293,20 @@ func commands(joined string) []string {
 	return out
 }
 
-// The environment is stored as JSON in one annotation rather than one
-// annotation per variable: it is written and read as a whole, and a partial
-// write would leave a service with half its configuration.
-func decodeEnv(stored string) map[string]string {
-	if strings.TrimSpace(stored) == "" {
-		return nil
-	}
-	env := map[string]string{}
-	if err := json.Unmarshal([]byte(stored), &env); err != nil {
-		return nil
-	}
-	return env
-}
-
 // remember writes the deployment onto the container.
+//
+// Versions before 0.24 also kept a copy of the environment here, as JSON. The
+// file is the truth now, so that copy is dropped on the way: it is a second
+// place for secrets to sit, and it would drift from the file the first time
+// somebody edited it.
 func (s *Server) remember(ctx context.Context, container string, service *deployEntities.Service) error {
 	for key, value := range service.Record() {
 		if err := s.instances.Annotate(ctx, container, annotation(service.Name, key), value); err != nil {
 			return err
 		}
+	}
+	if err := s.instances.Annotate(ctx, container, annotation(service.Name, "env"), ""); err != nil {
+		return err
 	}
 	return s.enrol(ctx, container, service.Name)
 }
@@ -335,18 +326,24 @@ func adoptionFrom(config map[string]string, service string) *deployEntities.Adop
 	}
 }
 
-// adopted carries a stored adoption onto a service built from a request. What
-// adoption fixes — where the code lives and whose environment it runs with —
-// comes from the record too, whatever the request said.
-func (s *Server) adopted(ctx context.Context, container string, service *deployEntities.Service) error {
+// known carries onto a service built from a request what the container already
+// says about it, whatever the request said.
+//
+// A service that already exists keeps its environment in its file, changed
+// only through that file's editor — so a deployment of it never writes one,
+// and cannot put back values somebody changed since. An adopted one also keeps
+// where its code lives and how it runs.
+func (s *Server) known(ctx context.Context, container string, service *deployEntities.Service) error {
 	config, err := s.instances.Annotations(ctx, container)
 	if err != nil {
 		return err
 	}
+	if contains(stored(config), service.Name) {
+		service.Env = nil
+	}
 	service.Adopted = adoptionFrom(config, service.Name)
 	if service.Adopted != nil {
 		service.Path = config[full(service.Name, "path")]
-		service.Env = nil
 	}
 	return nil
 }
@@ -442,7 +439,7 @@ func (s *Server) acceptService(r *http.Request) (string, *deployEntities.Service
 	if err != nil {
 		return "", nil, err
 	}
-	if err := s.adopted(r.Context(), name, service); err != nil {
+	if err := s.known(r.Context(), name, service); err != nil {
 		return "", nil, err
 	}
 	return name, service, nil
@@ -1060,7 +1057,6 @@ func fromConfig(config map[string]string, name string) ServiceDTO {
 		Install:  commands(read("install")),
 		Build:    commands(read("build")),
 		Packages: strings.Fields(read("packages")),
-		Env:      decodeEnv(read("env")),
 		Health: HealthDTO{
 			Path: read("health"), Status: status, Contains: read("health-contains"),
 		},

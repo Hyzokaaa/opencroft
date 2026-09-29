@@ -5,7 +5,7 @@ import { useState } from 'react'
 // Built the other way round, pasting a .env from somewhere else stops working
 // — and everybody pastes. So parsing happens on the way to the table and the
 // text is what gets stored.
-export default function EnvEditor({ value, onChange }) {
+export default function EnvEditor({ value, onChange, note }) {
   const [asTable, setAsTable] = useState(true)
   const [revealed, setRevealed] = useState(() => new Set())
 
@@ -107,8 +107,12 @@ export default function EnvEditor({ value, onChange }) {
       )}
 
       <p className="mt-1 text-xs text-faint">
-        Written to <code>.env</code> beside the code, readable only by its owner, and read by the
-        unit at start.
+        {note ?? (
+          <>
+            Written to <code>.env</code> beside the code, readable only by its owner, and read by
+            the unit at start. After this first deployment, change it from Environment&hellip;
+          </>
+        )}
       </p>
     </div>
   )

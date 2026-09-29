@@ -66,6 +66,18 @@ func (f *fakeDeployer) DestroyPlan(context.Context, string, string) (plan.Plan, 
 }
 func (f *fakeDeployer) Destroy(context.Context, string, string, func(int, string)) error { return nil }
 
+func (f *fakeDeployer) Environment(_ context.Context, container, service string) (agent.EnvironmentDTO, error) {
+	f.record("read env %s/%s", container, service)
+	return agent.EnvironmentDTO{File: "/srv/" + service + "/.env", Hash: "h1"}, nil
+}
+func (f *fakeDeployer) EnvironmentPlan(_ context.Context, container, service string, change agent.EnvChangeDTO) (plan.Plan, error) {
+	f.record("plan env %s/%s from %s", container, service, change.Hash)
+	return onePlan(), nil
+}
+func (f *fakeDeployer) ChangeEnvironment(_ context.Context, container, service string, change agent.EnvChangeDTO, _ func(int, string)) error {
+	f.record("run env %s/%s from %s", container, service, change.Hash)
+	return nil
+}
 func (f *fakeDeployer) RedeployPlan(_ context.Context, container, service string) (plan.Plan, error) {
 	f.record("plan redeploy %s/%s", container, service)
 	return onePlan(), nil
@@ -323,5 +335,39 @@ func TestTheHistorySaysWhichDeploymentFailedAndWhy(t *testing.T) {
 	}
 	if got := outcome["helpdesk/broken"]; got.Status != job.StatusFailed || !strings.Contains(got.Error, "Build") {
 		t.Errorf("the one that failed reads %+v", got)
+	}
+}
+
+// A change to the environment travels with the hash of the file it was edited
+// from, all the way to the agent — which is the one that can tell whether the
+// file still holds it.
+func TestAnEnvironmentChangeReachesTheAgentWithItsHash(t *testing.T) {
+	handler, fake, jobs := testAPI()
+	base := "/api/hosts/local/instances/helpdesk/services/web/env"
+
+	if code := request(t, handler, http.MethodGet, base).Code; code != http.StatusOK {
+		t.Fatalf("reading was answered with %d", code)
+	}
+
+	post := func(path string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, path,
+			strings.NewReader(`{"hash":"h1","vars":{"PORT":"3000"}}`)))
+		return recorder
+	}
+	if code := post(base + "?plan=1").Code; code != http.StatusOK {
+		t.Fatalf("planning was answered with %d", code)
+	}
+	started := post(base)
+	var body struct {
+		JobId string `json:"jobId"`
+	}
+	_ = json.Unmarshal(started.Body.Bytes(), &body)
+	finished(t, jobs, body.JobId)
+
+	for _, call := range []string{"read env helpdesk/web", "plan env helpdesk/web from h1", "run env helpdesk/web from h1"} {
+		if !fake.was(call) {
+			t.Errorf("never asked: %s (asked %v)", call, fake.asked)
+		}
 	}
 }

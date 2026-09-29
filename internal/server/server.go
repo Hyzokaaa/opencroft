@@ -101,6 +101,8 @@ func api(deps Deps) *http.ServeMux {
 	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/services/{service}/logs", deps.showServiceLogs)
 	mux.HandleFunc("DELETE /api/hosts/{hostId}/instances/{name}/services/{service}", deps.destroyService)
 	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/services/{service}/redeploy", deps.redeployService)
+	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/services/{service}/env", deps.showEnvironment)
+	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/services/{service}/env", deps.changeEnvironment)
 	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/units/{unit}/logs", deps.showUnitLogs)
 	for kind, key := range map[agent.Adoptable]string{agent.AdoptUnit: "{unit}", agent.AdoptSite: "{site}"} {
 		base := "/api/hosts/{hostId}/instances/{name}/" + string(kind) + "/" + key

@@ -23,6 +23,7 @@ export default function Container({
   onDestroy,
   onPowerService,
   onRedeploy,
+  onEnvironment,
   onPowerUnit,
   onAdopt,
   onAddDomain,
@@ -126,6 +127,7 @@ export default function Container({
                     onLogs={() => setLogs({ name: service.name, kind: 'service' })}
                     onDeploy={() => onDeploy(container, service)}
                     onRedeploy={() => onRedeploy(container, service)}
+                    onEnvironment={() => onEnvironment(container, service)}
                     onDestroy={() => onDestroy(container, service)}
                     onPower={(action) => onPowerService(container, service, action)}
                   />
@@ -381,9 +383,11 @@ const SECONDARY =
 // State comes from the machine, not from what we recorded. A service croft
 // deployed and that then died must look dead here — and in more than one
 // colour, because colour alone reaches nobody who cannot see it.
-function Service({ service, onLogs, onDeploy, onRedeploy, onDestroy, onPower }) {
+function Service({ service, onLogs, onDeploy, onRedeploy, onEnvironment, onDestroy, onPower }) {
   const running = service.state === 'active'
   const site = service.adopted?.site
+  // An adopted unit that reads no environment file has none to edit.
+  const environment = !service.adopted || site || service.adopted.envFile
 
   return (
     <li className={`relative px-4 py-3 ${running ? '' : 'bg-problem/[0.04]'}`}>
@@ -476,6 +480,11 @@ function Service({ service, onLogs, onDeploy, onRedeploy, onDestroy, onPower }) 
           <button onClick={onRedeploy} className={SECONDARY}>
             Redeploy
           </button>
+          {environment && (
+            <button onClick={onEnvironment} className={SECONDARY}>
+              Environment&hellip;
+            </button>
+          )}
           <button onClick={onDeploy} className={SECONDARY}>
             Properties&hellip;
           </button>

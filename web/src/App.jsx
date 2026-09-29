@@ -11,6 +11,7 @@ import Login from './components/Login.jsx'
 import PlanDialog from './components/PlanDialog.jsx'
 import DeployDialog from './components/DeployDialog.jsx'
 import AdoptDialog from './components/AdoptDialog.jsx'
+import EnvDialog from './components/EnvDialog.jsx'
 import Activity from './components/Activity.jsx'
 import Container from './components/Container.jsx'
 import { useOverview, useCommandMode, useAuth } from './lib/useOverview.js'
@@ -47,6 +48,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
   const [dialog, setDialog] = useState(null)
   const [deploying, setDeploying] = useState(null)
   const [adopting, setAdopting] = useState(null)
+  const [environment, setEnvironment] = useState(null)
   const [opened, setOpened] = useState(null)
 
   // Subjects named by a problem, so the tables carry the same severity the
@@ -314,6 +316,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
           onDestroy={destroyService}
           onPowerService={powerService}
           onRedeploy={redeploy}
+          onEnvironment={(container, service) => setEnvironment({ container, service })}
           onPowerUnit={powerUnit}
           onAdopt={(container, subject) => setAdopting({ container, subject })}
           onAddDomain={addDomain}
@@ -406,6 +409,15 @@ function Dashboard({ onSignOut, onSessionLost }) {
           container={deploying.container}
           service={deploying.service}
           onClose={() => { setDeploying(null); reload() }}
+          onFinished={reload}
+        />
+      )}
+
+      {environment && (
+        <EnvDialog
+          container={environment.container}
+          service={environment.service}
+          onClose={() => { setEnvironment(null); reload() }}
           onFinished={reload}
         />
       )}

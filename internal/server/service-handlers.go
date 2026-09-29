@@ -27,6 +27,9 @@ type Deployer interface {
 	Logs(ctx context.Context, container, service string, lines int) (string, error)
 	DestroyPlan(ctx context.Context, container, service string) (plan.Plan, string, error)
 	Destroy(ctx context.Context, container, service string, report func(int, string)) error
+	Environment(ctx context.Context, container, service string) (agent.EnvironmentDTO, error)
+	EnvironmentPlan(ctx context.Context, container, service string, change agent.EnvChangeDTO) (plan.Plan, error)
+	ChangeEnvironment(ctx context.Context, container, service string, change agent.EnvChangeDTO, report func(int, string)) error
 	RedeployPlan(ctx context.Context, container, service string) (plan.Plan, error)
 	Redeploy(ctx context.Context, container, service string, report func(int, string)) error
 	PowerPlan(ctx context.Context, container, service string, action agent.PowerAction) (plan.Plan, error)
@@ -164,6 +167,67 @@ func (d Deps) deployService(w http.ResponseWriter, r *http.Request) {
 		})
 
 	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": body.Name})
+}
+
+// showEnvironment is a service's environment file as it is now, with the hash
+// a change has to be made against.
+func (d Deps) showEnvironment(w http.ResponseWriter, r *http.Request) {
+	deployer, ok := d.deployer(w)
+	if !ok {
+		return
+	}
+	found, err := deployer.Environment(r.Context(), r.PathValue("name"), r.PathValue("service"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, found)
+}
+
+// changeEnvironment rewrites only what was asked in a service's environment
+// file, and makes it take effect. It is refused if the file changed since it
+// was opened, so an edit made over ssh is never overwritten.
+func (d Deps) changeEnvironment(w http.ResponseWriter, r *http.Request) {
+	if !d.writable(w) {
+		return
+	}
+	deployer, ok := d.deployer(w)
+	if !ok {
+		return
+	}
+
+	name, service := r.PathValue("name"), r.PathValue("service")
+	var change agent.EnvChangeDTO
+	if err := readBody(r, &change); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	p, err := deployer.EnvironmentPlan(r.Context(), name, service, change)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if wantsPlan(r) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"summary": fmt.Sprintf(
+				"Change the environment of %s: only what you changed is rewritten, the rest of the file "+
+					"stays as it is. Then it takes effect. A snapshot is taken first.", service),
+			"plan": p,
+		})
+		return
+	}
+
+	started := d.Jobs.Start("environment", name+"/"+service, p,
+		func(ctx context.Context, report func(int, string)) error {
+			if d.Simulated {
+				return d.rehearse(p, report)
+			}
+			return deployer.ChangeEnvironment(ctx, name, service, change, report)
+		})
+
+	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": service})
 }
 
 // redeployService deploys again what the container already records, with

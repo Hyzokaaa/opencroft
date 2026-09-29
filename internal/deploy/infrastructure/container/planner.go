@@ -3,6 +3,7 @@
 package container
 
 import (
+	"encoding/base64"
 	"fmt"
 	"sort"
 	"strconv"
@@ -218,12 +219,58 @@ func (p *Planner) publish(service *entities.Service) plan.Step {
 // because cloning into a directory that already has files in it fails, and
 // readable only by its owner because it is where the secrets are.
 func (p *Planner) writeEnv(service *entities.Service) plan.Step {
-	step := p.exec(
-		fmt.Sprintf("Write %s (%d variables)", service.EnvFile(), len(service.Env)),
-		"cat > "+service.EnvFile()+" <<'CROFT_ENV'\n"+service.EnvContent()+"CROFT_ENV\n"+
-			"chmod 600 "+service.EnvFile())
+	return p.WriteEnvironment(service, service.EnvFile(), service.EnvContent(), len(service.Env))
+}
+
+// WriteEnvironment replaces an environment file with content.
+//
+// The content travels as base64 rather than in a heredoc. It is whatever the
+// file already held plus what was asked, and a line in it that happened to
+// match a heredoc's closing marker would end it early and run the rest as root
+// — a service able to write its own .env could then run anything the next
+// time somebody edited it from the panel.
+//
+// Writing into the file rather than replacing it keeps its owner and mode. A
+// file that did not exist yet is created readable only by its owner, and
+// given to whoever owns the checkout when that is not root.
+func (p *Planner) WriteEnvironment(service *entities.Service, file, content string, count int) plan.Step {
+	command := "new=0; [ -e " + file + " ] || new=1; umask 077; " +
+		"printf %s '" + base64.StdEncoding.EncodeToString([]byte(content)) + "' | base64 -d > " + file
+	if a := service.Adopted; a != nil && a.RunAs != "" && a.RunAs != "root" {
+		command += "; [ $new = 0 ] || chown " + a.RunAs + ": " + file
+	}
+
+	step := p.exec(fmt.Sprintf("Write %s (%d variables)", file, count), command)
 	step.Secret = true
 	return step
+}
+
+// ChangeEnvironment writes an environment file and makes the change take
+// effect: a process reads its environment when it starts, and a site's build
+// read it when it was built. A snapshot comes first, like every other change
+// to a service — a variable deleted by mistake is one Restore away.
+func (p *Planner) ChangeEnvironment(service *entities.Service, file, content string, count int, at time.Time) plan.Plan {
+	steps := []plan.Step{
+		plan.Command("Take a snapshot to come back to",
+			p.bin, "snapshot", p.container, entities.SnapshotName(service.Name, at)),
+		p.WriteEnvironment(service, file, content, count),
+	}
+
+	if !service.IsSite() {
+		return plan.New(append(steps,
+			p.exec("Restart "+service.Unit()+" so it reads the new environment",
+				"systemctl restart "+service.Unit()))...)
+	}
+
+	for i, command := range service.Build {
+		steps = append(steps, p.bounded(counted("Build with the new environment", i, len(service.Build)),
+			p.inPath(service, command)))
+	}
+	if a := service.Adopted; a.RunAs != "" && a.RunAs != "root" {
+		steps = append(steps, p.exec("Give "+service.Path+" back to "+a.RunAs+", who owned it",
+			"chown -R "+a.RunAs+": "+service.Path))
+	}
+	return plan.New(append(steps, p.publish(service))...)
 }
 
 func (p *Planner) inPath(service *entities.Service, command string) string {

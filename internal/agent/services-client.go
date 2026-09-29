@@ -80,6 +80,25 @@ func (a *ServiceClient) Destroy(ctx context.Context, container, service string, 
 		servicePath(container, "/"+url.PathEscape(service)), nil, report)
 }
 
+func (a *ServiceClient) Environment(ctx context.Context, container, service string) (EnvironmentDTO, error) {
+	var found EnvironmentDTO
+	err := a.c.call(ctx, http.MethodGet,
+		servicePath(container, "/"+url.PathEscape(service)+"/env"), nil, &found)
+	return found, err
+}
+
+func (a *ServiceClient) EnvironmentPlan(ctx context.Context, container, service string, change EnvChangeDTO) (plan.Plan, error) {
+	var response PlanResponse
+	err := a.c.call(ctx, http.MethodPost,
+		servicePath(container, "/"+url.PathEscape(service)+"/env/plan"), change, &response)
+	return response.Plan, err
+}
+
+func (a *ServiceClient) ChangeEnvironment(ctx context.Context, container, service string, change EnvChangeDTO, report func(int, string)) error {
+	return a.c.streamed(ctx, http.MethodPost,
+		servicePath(container, "/"+url.PathEscape(service)+"/env"), change, report)
+}
+
 func (a *ServiceClient) RedeployPlan(ctx context.Context, container, service string) (plan.Plan, error) {
 	var response PlanResponse
 	err := a.c.call(ctx, http.MethodGet,

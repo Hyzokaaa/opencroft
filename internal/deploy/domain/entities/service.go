@@ -11,7 +11,6 @@
 package entities
 
 import (
-	"encoding/json"
 	"sort"
 	"strconv"
 	"strings"
@@ -105,9 +104,10 @@ type Service struct {
 	// Packages the container needs before any of the above will work.
 	Packages []string
 
-	// Env becomes a file beside the code that the unit reads. Nothing starts
-	// without it for most real applications, which is why it is part of the
-	// service rather than a step somebody remembers afterwards.
+	// Env is what the first deployment writes into the environment file. Nothing
+	// starts without it for most real applications, which is why it is asked
+	// for up front. After that the file is the truth, changed through its own
+	// editor, and Env is never written over it again.
 	Env map[string]string
 
 	Health Health
@@ -193,12 +193,8 @@ func (s *Service) Record() map[string]string {
 	if s.Health.Status != 0 {
 		values["health-status"] = strconv.Itoa(s.Health.Status)
 	}
-	// One annotation, written and read as a whole: a partial write would
-	// leave a service with half its configuration.
-	if len(s.Env) > 0 {
-		encoded, _ := json.Marshal(s.Env)
-		values["env"] = string(encoded)
-	}
+	// The environment is not here: it lives in its file, which is the one
+	// place it is kept. A copy here would be a second truth to drift from it.
 	if a := s.Adopted; a != nil {
 		values["adopted-unit"] = a.Unit
 		values["adopted-site"] = a.Site
@@ -247,6 +243,23 @@ func (s *Service) IsSite() bool { return s.Adopted != nil && s.Adopted.Site != "
 // EnvFile sits beside the code rather than in /etc, so that moving or removing
 // the checkout takes its configuration with it.
 func (s *Service) EnvFile() string { return s.Path + "/.env" }
+
+// Environment is the file this service's environment lives in: the one its
+// unit reads at start, or for a site the one its build reads. That file is the
+// source of truth, for services croft deployed and ones it adopted alike.
+// Empty when there is none to edit — an adopted unit that reads no file.
+func (s *Service) Environment() string {
+	switch {
+	case s.Adopted == nil:
+		return s.EnvFile()
+	case s.Adopted.EnvFile != "":
+		return s.Adopted.EnvFile
+	case s.IsSite():
+		return s.EnvFile()
+	default:
+		return ""
+	}
+}
 
 // Runnable is false when there is nothing to start, which is the one thing a
 // deployment cannot do without. An adopted service starts the way its own
