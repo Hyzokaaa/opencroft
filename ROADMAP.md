@@ -45,6 +45,9 @@ sin UI todavía.
 - [x] Driver `Proxy` sobre `/etc/nginx/croft.d/`, sin asumir el layout de Debian
 - [x] Módulo `instance`: crear, listar, ver, arrancar, parar, destruir (editar límites pendiente)
 - [x] Módulo `route`: añadir dominio, listar, quitar, cambiar destino y puerto
+- [x] Paths por prefijo (`/api/` a otro contenedor o puerto, con o sin quitar el prefijo),
+      con websockets pasados en toda ruta
+- [x] Tomar un vhost escrito a mano (certbot incluido) moviendo el original aparte
 - [x] Módulo `certificate`: emitir, renovar, listar con fecha de caducidad (revocar pendiente)
 - [x] ACME embebido con `lego`, sin dependencia de certbot
 - [x] Proveedores DNS para el reto ACME: OVH y Cloudflare

@@ -462,11 +462,58 @@ Al reconciliar, OpenCroft recalcula el hash del fichero en disco:
 - **No coincide** → alguien lo editó a mano. OpenCroft marca la ruta como `adopted`, muestra
   el diff, y **deja de sobreescribirla**. Sigue mostrándola en la UI, sigue avisando si el
   certificado caduca, pero no la toca.
-- **Sin cabecera** → fichero ajeno. Aparece como `unmanaged` y se puede adoptar
-  explícitamente.
+- **Sin cabecera** → fichero ajeno. Aparece como `unmanaged` y se puede *tomar*
+  explícitamente (ver *Tomar un vhost escrito a mano*).
 
 Este es el mecanismo concreto que hace real la promesa de "automatiza lo que quieras pero
 permite usarlo a mano". No es una política, es código.
+
+### Rutas por prefijo y websockets
+
+Una ruta es un dominio con un destino para `/` y, opcionalmente, **paths**: prefijos que
+van a otro sitio. La web en `/`, su API en `/api/`, en contenedores distintos o en el
+mismo con otro puerto — sin un segundo nginx dentro del contenedor para repartirlos.
+
+```nginx
+location / {
+    proxy_pass http://10.146.38.200:80;
+    ...
+}
+location /api/ {
+    proxy_pass http://10.146.38.201:3000/;   # "Strip": el backend recibe /users, no /api/users
+    ...
+}
+```
+
+- Un prefijo empieza y acaba en `/` (`/api/` no se traga `/apiary`) y ningún segmento es
+  solo puntos. El agente lo valida otra vez: el panel no es de fiar para escribir nginx.
+- **Strip** quita el prefijo antes de pasar la petición; sin él llega entero.
+- **Toda** `location` que escribe croft deja pasar un websocket: `proxy_http_version 1.1`,
+  `Upgrade $http_upgrade`, `Connection $http_connection` y un `proxy_read_timeout` de una
+  hora. No es una opción que haya que acordarse de marcar: una ruta que corta un websocket
+  es un fallo que solo se ve en producción.
+- Los paths se leen de vuelta del fichero, igual que el resto: el vhost es la fuente de
+  verdad, no la base de datos.
+
+Solo se añaden paths a un dominio que croft gestiona. Uno `adopted` (editado a mano después)
+se respeta; uno `unmanaged` hay que tomarlo antes.
+
+### Tomar un vhost escrito a mano
+
+Un vhost que existía antes de croft —típicamente el que dejó certbot— aparece como
+`unmanaged` y croft no lo toca. *Take over* lo convierte en suyo sin que el visitante note
+nada:
+
+1. Lee del fichero lo que importa: destino, puerto, si va por https y **dónde está su
+   certificado** (`/etc/letsencrypt/live/...` o el directorio de croft; otro sitio se
+   rechaza).
+2. Mueve el original a `/var/lib/croft/taken-over/<fichero>.<fecha>`. No se borra nada.
+3. Escribe el vhost de croft y pasa `nginx -t`. Si nginx lo rechaza, el fichero de croft
+   se va y **el original vuelve a su sitio**: nginx queda como estaba, no sin ninguno.
+
+Se niega si el fichero sirve también otros dominios (se los llevaría por delante), si es
+`nginx.conf` o si no tiene un destino que croft sepa leer. Lo que el original tuviera de
+más —un `location` con reglas propias— no se copia: por eso se ve el plan antes.
 
 ### Adopción
 
