@@ -39,13 +39,23 @@ export default function EnvEditor({ value, onChange, note }) {
           Environment
           {pairs.length > 0 && <span className="text-faint"> · {pairs.length}</span>}
         </span>
-        <button
-          type="button"
-          onClick={() => setAsTable(!asTable)}
-          className="text-xs text-faint transition hover:text-muted"
-        >
-          {asTable ? 'edit as text' : 'edit as a list'}
-        </button>
+        <div className="flex overflow-hidden rounded border border-edge text-xs">
+          {[
+            [true, 'List'],
+            [false, 'Text'],
+          ].map(([table, label]) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => setAsTable(table)}
+              className={`px-2 py-0.5 transition ${
+                asTable === table ? 'bg-raised text-ink' : 'text-faint hover:text-muted'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {asTable ? (
@@ -128,8 +138,10 @@ export function parse(text) {
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith('#')) continue
 
+    // A line with no key yet is a row being filled in: dropping it would make
+    // "+ variable" add nothing. toObject is what leaves it out of the file.
     const at = trimmed.indexOf('=')
-    if (at < 1) continue
+    if (at < 0) continue
 
     pairs.push({
       key: trimmed.slice(0, at).trim(),
