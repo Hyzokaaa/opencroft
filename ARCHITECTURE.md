@@ -325,6 +325,22 @@ Elimina una dependencia del host, elimina el empaquetado por proveedor, y elimin
 Los certificados que ya gestione certbot en el host se siguen leyendo y mostrando: se
 adoptan como cualquier otro recurso `unmanaged`.
 
+**Un solo dueño por dominio.** Un dominio que sirve un certificado de certbot tiene dos
+programas a cargo: croft escribe el vhost y certbot renueva con su propia configuración
+de DNS, que nadie recuerda hasta que el dominio cambia de proveedor y la renovación
+falla en silencio. *Issue with croft* lo resuelve en un paso: croft emite el suyo, reescribe
+el vhost para servirlo y, solo después, mueve el fichero de renovación de certbot a
+`/var/lib/croft/taken-over/`. No se borra nada: los ficheros de certbot siguen ahí y
+moverlo de vuelta lo deshace. Si otro vhost todavía lee ese certificado, certbot sigue
+renovándolo.
+
+**Comodines.** Con credenciales DNS, croft pide un certificado para `*.example.com` y
+`example.com` juntos y lo guarda en `/var/lib/croft/certificates/_.example.com` — `_` no
+puede empezar un nombre de host, así que nunca choca con el de un subdominio. Desde ese
+momento *Enable https* en `app.example.com` no pide nada a Let's Encrypt: el vhost apunta
+al comodín. Cubre un nivel, como lo lee la autoridad: `app.example.com` sí,
+`api.app.example.com` no. Se renueva como cualquier otro, siempre por DNS.
+
 ### Driver de runtime: LXD e Incus
 
 Incus es el fork que crearon los desarrolladores originales de LXD, con la misma API y

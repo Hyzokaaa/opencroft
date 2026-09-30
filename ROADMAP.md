@@ -51,6 +51,8 @@ sin UI todavía.
 - [x] Módulo `certificate`: emitir, renovar, listar con fecha de caducidad (revocar pendiente)
 - [x] ACME embebido con `lego`, sin dependencia de certbot
 - [x] Proveedores DNS para el reto ACME: OVH y Cloudflare
+- [x] Pasar un dominio de certbot a un certificado de croft, apartando la renovación de certbot
+- [x] Certificados comodín (`*.dominio`) por DNS, usados sin emitir al activar https
 - [x] Asignación de IP estática y validación de que las rutas apuntan a la IP real
 - [x] Cabecera `managed-by: croft` con hash en todos los ficheros generados
 - [ ] Modo `--plan` y `--explain` en toda operación de escritura
