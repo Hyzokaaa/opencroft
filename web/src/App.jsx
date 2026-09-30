@@ -129,7 +129,11 @@ function Dashboard({ onSignOut, onSessionLost }) {
   // while the web keeps the rest. Stripping is what an app mounted behind a
   // prefix it knows nothing about needs — /api/tickets arriving as /tickets.
   function addPath(route) {
-    const names = (data?.instances ?? []).filter((i) => i.address).map((i) => i.name)
+    const reachable = (data?.instances ?? []).filter((i) => i.address)
+    const names = reachable.map((i) => i.name)
+    // Most often the API sits beside the web it serves, so the container the
+    // domain already goes to is the likelier answer than the first one listed.
+    const serving = reachable.find((i) => i.address === route.target)?.name
     setDialog({
       title: `Send a path of ${route.domain} elsewhere`,
       url: `/api/hosts/local/routes/${route.domain}/paths`,
@@ -142,7 +146,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
         { name: 'strip', label: 'Take the prefix off before passing it on', type: 'checkbox',
           hint: 'For a backend that answers /tickets, not /api/tickets.' },
       ],
-      defaults: { prefix: '/api/', target: names[0] ?? '', port: 3000, strip: true },
+      defaults: { prefix: '/api/', target: serving ?? names[0] ?? '', port: 3000, strip: true },
     })
   }
 
