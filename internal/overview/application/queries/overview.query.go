@@ -39,14 +39,16 @@ type CertificateView struct {
 }
 
 type RouteView struct {
-	Domain  string     `json:"domain"`
-	Target  string     `json:"target"`
-	Port    int        `json:"port"`
-	SSL     bool       `json:"ssl"`
-	Paths   []PathView `json:"paths"`
-	State   string     `json:"state"`
-	File    string     `json:"file"`
-	Answers bool       `json:"answers"`
+	Domain string `json:"domain"`
+	Target string `json:"target"`
+	Port   int    `json:"port"`
+	SSL    bool   `json:"ssl"`
+	// Certificates is the directory the vhost reads its certificate from.
+	Certificates string     `json:"certificates"`
+	Paths        []PathView `json:"paths"`
+	State        string     `json:"state"`
+	File         string     `json:"file"`
+	Answers      bool       `json:"answers"`
 }
 
 type PathView struct {
@@ -149,7 +151,7 @@ func (q *OverviewQuery) Execute(ctx context.Context) (OverviewResponse, error) {
 		}
 		response.Routes = append(response.Routes, RouteView{
 			Domain: r.Domain, Target: r.Target, Port: r.Port,
-			SSL: r.SSL, Paths: paths, State: string(r.State), File: r.File,
+			SSL: r.SSL, Certificates: r.Certificates, Paths: paths, State: string(r.State), File: r.File,
 			Answers: answersOf(r),
 		})
 	}

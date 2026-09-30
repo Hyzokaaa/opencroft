@@ -84,7 +84,8 @@ func (d Deps) enableTLS(w http.ResponseWriter, r *http.Request) {
 	if wantsPlan(r) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"summary": fmt.Sprintf(
-				"Obtain a certificate for %s and serve it over https. The http address will redirect.", domain),
+				"Serve %s over https with a certificate croft obtains from Let's Encrypt and renews from then on. "+
+					"The http address will redirect. If certbot renewed the one it had, certbot stops — its files stay.", domain),
 			"plan": p,
 		})
 		return
@@ -98,4 +99,56 @@ func (d Deps) enableTLS(w http.ResponseWriter, r *http.Request) {
 	})
 
 	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "domain": domain})
+}
+
+// WildcardIssuer obtains one certificate for a domain and every name one label
+// below it, after which https for a new subdomain needs nothing issued.
+type WildcardIssuer interface {
+	WildcardPlan(ctx context.Context, domain string) (plan.Plan, error)
+	IssueWildcard(ctx context.Context, domain string, report func(int, string)) error
+}
+
+type wildcardRequest struct {
+	Domain string `json:"domain"`
+}
+
+func (d Deps) issueWildcard(w http.ResponseWriter, r *http.Request) {
+	if !d.writable(w) {
+		return
+	}
+	issuer, ok := d.Routes.(WildcardIssuer)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, errors.New("this host cannot issue certificates from the panel"))
+		return
+	}
+
+	var body wildcardRequest
+	if err := readBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	p, err := issuer.WildcardPlan(r.Context(), body.Domain)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if wantsPlan(r) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"summary": fmt.Sprintf(
+				"One certificate for *.%s and %s, proved over DNS and renewed by croft. Nothing is served "+
+					"with it yet: Enable https on a domain it covers uses it without asking for another.",
+				body.Domain, body.Domain),
+			"plan": p,
+		})
+		return
+	}
+
+	started := d.Jobs.Start("wildcard", body.Domain, p, func(ctx context.Context, report func(int, string)) error {
+		if d.Simulated {
+			return d.rehearse(p, report)
+		}
+		return issuer.IssueWildcard(ctx, body.Domain, report)
+	})
+	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "domain": body.Domain})
 }

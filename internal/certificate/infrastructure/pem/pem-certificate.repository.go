@@ -84,6 +84,11 @@ func parse(raw []byte, file string, ours bool) *entities.Certificate {
 	if domain == "" && len(leaf.DNSNames) > 0 {
 		domain = leaf.DNSNames[0]
 	}
+	// croft keeps a wildcard under "_.", and renewal needs to know it is one
+	// whatever the authority put first — it may not set a common name at all.
+	if base, ok := strings.CutPrefix(path.Base(path.Dir(file)), "_."); ok {
+		domain = "*." + base
+	}
 
 	issuer := leaf.Issuer.Organization
 	name := leaf.Issuer.CommonName

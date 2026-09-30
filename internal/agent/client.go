@@ -391,6 +391,19 @@ func (r *RouteClient) TakeOver(ctx context.Context, domain string, report func(i
 		"/routes/"+url.PathEscape(domain)+"/takeover", nil, report)
 }
 
+// ── A wildcard certificate ───────────────────────────────────────────────────
+
+func (r *RouteClient) WildcardPlan(ctx context.Context, domain string) (plan.Plan, error) {
+	var response PlanResponse
+	err := r.client.call(ctx, http.MethodGet, "/certificates/wildcard/plan?domain="+url.QueryEscape(domain), nil, &response)
+	return response.Plan, err
+}
+
+func (r *RouteClient) IssueWildcard(ctx context.Context, domain string, report func(int, string)) error {
+	return r.client.streamed(ctx, http.MethodPost,
+		"/certificates/wildcard?domain="+url.QueryEscape(domain), nil, report)
+}
+
 func (c *Client) StartPlan(name string) plan.Plan {
 	return c.powerPlan(name, "start")
 }

@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-acme/lego/v4/certcrypto"
 	"github.com/go-acme/lego/v4/certificate"
@@ -130,9 +131,9 @@ func (i *Issuer) Issue(ctx context.Context, request services.IssueRequest, repor
 		user.registration = reg
 	}
 
-	report("Asking for a certificate for " + request.Domain)
+	report("Asking for a certificate for " + strings.Join(request.Names(), " and "))
 	issued, err := client.Certificate.Obtain(certificate.ObtainRequest{
-		Domains: []string{request.Domain},
+		Domains: request.Names(),
 		Bundle:  true,
 	})
 	if err != nil {
@@ -140,7 +141,7 @@ func (i *Issuer) Issue(ctx context.Context, request services.IssueRequest, repor
 	}
 
 	report("Storing it")
-	path, err := i.store(request.Domain, issued)
+	path, err := i.store(services.StoreName(request.Domain, request.Wildcard), issued)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +152,7 @@ func (i *Issuer) Issue(ctx context.Context, request services.IssueRequest, repor
 	}
 
 	return entities.NewCertificate(entities.CertificateProps{
-		Domain:   request.Domain,
+		Domain:   request.Names()[0],
 		Names:    leaf.DNSNames,
 		Issuer:   issuerName(leaf),
 		NotAfter: leaf.NotAfter,

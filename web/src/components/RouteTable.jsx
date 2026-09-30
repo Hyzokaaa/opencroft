@@ -112,10 +112,21 @@ export default function RouteTable({ routes, instances, problems, highlighted, o
                       )}
                       {!r.ssl && (
                         <button
-                          onClick={(e) => { e.stopPropagation(); onEnableTLS?.(r.domain) }}
+                          onClick={(e) => { e.stopPropagation(); onEnableTLS?.(r) }}
                           className="rounded border border-edge px-2 py-0.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
                         >
                           Enable https
+                        </button>
+                      )}
+                      {/* On https already, but renewed by certbot: two
+                          programs owning one domain is how renewal breaks
+                          quietly when the DNS moves. */}
+                      {r.ssl && r.state === 'managed' && r.certificates?.startsWith('/etc/letsencrypt/live/') && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onEnableTLS?.(r) }}
+                          className="rounded border border-edge px-2 py-0.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
+                        >
+                          Issue with croft
                         </button>
                       )}
                       <button

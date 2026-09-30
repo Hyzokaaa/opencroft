@@ -9,9 +9,10 @@ import (
 )
 
 var (
-	ErrDomainRequired = errors.New("a domain is required")
-	ErrDomainInvalid  = errors.New("that does not look like a domain name")
-	ErrEmailInvalid   = errors.New("that does not look like an email address")
+	ErrDomainRequired   = errors.New("a domain is required")
+	ErrDomainInvalid    = errors.New("that does not look like a domain name")
+	ErrEmailInvalid     = errors.New("that does not look like an email address")
+	ErrWildcardNeedsDNS = errors.New("a wildcard certificate can only be proved over DNS: set the DNS credentials first")
 )
 
 var (
@@ -44,6 +45,10 @@ type IssueRequest struct {
 	Email     string
 	Challenge Challenge
 
+	// Wildcard asks for *.Domain and Domain itself in one certificate, so every
+	// subdomain has https the moment it is added, with nothing to issue.
+	Wildcard bool
+
 	// Staging points at Let's Encrypt's test environment, whose certificates
 	// browsers reject. Production limits five failed validations per account
 	// per hour and five duplicate certificates per week, and burning those
@@ -69,6 +74,12 @@ func (s *IssueCertificate) Execute(ctx context.Context, request IssueRequest, re
 	if request.Email != "" && !emailPattern.MatchString(request.Email) {
 		return nil, ErrEmailInvalid
 	}
+	if request.Wildcard && request.Challenge == "" {
+		request.Challenge = ChallengeDNS
+	}
+	if request.Wildcard && request.Challenge != ChallengeDNS {
+		return nil, ErrWildcardNeedsDNS
+	}
 	if request.Challenge == "" {
 		request.Challenge = ChallengeHTTP
 	}
@@ -77,4 +88,22 @@ func (s *IssueCertificate) Execute(ctx context.Context, request IssueRequest, re
 		report = func(string) {}
 	}
 	return s.issuer.Issue(ctx, request, report)
+}
+
+// StoreName is the directory a certificate is kept in. A wildcard's starts
+// with "_.", which no hostname can, so it never collides with a certificate
+// for a subdomain that happens to be called "wildcard".
+func StoreName(domain string, wildcard bool) string {
+	if wildcard {
+		return "_." + domain
+	}
+	return domain
+}
+
+// Names is what the authority is asked to vouch for.
+func (r IssueRequest) Names() []string {
+	if r.Wildcard {
+		return []string{"*." + r.Domain, r.Domain}
+	}
+	return []string{r.Domain}
 }

@@ -117,9 +117,10 @@ function Dashboard({ onSignOut, onSessionLost }) {
     })
   }
 
-  function enableTLS(domain) {
+  function enableTLS(route) {
+    const domain = route.domain
     setDialog({
-      title: `Serve ${domain} over https`,
+      title: route.ssl ? `Issue ${domain}'s certificate with croft` : `Serve ${domain} over https`,
       url: `/api/hosts/local/routes/${domain}/tls`,
       method: 'POST',
     })
@@ -155,6 +156,21 @@ function Dashboard({ onSignOut, onSessionLost }) {
       title: `Serve ${route.domain}${prefix} like the rest of it`,
       url: `/api/hosts/local/routes/${route.domain}/paths?prefix=${encodeURIComponent(prefix)}`,
       method: 'DELETE',
+    })
+  }
+
+  // One certificate for a domain and every name one label below it. After it,
+  // Enable https on a subdomain asks the authority for nothing.
+  function wildcard() {
+    setDialog({
+      title: 'A wildcard certificate',
+      url: '/api/hosts/local/certificates/wildcard',
+      method: 'POST',
+      fields: [
+        { name: 'domain', label: 'Domain', placeholder: 'example.com', autoFocus: true,
+          hint: 'Covers example.com and *.example.com — app.example.com, not api.app.example.com. Proved over DNS, so the credentials in Settings are used.' },
+      ],
+      defaults: { domain: '' },
     })
   }
 
@@ -436,6 +452,14 @@ function Dashboard({ onSignOut, onSessionLost }) {
         <Card
           title="Certificates"
           count={data.certificates?.length ?? 0}
+          action={
+            <button
+              onClick={wildcard}
+              className="rounded border border-edge-strong bg-raised px-2 py-1 text-xs transition hover:border-ink/30"
+            >
+              Wildcard certificate
+            </button>
+          }
           commandMode={commandMode}
           commands={["ls /etc/letsencrypt/live/", "openssl x509 -enddate -noout -in <file>"]}
         >

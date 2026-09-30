@@ -758,7 +758,7 @@ func browsableURL(addr string) string {
 
 func cert(ctx context.Context, args []string) {
 	if len(args) == 0 || args[0] != "issue" {
-		fmt.Fprintln(os.Stderr, "Usage: croft cert issue <domain> [--staging] [--email you@example.com]")
+		fmt.Fprintln(os.Stderr, "Usage: croft cert issue <domain> [--dns] [--wildcard] [--staging] [--email you@example.com]")
 		os.Exit(1)
 	}
 
@@ -766,6 +766,7 @@ func cert(ctx context.Context, args []string) {
 	staging := fs.Bool("staging", false, "use Let's Encrypt's test environment, whose certificates browsers reject")
 	email := fs.String("email", "", "address the authority uses for expiry warnings")
 	useDNS := fs.Bool("dns", false, "prove control with a DNS record instead of a file over port 80")
+	wildcard := fs.Bool("wildcard", false, "one certificate for *.<domain> and <domain>, proved over DNS")
 	_ = fs.Parse(reorder(fs, args[1:]))
 
 	if fs.NArg() < 1 {
@@ -779,7 +780,7 @@ func cert(ctx context.Context, args []string) {
 	}
 
 	challenge := certificateServices.ChallengeHTTP
-	if *useDNS {
+	if *useDNS || *wildcard {
 		challenge = certificateServices.ChallengeDNS
 	}
 
@@ -796,6 +797,7 @@ func cert(ctx context.Context, args []string) {
 		Email:     *email,
 		Challenge: challenge,
 		Staging:   *staging,
+		Wildcard:  *wildcard,
 	}, func(text string) {
 		fmt.Println("  " + text)
 	})

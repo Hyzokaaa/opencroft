@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"log"
+	"strings"
 	"time"
 
 	certificateEntities "github.com/Hyzokaaa/opencroft/internal/certificate/domain/entities"
@@ -78,14 +79,22 @@ func (s *Server) shouldRenew(certificate *certificateEntities.Certificate, now t
 func (s *Server) renew(ctx context.Context, domain string) error {
 	issuer := certificateServices.NewIssueCertificate(acme.NewIssuer())
 
-	if _, err := issuer.Execute(ctx, certificateServices.IssueRequest{
-		Domain:    domain,
-		Challenge: chooseChallenge(),
-	}, nil); err != nil {
+	if _, err := issuer.Execute(ctx, renewalOf(domain), nil); err != nil {
 		return err
 	}
 
 	// nginx holds the old certificate open until it is told to look again.
 	// The file changed underneath it, so the reload is the point.
 	return s.routes.Reload(ctx)
+}
+
+// renewalOf asks again for what a certificate was issued for. A wildcard is
+// named after its first name, *.example.com, and can only be proved over DNS.
+func renewalOf(domain string) certificateServices.IssueRequest {
+	if base, ok := strings.CutPrefix(domain, "*."); ok {
+		return certificateServices.IssueRequest{
+			Domain: base, Wildcard: true, Challenge: certificateServices.ChallengeDNS,
+		}
+	}
+	return certificateServices.IssueRequest{Domain: domain, Challenge: chooseChallenge()}
 }

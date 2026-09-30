@@ -116,6 +116,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /routes/{domain}/takeover", s.takeOverDomain)
 	mux.HandleFunc("GET /routes/{domain}/tls/plan", s.planTLS)
 	mux.HandleFunc("POST /routes/{domain}/tls", s.enableTLS)
+	mux.HandleFunc("GET /certificates/wildcard/plan", s.planWildcard)
+	mux.HandleFunc("POST /certificates/wildcard", s.issueWildcard)
 	mux.HandleFunc("POST /expose/plan", s.planExpose)
 	mux.HandleFunc("POST /expose", s.expose)
 	mux.HandleFunc("GET /instances/{name}/annotations", s.showAnnotations)
@@ -280,7 +282,7 @@ var (
 	prefixPattern = regexp.MustCompile(`^/([A-Za-z0-9_~-][A-Za-z0-9._~-]*/)+$`)
 	// nginx reads the certificate as root, so where from is not open-ended:
 	// croft's own directory, or certbot's for a domain it set up first.
-	certificatesPattern = regexp.MustCompile(`^(/var/lib/croft/certificates|/etc/letsencrypt/live)/[A-Za-z0-9][A-Za-z0-9.-]*$`)
+	certificatesPattern = regexp.MustCompile(`^(/var/lib/croft/certificates|/etc/letsencrypt/live)/(_\.)?[A-Za-z0-9][A-Za-z0-9.-]*$`)
 	memoryPattern       = regexp.MustCompile(`^\d{1,6}(B|KB|MB|GB|TB|KiB|MiB|GiB|TiB)?$`)
 
 	// Loose on purpose: this rejects obvious mistakes, not unusual but valid
