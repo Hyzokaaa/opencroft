@@ -14,6 +14,12 @@ descargó.
 
 ## No publicado
 
+### v0.25.0 — 2026-09-29
+- docs: file v0.25.0 in the changelog
+- docs: describe moving a certificate off certbot and wildcards
+- feat: let croft own a domain's certificate, from certbot's or as one wildcard for every subdomain
+- fix: offer the container a domain already goes to when adding a path
+
 ### v0.24.1 — 2026-09-29
 - docs: file v0.24.1 in the changelog
 - fix: answer the certificate challenge instead of redirecting it
