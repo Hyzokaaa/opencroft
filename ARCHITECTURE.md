@@ -554,6 +554,33 @@ Los dominios no se asignan: pertenecen al proyecto de los contenedores a los que
 incluidos los paths. Los snapshots siguen siendo por contenedor; un proyecto agrupa, no
 sincroniza.
 
+**Nombres internos.** El bridge de LXD o Incus tiene DNS propio: cada contenedor responde
+como `<nombre>.lxd` (o `.incus`) desde sus vecinos. El agente lee el dominio del bridge
+(`dns.domain`, o ninguno si `dns.mode` es `none`) y el panel lo muestra junto a la IP. Al
+editar un `.env`, si un valor llega a otro contenedor por su IP, croft propone cambiarla por
+su nombre: una IP cambia si el contenedor se reconstruye, el nombre no.
+
+**Una base de datos compartida dentro del proyecto.** Los datos no se mueven: siguen junto a
+la aplicación que los posee, así que un snapshot de ese contenedor sigue teniéndolos. Otro
+contenedor *del mismo proyecto* se conecta con un plan que:
+
+1. Hace que el motor escuche también en la IP de su contenedor (Postgres reinicia una vez si
+   solo escuchaba en el loopback) y deja entrar **solo la IP del que se conecta**: una línea
+   en `pg_hba.conf`, o un usuario `'login'@'IP'` en MariaDB.
+2. Crea un login propio, `from_<contenedor>`. En Postgres es miembro del rol dueño de los
+   datos, así que lee y escribe lo mismo sin compartir su contraseña. Soltarlo es borrar ese
+   login, no cambiar una contraseña de todos.
+3. Genera la contraseña dentro del contenedor que tiene los datos y la lleva al otro por una
+   tubería en el host. No pasa por el plan, ni por el socket, ni por el panel.
+4. Escribe las credenciales en `/etc/croft/db.d/` del que se conecta, apuntando al nombre
+   interno del otro (`postgres://from_web:…@backend.lxd:5432/app`), y reinicia sus servicios.
+
+Redis no se comparte: no tiene contraseña. Desconectar quita el login y su línea, nunca los
+datos, y funciona aunque el contenedor de los datos ya no exista. Borrar una base de datos a
+la que otros están conectados se rechaza nombrándolos. Un servicio *adoptado* lee solo su
+propio `.env`, no `/etc/croft/db.env`: las credenciales quedan en el contenedor, pero hay que
+apuntarlo a ellas.
+
 ### Adopción
 
 OpenCroft descubre lo que no ha creado él: contenedores lanzados con `lxc launch`, vhosts

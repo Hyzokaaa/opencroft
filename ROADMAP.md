@@ -144,8 +144,9 @@ terceros —el caso de un MSP— hace falta saber quién puede tocar qué.
 - [x] Proyectos agrupando contenedores y, a través de ellos, dominios (declarados en
       `/etc/croft/projects`, pertenencia como anotación `user.croft.project`)
 - [ ] Proyectos dentro de una organización
-- [ ] Nombres internos (`contenedor.lxd`) sugeridos al editar un `.env`
-- [ ] Base de datos compartida entre contenedores de un mismo proyecto
+- [x] Nombres internos (`contenedor.lxd`) mostrados y sugeridos al editar un `.env`
+- [x] Base de datos compartida entre contenedores de un mismo proyecto, con login propio por
+      contenedor y acceso solo desde su IP
 - [ ] Entornos (dev/prod) dentro de un proyecto
 - [ ] Roles por organización y por proyecto
 - [ ] Invitaciones por correo
@@ -203,7 +204,7 @@ las recetas, y sin ella el catálogo habrían sido diez scripts a medida.
 - [ ] Limpieza de snapshots de servicios abandonados
 - [ ] Webhooks de despliegue (GitHub, GitLab)
 - [x] Módulo `database`: PostgreSQL, MySQL y Redis **dentro** del contenedor que los usa
-- [ ] Base de datos compartida entre contenedores (diseñada, no construida)
+- [x] Base de datos compartida entre contenedores de un mismo proyecto
 - [ ] Volcados lógicos (`pg_dump`), que son lo que habilita los backups fuera de la máquina
 - [ ] Promoción de una instancia existente a App
 
