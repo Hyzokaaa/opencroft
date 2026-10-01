@@ -20,6 +20,9 @@ type Instance struct {
 	// Project is the one the container belongs to, or empty. It is an
 	// annotation on the container, so a migration carries it along.
 	Project string
+	// InternalName is how its neighbours reach it, <name>.lxd, when the
+	// bridge gives names at all.
+	InternalName string
 
 	// Managed is false for containers that exist on the host but were not
 	// created by us. They are listed, never touched.
@@ -27,34 +30,36 @@ type Instance struct {
 }
 
 type InstanceProps struct {
-	Id       string
-	Name     string
-	Image    string
-	Address  string
-	Port     int
-	Domain   string
-	CPULimit int
-	MemLimit string
-	Status   enums.InstanceStatus
-	Created  string
-	Project  string
-	Managed  bool
+	Id           string
+	Name         string
+	Image        string
+	Address      string
+	Port         int
+	Domain       string
+	CPULimit     int
+	MemLimit     string
+	Status       enums.InstanceStatus
+	Created      string
+	Project      string
+	InternalName string
+	Managed      bool
 }
 
 func NewInstance(props InstanceProps) *Instance {
 	return &Instance{
-		Id:       id.New(props.Id),
-		Name:     props.Name,
-		Image:    props.Image,
-		Address:  props.Address,
-		Port:     props.Port,
-		Domain:   props.Domain,
-		CPULimit: props.CPULimit,
-		MemLimit: props.MemLimit,
-		Status:   props.Status,
-		Created:  props.Created,
-		Managed:  props.Managed,
-		Project:  props.Project,
+		Id:           id.New(props.Id),
+		Name:         props.Name,
+		Image:        props.Image,
+		Address:      props.Address,
+		Port:         props.Port,
+		Domain:       props.Domain,
+		CPULimit:     props.CPULimit,
+		MemLimit:     props.MemLimit,
+		Status:       props.Status,
+		Created:      props.Created,
+		Managed:      props.Managed,
+		Project:      props.Project,
+		InternalName: props.InternalName,
 	}
 }
 

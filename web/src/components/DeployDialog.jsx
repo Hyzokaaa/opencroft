@@ -9,7 +9,7 @@ import EnvEditor, { toObject } from './EnvEditor.jsx'
 //
 // That is the whole difference from a buildpack. We guess as much as anyone
 // does; we just do it where you can see it and change it.
-export default function DeployDialog({ container, service: deployed, onClose, onFinished }) {
+export default function DeployDialog({ container, service: deployed, peers, onClose, onFinished }) {
   // Deploying something already here is the same second half, with what the
   // container remembers instead of what was just detected. Asking again for a
   // repository it already knows would be asking a question we can answer.
@@ -127,6 +127,7 @@ export default function DeployDialog({ container, service: deployed, onClose, on
           onEditSource={deployed ? () => setStage('source') : null}
           adopted={deployed?.adopted}
           existing={Boolean(deployed)}
+          peers={peers}
         />
       )}
     </Frame>
@@ -232,7 +233,7 @@ function Source({ value, name, onChange, error, onSubmit }) {
 
 // Everything here is editable on purpose. What was detected is a suggestion,
 // and a suggestion you cannot change is a decision made behind your back.
-function Found({ service, why, onChange, onDeploy, onEditSource, adopted, existing }) {
+function Found({ service, why, onChange, onDeploy, onEditSource, adopted, existing, peers }) {
   const set = (key) => (v) => onChange({ ...service, [key]: v })
   const runnable = Boolean(adopted) || Boolean(service.start?.trim())
 
@@ -306,7 +307,7 @@ function Found({ service, why, onChange, onDeploy, onEditSource, adopted, existi
             The environment is its own file now — change it from Environment&hellip; on the service.
           </p>
         ) : (
-          <EnvEditor value={service.env} onChange={set('env')} />
+          <EnvEditor value={service.env} onChange={set('env')} peers={peers} />
         )}
 
         {/* Nothing reports readiness, so without somewhere to ask, a

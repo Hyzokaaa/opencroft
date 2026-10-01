@@ -5,11 +5,19 @@ import { useState } from 'react'
 // Built the other way round, pasting a .env from somewhere else stops working
 // — and everybody pastes. So parsing happens on the way to the table and the
 // text is what gets stored.
-export default function EnvEditor({ value, onChange, note }) {
+export default function EnvEditor({ value, onChange, note, peers = [] }) {
   const [asTable, setAsTable] = useState(true)
   const [revealed, setRevealed] = useState(() => new Set())
 
   const pairs = parse(value)
+  const suggestions = byName(pairs, peers)
+
+  // Swapping an address for a name touches that address only, wherever it
+  // appears in the value — a URL keeps its user, password, port and path.
+  function swapForName({ index, address, name }) {
+    const pair = pairs[index]
+    replace(index, pair.key, pair.value.replace(wholeAddress(address, 'g'), `$1${name}`))
+  }
 
   function replace(index, key, secret) {
     const next = pairs.map((pair, i) => (i === index ? { key, value: secret } : pair))
@@ -116,6 +124,26 @@ export default function EnvEditor({ value, onChange, note }) {
         />
       )}
 
+      {suggestions.length > 0 && (
+        <ul className="mt-2 space-y-1 rounded border border-edge bg-ground px-3 py-2 text-xs">
+          {suggestions.map((s) => (
+            <li key={`${s.index}-${s.address}`} className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-muted">
+                <span className="font-mono text-ink">{s.key}</span> reaches{' '}
+                <span className="font-mono">{s.peer}</span> by its address, which changes if the container is rebuilt.
+              </span>
+              <button
+                type="button"
+                onClick={() => swapForName(s)}
+                className="rounded border border-edge px-2 py-0.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
+              >
+                Use {s.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
       <p className="mt-1 text-xs text-faint">
         {note ?? (
           <>
@@ -126,6 +154,22 @@ export default function EnvEditor({ value, onChange, note }) {
       </p>
     </div>
   )
+}
+
+// byName finds values that reach another container by its address when the
+// bridge would answer to its name. Only whole addresses count: 10.0.0.5 must
+// not match inside 10.0.0.50.
+function byName(pairs, peers) {
+  const found = []
+  pairs.forEach((pair, index) => {
+    for (const peer of peers) {
+      if (!peer.address || !peer.internalName) continue
+      if (wholeAddress(peer.address).test(pair.value)) {
+        found.push({ index, key: pair.key, address: peer.address, peer: peer.name, name: peer.internalName })
+      }
+    }
+  })
+  return found
 }
 
 // Lines that are not KEY=value are kept as they are in the text and simply do
@@ -175,4 +219,8 @@ export function fromObject(env) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}=${value}`)
     .join('\n')
+}
+
+function wholeAddress(address, flags = '') {
+  return new RegExp(`(^|[^0-9.])${address.replaceAll('.', '\\.')}(?![0-9])`, flags)
 }

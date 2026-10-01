@@ -34,6 +34,8 @@ type InstanceDTO struct {
 	Created  string               `json:"created"`
 	Managed  bool                 `json:"managed"`
 	Project  string               `json:"project,omitempty"`
+	// InternalName is how the other containers reach this one: <name>.lxd.
+	InternalName string `json:"internalName,omitempty"`
 }
 
 type RouteDTO struct {

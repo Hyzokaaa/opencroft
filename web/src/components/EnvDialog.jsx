@@ -7,7 +7,7 @@ import { Frame } from './DeployDialog.jsx'
 // it. The file is the only copy: an edit made over ssh is what this shows the
 // next time it opens, and a save is refused if the file changed since it was
 // opened here — so nobody's edit is quietly put back.
-export default function EnvDialog({ container, service, onClose, onFinished }) {
+export default function EnvDialog({ container, service, peers, onClose, onFinished }) {
   const [found, setFound] = useState(null)
   const [text, setText] = useState('')
   const [error, setError] = useState(null)
@@ -70,6 +70,7 @@ export default function EnvDialog({ container, service, onClose, onFinished }) {
             <EnvEditor
               value={text}
               onChange={setText}
+              peers={peers}
               note={
                 rebuild
                   ? 'Read by the build. Saving rewrites only what you changed, then rebuilds and publishes the site.'

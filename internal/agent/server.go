@@ -40,6 +40,8 @@ type Server struct {
 	turns *turns
 
 	projects *projectServices.Projects
+
+	dns internalDNS
 }
 
 func NewServer(
@@ -186,7 +188,9 @@ func (s *Server) listInstances(w http.ResponseWriter, r *http.Request) {
 
 	out := make([]InstanceDTO, 0, len(found))
 	for _, i := range found {
-		out = append(out, toDTO(i))
+		dto := toDTO(i)
+		dto.InternalName = s.internalName(r.Context(), i.Name)
+		out = append(out, dto)
 	}
 	writeJSON(w, http.StatusOK, out)
 }

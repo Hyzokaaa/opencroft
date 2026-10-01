@@ -121,7 +121,7 @@ export default function Projects({ data, projects, error, onOpen, onNew, onDecla
                       >
                         <span className="font-mono text-sm">{c.name}</span>
                         <span className="flex items-center gap-2 font-mono text-xs text-muted">
-                          {c.address}
+                          {c.internalName || c.address}
                           <Chip
                             label={c.status}
                             tone={c.status === 'running' ? 'border-running/40 text-running' : 'border-edge-strong text-muted'}

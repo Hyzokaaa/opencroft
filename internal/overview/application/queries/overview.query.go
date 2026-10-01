@@ -13,19 +13,20 @@ import (
 )
 
 type InstanceView struct {
-	Id       string   `json:"id"`
-	Name     string   `json:"name"`
-	Image    string   `json:"image"`
-	Address  string   `json:"address"`
-	Port     int      `json:"port"`
-	Domain   string   `json:"domain"`
-	Domains  []string `json:"domains"`
-	CPULimit int      `json:"cpuLimit"`
-	MemLimit string   `json:"memLimit"`
-	Status   string   `json:"status"`
-	Created  string   `json:"created"`
-	Managed  bool     `json:"managed"`
-	Project  string   `json:"project"`
+	Id           string   `json:"id"`
+	Name         string   `json:"name"`
+	Image        string   `json:"image"`
+	Address      string   `json:"address"`
+	Port         int      `json:"port"`
+	Domain       string   `json:"domain"`
+	Domains      []string `json:"domains"`
+	CPULimit     int      `json:"cpuLimit"`
+	MemLimit     string   `json:"memLimit"`
+	Status       string   `json:"status"`
+	Created      string   `json:"created"`
+	Managed      bool     `json:"managed"`
+	Project      string   `json:"project"`
+	InternalName string   `json:"internalName"`
 }
 
 type CertificateView struct {
@@ -142,7 +143,8 @@ func (q *OverviewQuery) Execute(ctx context.Context) (OverviewResponse, error) {
 			Port: i.Port, Domain: primary, Domains: served,
 			CPULimit: i.CPULimit, MemLimit: i.MemLimit,
 			Status: string(i.Status), Created: i.Created, Managed: i.Managed,
-			Project: i.Project,
+			Project:      i.Project,
+			InternalName: i.InternalName,
 		})
 	}
 

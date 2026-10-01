@@ -546,6 +546,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
         <DeployDialog
           container={deploying.container}
           service={deploying.service}
+          peers={data.instances}
           onClose={() => { setDeploying(null); reload() }}
           onFinished={reload}
         />
@@ -555,6 +556,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
         <EnvDialog
           container={environment.container}
           service={environment.service}
+          peers={data.instances}
           onClose={() => { setEnvironment(null); reload() }}
           onFinished={reload}
         />

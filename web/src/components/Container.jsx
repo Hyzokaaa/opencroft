@@ -72,6 +72,7 @@ export default function Container({
 
       <p className="font-mono text-xs text-muted">
         {container.image} · {container.address}
+        {container.internalName ? ` · ${container.internalName}` : ''}
         {container.cpuLimit ? ` · ${container.cpuLimit} CPU` : ''}
         {container.memLimit ? ` · ${container.memLimit}` : ''}
       </p>
