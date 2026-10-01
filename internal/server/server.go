@@ -129,6 +129,8 @@ func api(deps Deps) *http.ServeMux {
 
 	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/databases", deps.listDatabases)
 	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/databases", deps.provisionDatabase)
+	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/databases/shareable", deps.listShareable)
+	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/databases/connect", deps.connectDatabase)
 	mux.HandleFunc("DELETE /api/hosts/{hostId}/instances/{name}/databases/{database}", deps.destroyDatabase)
 
 	mux.HandleFunc("POST /api/hosts/{hostId}/expose", deps.exposePanel)

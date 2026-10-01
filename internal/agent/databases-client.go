@@ -54,3 +54,21 @@ func (a *DatabaseClient) Destroy(
 	return a.c.streamed(ctx, http.MethodDelete,
 		databasePath(container, "/"+url.PathEscape(database)), nil, report)
 }
+
+// ── Connecting to one in another container ───────────────────────────────────
+
+func (a *DatabaseClient) Shareable(ctx context.Context, container string) ([]OfferDTO, error) {
+	var out []OfferDTO
+	err := a.c.call(ctx, http.MethodGet, databasePath(container, "/shareable"), nil, &out)
+	return out, err
+}
+
+func (a *DatabaseClient) SharePlan(ctx context.Context, container string, want ShareDTO) (plan.Plan, error) {
+	var response PlanResponse
+	err := a.c.call(ctx, http.MethodPost, databasePath(container, "/connect/plan"), want, &response)
+	return response.Plan, err
+}
+
+func (a *DatabaseClient) Share(ctx context.Context, container string, want ShareDTO, report func(int, string)) error {
+	return a.c.streamed(ctx, http.MethodPost, databasePath(container, "/connect"), want, report)
+}

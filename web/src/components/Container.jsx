@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Card from './Card.jsx'
 import Chip from './Chip.jsx'
 import LogView from './LogView.jsx'
@@ -31,6 +31,8 @@ export default function Container({
 }) {
   const { data, error, fetchedAt, read } = useServices(container.name)
   const databases = useDatabases(container.name)
+  const [offersRead, setOffersRead] = useState(0)
+  const offers = useShareable(container.name, `${container.project}-${offersRead}`)
   const [logs, setLogs] = useState(null)
   const [dialog, setDialog] = useState(null)
 
@@ -214,6 +216,8 @@ export default function Container({
         commandMode={commandMode}
         onAdd={() => setDialog({ kind: 'add' })}
         onRemove={(database) => setDialog({ kind: 'remove', database })}
+        offers={offers}
+        onConnect={(offer) => setDialog({ kind: 'connect', offer })}
       />
 
       <Snapshots
@@ -242,6 +246,7 @@ export default function Container({
           onFinished={() => {
             setDialog(null)
             databases.reload()
+            setOffersRead((n) => n + 1)
           }}
         />
       )}
@@ -256,11 +261,24 @@ function databaseRequest(container, dialog) {
   const url = `/api/hosts/local/instances/${container.name}/databases`
 
   if (dialog.kind === 'remove') {
+    // One that lives elsewhere is let go of: the data stays where it is.
+    const away = Boolean(dialog.database.location)
     return {
-      title: `Remove ${dialog.database.name} from ${container.name}`,
+      title: away
+        ? `Disconnect ${container.name} from ${dialog.database.name} in ${dialog.database.location}`
+        : `Remove ${dialog.database.name} from ${container.name}`,
       url: `${url}/${dialog.database.name}`,
       method: 'DELETE',
-      destructive: true,
+      destructive: !away,
+    }
+  }
+
+  if (dialog.kind === 'connect') {
+    return {
+      title: `Connect ${container.name} to ${dialog.offer.name} in ${dialog.offer.container}`,
+      url: `${url}/connect`,
+      method: 'POST',
+      defaults: { location: dialog.offer.container, name: dialog.offer.name },
     }
   }
 
@@ -288,7 +306,7 @@ function databaseRequest(container, dialog) {
 
 // The data lives in the container, so it is in the snapshots too. That is the
 // advantage, and it is also the thing to know before restoring one.
-function Databases({ container, state, commandMode, onAdd, onRemove }) {
+function Databases({ container, state, commandMode, onAdd, onRemove, offers, onConnect }) {
   const databases = state.data?.databases ?? []
 
   return (
@@ -319,6 +337,28 @@ function Databases({ container, state, commandMode, onAdd, onRemove }) {
             <Database key={database.name} database={database} onRemove={() => onRemove(database)} />
           ))}
         </ul>
+      )}
+
+      {/* What the other containers of its project hold, offered rather than
+          hidden: a backend beside its database is the default, and a second
+          service reaching the same data is the usual next step. */}
+      {offers.length > 0 && (
+        <div className="border-t border-edge px-4 py-3">
+          <p className="mb-2 text-xs text-muted">In this project, and could connect from here:</p>
+          <ul className="space-y-1.5">
+            {offers.map((offer) => (
+              <li key={offer.container + '/' + offer.name} className="flex items-center justify-between gap-3">
+                <span className="font-mono text-xs">
+                  {offer.name}
+                  <span className="text-muted"> · {offer.engine} in {offer.container}</span>
+                </span>
+                <button onClick={() => onConnect(offer)} className={SECONDARY}>
+                  Connect&hellip;
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </Card>
   )
@@ -357,7 +397,7 @@ function Database({ database, onRemove }) {
             }
           />
           <button onClick={onRemove} className={SECONDARY}>
-            Remove
+            {away ? 'Disconnect' : 'Remove'}
           </button>
         </div>
       </div>
@@ -825,4 +865,23 @@ function Snapshot({ snapshot, healthy, orphaned, onRollback }) {
       </button>
     </li>
   )
+}
+
+// useShareable asks which databases of this container's project it could
+// connect to. Read when the container or its project changes, and after a
+// connection is made or let go — not on a timer: it changes only when
+// somebody does one of those.
+function useShareable(container, key) {
+  const [offers, setOffers] = useState([])
+  useEffect(() => {
+    let current = true
+    fetch(`/api/hosts/local/instances/${container}/databases/shareable`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((payload) => current && setOffers(payload ?? []))
+      .catch(() => current && setOffers([]))
+    return () => {
+      current = false
+    }
+  }, [container, key])
+  return offers
 }

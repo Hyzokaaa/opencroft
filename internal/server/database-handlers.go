@@ -146,3 +146,78 @@ func (d Deps) destroyDatabase(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": target})
 }
+
+// Sharer connects a container to a database in another container of its
+// project. The data stays where it is; the password is carried between the
+// two on the far side of the socket.
+type Sharer interface {
+	Shareable(ctx context.Context, container string) ([]agent.OfferDTO, error)
+	SharePlan(ctx context.Context, container string, want agent.ShareDTO) (plan.Plan, error)
+	Share(ctx context.Context, container string, want agent.ShareDTO, report func(int, string)) error
+}
+
+func (d Deps) sharer(w http.ResponseWriter) (Sharer, bool) {
+	sharer, ok := d.Databases.(Sharer)
+	if !ok || d.Databases == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("this host cannot connect containers to databases"))
+		return nil, false
+	}
+	return sharer, true
+}
+
+func (d Deps) listShareable(w http.ResponseWriter, r *http.Request) {
+	sharer, ok := d.sharer(w)
+	if !ok {
+		return
+	}
+	offers, err := sharer.Shareable(r.Context(), r.PathValue("name"))
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, offers)
+}
+
+func (d Deps) connectDatabase(w http.ResponseWriter, r *http.Request) {
+	if !d.writable(w) {
+		return
+	}
+	sharer, ok := d.sharer(w)
+	if !ok {
+		return
+	}
+	name := r.PathValue("name")
+
+	var body agent.ShareDTO
+	if err := readBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	p, err := sharer.SharePlan(r.Context(), name, body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if wantsPlan(r) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"summary": fmt.Sprintf(
+				"Connect %s to %s in %s. The data stays in %s — a snapshot of %s still holds it, and "+
+					"rolling %s back does not take it back. %s gets a login of its own, accepted from its "+
+					"own address only, and the password is made inside %s and carried across without "+
+					"passing through here.",
+				name, body.Name, body.Location, body.Location, body.Location, name, name, body.Location),
+			"plan": p,
+		})
+		return
+	}
+
+	started := d.Jobs.Start("database", name+"/"+body.Name, p,
+		func(ctx context.Context, report func(int, string)) error {
+			if d.Simulated {
+				return d.rehearse(p, report)
+			}
+			return sharer.Share(ctx, name, body, report)
+		})
+	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": body.Name})
+}

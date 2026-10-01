@@ -203,6 +203,16 @@ func (s *Server) destroyDatabasePlan(
 	}
 
 	services := stored(config)
+
+	// One that lives elsewhere is let go of, not dropped: the data was never
+	// this container's.
+	if !database.Local() {
+		return s.revokePlan(ctx, container, database, removal, services)
+	}
+	if err := s.stillConnected(ctx, container, name); err != nil {
+		return plan.Plan{}, "", err
+	}
+
 	planner := databaseContainer.NewPlanner(s.bin, container)
 
 	return planner.Destroy(database, time.Now(), removal.Keys, removal.Remaining, services),
