@@ -141,7 +141,12 @@ terceros —el caso de un MSP— hace falta saber quién puede tocar qué.
 
 - [ ] Correo en el usuario, además del nombre
 - [ ] Organizaciones, y usuarios pertenecientes a ellas
-- [ ] Proyectos dentro de una organización, agrupando instancias y dominios
+- [x] Proyectos agrupando contenedores y, a través de ellos, dominios (declarados en
+      `/etc/croft/projects`, pertenencia como anotación `user.croft.project`)
+- [ ] Proyectos dentro de una organización
+- [ ] Nombres internos (`contenedor.lxd`) sugeridos al editar un `.env`
+- [ ] Base de datos compartida entre contenedores de un mismo proyecto
+- [ ] Entornos (dev/prod) dentro de un proyecto
 - [ ] Roles por organización y por proyecto
 - [ ] Invitaciones por correo
 - [ ] Log de auditoría con el actor de cada operación

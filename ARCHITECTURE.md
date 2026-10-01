@@ -531,6 +531,29 @@ Se niega si el fichero sirve también otros dominios (se los llevaría por delan
 `nginx.conf` o si no tiene un destino que croft sepa leer. Lo que el original tuviera de
 más —un `location` con reglas propias— no se copia: por eso se ve el plan antes.
 
+### Proyectos
+
+Un proyecto son los contenedores que van juntos —la web, el backend y su base de datos— y,
+a través de ellos, los dominios que les llegan. No hay tabla de proyectos en el panel:
+
+- **La pertenencia** es una anotación del contenedor, `user.croft.project`. Viaja con él
+  al migrarlo, como el resto de su estado deseado. Mover un contenedor de proyecto es un
+  `lxc config set`: no reinicia nada ni copia nada.
+- **La declaración** es un fichero en el host, `/etc/croft/projects/<nombre>.conf`, con su
+  descripción. Es lo que permite que un proyecto exista antes de su primer contenedor. Vive
+  en `/etc` como `dns.conf`, así que perder la base de datos del panel no lo pierde.
+- **Lo que se muestra es la unión de los dos.** Un proyecto declarado sin contenedores está
+  esperando el primero. Una anotación que nombra un proyecto no declarado aquí —un
+  contenedor migrado de otro host— aparece como *found, not declared*, y declararlo es un
+  paso. Es el mismo trato que reciben un vhost o una unidad que croft no creó.
+- **Nada queda huérfano.** Un proyecto con contenedores no se borra: hay que sacarlos antes,
+  a propósito. Y solo se mueve un contenedor a un proyecto declarado, para que una errata no
+  invente uno.
+
+Los dominios no se asignan: pertenecen al proyecto de los contenedores a los que apuntan,
+incluidos los paths. Los snapshots siguen siendo por contenedor; un proyecto agrupa, no
+sincroniza.
+
 ### Adopción
 
 OpenCroft descubre lo que no ha creado él: contenedores lanzados con `lxc launch`, vhosts
