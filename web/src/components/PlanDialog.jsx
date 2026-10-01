@@ -272,11 +272,16 @@ function Form({ fields, values, onChange, error, onSubmit }) {
               onChange={(e) => onChange({ ...values, [field.name]: e.target.value })}
               className="w-full rounded border border-edge bg-ground px-3 py-2 text-sm outline-none transition focus:border-edge-strong"
             >
-              {field.options.map((o) => (
-                <option key={o} value={o}>
-                  {o}
-                </option>
-              ))}
+              {field.options.map((o) => {
+                // A plain string is its own label; { value, label } says
+                // something other than what is sent, like "No project" for "".
+                const { value, label } = typeof o === 'object' ? o : { value: o, label: o }
+                return (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                )
+              })}
             </select>
           ) : (
           <input

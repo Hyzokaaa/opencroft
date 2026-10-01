@@ -16,6 +16,8 @@ import (
 	certificateRepositories "github.com/Hyzokaaa/opencroft/internal/certificate/domain/repositories"
 	instanceEntities "github.com/Hyzokaaa/opencroft/internal/instance/domain/entities"
 	instanceRepositories "github.com/Hyzokaaa/opencroft/internal/instance/domain/repositories"
+	projectServices "github.com/Hyzokaaa/opencroft/internal/project/domain/services"
+	projectFiles "github.com/Hyzokaaa/opencroft/internal/project/infrastructure/files"
 	routeEntities "github.com/Hyzokaaa/opencroft/internal/route/domain/entities"
 	routeEnums "github.com/Hyzokaaa/opencroft/internal/route/domain/enums"
 	routeRepositories "github.com/Hyzokaaa/opencroft/internal/route/domain/repositories"
@@ -36,6 +38,8 @@ type Server struct {
 	bin string
 
 	turns *turns
+
+	projects *projectServices.Projects
 }
 
 func NewServer(
@@ -57,6 +61,7 @@ func NewServer(
 		defaultImage: instances.DefaultImage(),
 		bin:          bin,
 		turns:        newTurns(),
+		projects:     projectServices.NewProjects(projectFiles.NewFileProjectRepository(h, bin), instances),
 	}
 }
 
@@ -159,6 +164,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /instances/{name}/databases", s.provision)
 	mux.HandleFunc("GET /instances/{name}/databases/{database}/destroy/plan", s.planDestroyDatabase)
 	mux.HandleFunc("DELETE /instances/{name}/databases/{database}", s.destroyDatabase)
+	mux.HandleFunc("GET /projects", s.listProjects)
+	mux.HandleFunc("PUT /projects/{project}/plan", s.showProjectPlan(s.declarePlan))
+	mux.HandleFunc("PUT /projects/{project}", s.runProjectPlan(s.declarePlan))
+	mux.HandleFunc("GET /projects/{project}/remove/plan", s.showProjectPlan(s.removeProjectPlan))
+	mux.HandleFunc("DELETE /projects/{project}", s.runProjectPlan(s.removeProjectPlan))
+	mux.HandleFunc("PUT /instances/{name}/project/plan", s.showProjectPlan(s.assignPlan))
+	mux.HandleFunc("PUT /instances/{name}/project", s.runProjectPlan(s.assignPlan))
 	mux.HandleFunc("GET /dns", s.showDNS)
 	mux.HandleFunc("POST /dns", s.saveDNS)
 
@@ -342,6 +354,7 @@ func toDTO(i *instanceEntities.Instance) InstanceDTO {
 		Id: i.GetId(), Name: i.Name, Image: i.Image, Address: i.Address,
 		Port: i.Port, Domain: i.Domain, CPULimit: i.CPULimit, MemLimit: i.MemLimit,
 		Status: i.Status, Created: i.Created, Managed: i.Managed,
+		Project: i.Project,
 	}
 }
 

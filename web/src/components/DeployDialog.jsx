@@ -98,7 +98,7 @@ export default function DeployDialog({ container, service: deployed, onClose, on
 
   return (
     <Frame
-      title={deployed ? `Properties of ${deployed.name}` : `Deploy a project to ${container.name}`}
+      title={deployed ? `Properties of ${deployed.name}` : `Deploy a service to ${container.name}`}
       onClose={onClose}
     >
       {stage === 'source' && (

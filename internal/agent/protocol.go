@@ -33,6 +33,7 @@ type InstanceDTO struct {
 	Status   enums.InstanceStatus `json:"status"`
 	Created  string               `json:"created"`
 	Managed  bool                 `json:"managed"`
+	Project  string               `json:"project,omitempty"`
 }
 
 type RouteDTO struct {

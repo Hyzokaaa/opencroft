@@ -146,6 +146,8 @@ func (r *MemoryInstanceRepository) Annotate(_ context.Context, name, key, value 
 		found.Domain = value
 	case "managed":
 		found.Managed = value == "true"
+	case "project":
+		found.Project = value
 	}
 
 	if r.annotations[name] == nil {

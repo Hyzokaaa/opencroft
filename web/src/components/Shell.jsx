@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 const SECTIONS = [
   { id: 'overview', label: 'Overview' },
+  { id: 'projects', label: 'Projects' },
   { id: 'containers', label: 'Containers', count: (d) => d?.instances.length },
   { id: 'domains', label: 'Domains', count: (d) => d?.routes.length },
   { id: "certificates", label: "Certificates", count: (d) => d?.certificates?.length },

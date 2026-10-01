@@ -47,6 +47,8 @@ type Deps struct {
 	Services any
 	// Databases is the same for the engines that live inside a container.
 	Databases any
+	// Projects groups containers; see Projector.
+	Projects  any
 	PanelPort int
 	Simulated bool
 
@@ -130,6 +132,11 @@ func api(deps Deps) *http.ServeMux {
 	mux.HandleFunc("DELETE /api/hosts/{hostId}/instances/{name}/databases/{database}", deps.destroyDatabase)
 
 	mux.HandleFunc("POST /api/hosts/{hostId}/expose", deps.exposePanel)
+
+	mux.HandleFunc("GET /api/hosts/{hostId}/projects", deps.listProjects)
+	mux.HandleFunc("POST /api/hosts/{hostId}/projects", deps.declareProject)
+	mux.HandleFunc("DELETE /api/hosts/{hostId}/projects/{project}", deps.removeProject)
+	mux.HandleFunc("PUT /api/hosts/{hostId}/instances/{name}/project", deps.assignProject)
 
 	mux.HandleFunc("GET /api/hosts/{hostId}/dns", deps.showDNS)
 	mux.HandleFunc("POST /api/hosts/{hostId}/dns", deps.saveDNS)

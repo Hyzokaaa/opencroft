@@ -25,6 +25,7 @@ type InstanceView struct {
 	Status   string   `json:"status"`
 	Created  string   `json:"created"`
 	Managed  bool     `json:"managed"`
+	Project  string   `json:"project"`
 }
 
 type CertificateView struct {
@@ -141,6 +142,7 @@ func (q *OverviewQuery) Execute(ctx context.Context) (OverviewResponse, error) {
 			Port: i.Port, Domain: primary, Domains: served,
 			CPULimit: i.CPULimit, MemLimit: i.MemLimit,
 			Status: string(i.Status), Created: i.Created, Managed: i.Managed,
+			Project: i.Project,
 		})
 	}
 

@@ -14,6 +14,7 @@ import AdoptDialog from './components/AdoptDialog.jsx'
 import EnvDialog from './components/EnvDialog.jsx'
 import Activity from './components/Activity.jsx'
 import Container from './components/Container.jsx'
+import Projects, { useProjects } from './components/Projects.jsx'
 import { useOverview, useCommandMode, useAuth } from './lib/useOverview.js'
 
 export default function App() {
@@ -50,6 +51,9 @@ function Dashboard({ onSignOut, onSessionLost }) {
   const [adopting, setAdopting] = useState(null)
   const [environment, setEnvironment] = useState(null)
   const [opened, setOpened] = useState(null)
+  // Read again whenever the overview is: a move or a declaration shows on the
+  // next poll without a second clock.
+  const { projects, error: projectsError } = useProjects(data)
 
   // Subjects named by a problem, so the tables carry the same severity the
   // findings panel reports. Two truths on one screen is worse than none.
@@ -103,7 +107,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
       fields: [
         { name: 'target', label: 'Container', options: data.instances.map((i) => i.name) },
         { name: 'port', label: 'Port inside the container', type: 'number',
-          hint: 'The certificate is untouched — only where the traffic goes changes.' },
+          hint: 'The certificate is untouched â only where the traffic goes changes.' },
       ],
     })
   }
@@ -128,7 +132,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
 
   // A prefix of the domain served from somewhere of its own: /api/ to a backend
   // while the web keeps the rest. Stripping is what an app mounted behind a
-  // prefix it knows nothing about needs — /api/tickets arriving as /tickets.
+  // prefix it knows nothing about needs â /api/tickets arriving as /tickets.
   function addPath(route) {
     const reachable = (data?.instances ?? []).filter((i) => i.address)
     const names = reachable.map((i) => i.name)
@@ -168,7 +172,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
       method: 'POST',
       fields: [
         { name: 'domain', label: 'Domain', placeholder: 'example.com', autoFocus: true,
-          hint: 'Covers example.com and *.example.com — app.example.com, not api.app.example.com. Proved over DNS, so the credentials in Settings are used.' },
+          hint: 'Covers example.com and *.example.com â app.example.com, not api.app.example.com. Proved over DNS, so the credentials in Settings are used.' },
       ],
       defaults: { domain: '' },
     })
@@ -225,7 +229,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
   }, [opened])
 
   // Restoring reaches every service in the container and everything written
-  // since, so it goes through the same plan dialog as any other write — and
+  // since, so it goes through the same plan dialog as any other write â and
   // the summary the daemon returns names what else it takes back.
   function rollback(container, snapshot) {
     setDialog({
@@ -239,7 +243,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
 
   // Everything below the snapshot it takes first is irreversible, the
   // environment file included. The daemon's summary says what else stops being
-  // true — a domain pointing at its port, above all.
+  // true â a domain pointing at its port, above all.
   function destroyService(container, service) {
     setDialog({
       title: service.adopted
@@ -252,7 +256,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
     })
   }
 
-  // Restarting, stopping or starting touches nothing the service runs — no
+  // Restarting, stopping or starting touches nothing the service runs â no
   // fetch, no install, no build. Only stop leaves it down until told
   // otherwise, which is the one of the three worth pausing on.
   const POWER_TITLE = { restart: 'Restart', stop: 'Stop', start: 'Start' }
@@ -275,7 +279,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
     })
   }
 
-  // Same three verbs, on a unit croft found rather than deployed — a
+  // Same three verbs, on a unit croft found rather than deployed â a
   // different path because its name carries no croft- prefix to trust.
   function powerUnit(container, unit, action) {
     setDialog({
@@ -283,6 +287,57 @@ function Dashboard({ onSignOut, onSessionLost }) {
       url: `/api/hosts/local/instances/${container.name}/units/${unit.name}/${action}`,
       method: 'POST',
       destructive: action === 'stop',
+    })
+  }
+
+  // A project is declared on the host, so it can exist before its first
+  // container — organising ahead is the point.
+  function newProject() {
+    setDialog({
+      title: 'New project',
+      url: '/api/hosts/local/projects',
+      method: 'POST',
+      fields: [
+        { name: 'name', label: 'Name', placeholder: 'open-helpdesk', autoFocus: true,
+          hint: 'Lowercase letters, digits and dashes. It is written on each container in it.' },
+        { name: 'description', label: 'Description', placeholder: 'The helpdesk, its API and its database' },
+      ],
+      defaults: { name: '', description: '' },
+    })
+  }
+
+  // A name found on containers and declared nowhere here: keep it as it is.
+  function declareProject(project) {
+    setDialog({
+      title: `Declare ${project.name}`,
+      url: '/api/hosts/local/projects',
+      method: 'POST',
+      fields: [{ name: 'description', label: 'Description', autoFocus: true }],
+      defaults: { name: project.name, description: '' },
+    })
+  }
+
+  function removeProject(project) {
+    setDialog({
+      title: `Remove the project ${project.name}`,
+      url: `/api/hosts/local/projects/${project.name}`,
+      method: 'DELETE',
+    })
+  }
+
+  // Only the label moves: nothing restarts, nothing is copied.
+  function moveToProject(container) {
+    const declared = (projects ?? []).filter((p) => p.declared).map((p) => p.name)
+    setDialog({
+      title: `Move ${container.name} to a project`,
+      url: `/api/hosts/local/instances/${container.name}/project`,
+      method: 'PUT',
+      fields: [
+        { name: 'project', label: 'Project',
+          options: [{ value: '', label: 'No project' }, ...declared],
+          hint: declared.length ? null : 'Create a project first, under Projects.' },
+      ],
+      defaults: { project: container.project ?? '' },
     })
   }
 
@@ -382,6 +437,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
           onPowerUnit={powerUnit}
           onAdopt={(container, subject) => setAdopting({ container, subject })}
           onAddDomain={addDomain}
+          onMoveProject={moveToProject}
         />
       )}
 
@@ -423,6 +479,18 @@ function Dashboard({ onSignOut, onSessionLost }) {
             </Card>
           </div>
         </>
+      )}
+
+      {!opened && section === 'projects' && (
+        <Projects
+          data={data}
+          projects={projects}
+          error={projectsError}
+          onOpen={setOpened}
+          onNew={newProject}
+          onDeclare={declareProject}
+          onRemove={removeProject}
+        />
       )}
 
       {!opened && section === 'containers' && (
@@ -471,8 +539,8 @@ function Dashboard({ onSignOut, onSessionLost }) {
 
       {!opened && section === 'activity' && <Activity commandMode={commandMode} />}
 
-      {/* Deploying has a step in the middle — look at the repository, then
-          decide — so it runs its own flow and hands off to the same plan
+      {/* Deploying has a step in the middle â look at the repository, then
+          decide â so it runs its own flow and hands off to the same plan
           dialog for each half. */}
       {deploying && (
         <DeployDialog
@@ -540,6 +608,6 @@ function relative(date) {
 
 function freshness(date, loading) {
   if (loading && !date) return 'loading'
-  if (!date) return '—'
+  if (!date) return 'â'
   return relative(date)
 }

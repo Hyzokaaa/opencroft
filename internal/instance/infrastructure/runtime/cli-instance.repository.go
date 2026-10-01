@@ -96,6 +96,7 @@ func toEntity(item cliInstance) *entities.Instance {
 		Status:   enums.ParseStatus(item.Status),
 		Created:  annotation("created"),
 		Managed:  annotation("managed") == "true",
+		Project:  annotation("project"),
 	})
 }
 

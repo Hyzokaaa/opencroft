@@ -17,6 +17,9 @@ type Instance struct {
 	MemLimit string
 	Status   enums.InstanceStatus
 	Created  string
+	// Project is the one the container belongs to, or empty. It is an
+	// annotation on the container, so a migration carries it along.
+	Project string
 
 	// Managed is false for containers that exist on the host but were not
 	// created by us. They are listed, never touched.
@@ -34,6 +37,7 @@ type InstanceProps struct {
 	MemLimit string
 	Status   enums.InstanceStatus
 	Created  string
+	Project  string
 	Managed  bool
 }
 
@@ -50,6 +54,7 @@ func NewInstance(props InstanceProps) *Instance {
 		Status:   props.Status,
 		Created:  props.Created,
 		Managed:  props.Managed,
+		Project:  props.Project,
 	}
 }
 

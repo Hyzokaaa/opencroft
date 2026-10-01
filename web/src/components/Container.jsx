@@ -27,6 +27,7 @@ export default function Container({
   onPowerUnit,
   onAdopt,
   onAddDomain,
+  onMoveProject,
 }) {
   const { data, error, fetchedAt, read } = useServices(container.name)
   const databases = useDatabases(container.name)
@@ -65,7 +66,7 @@ export default function Container({
           onClick={() => onDeploy(container)}
           className="rounded border border-edge-strong bg-raised px-2.5 py-1 text-xs transition hover:border-ink/30"
         >
-          Deploy a project
+          Deploy a service
         </button>
       </div>
 
@@ -73,6 +74,22 @@ export default function Container({
         {container.image} · {container.address}
         {container.cpuLimit ? ` · ${container.cpuLimit} CPU` : ''}
         {container.memLimit ? ` · ${container.memLimit}` : ''}
+      </p>
+
+      {/* The project is a label on the container: moving it changes nothing
+          it runs, so it sits here with the facts rather than among actions. */}
+      <p className="text-xs text-muted">
+        {container.project ? (
+          <>
+            In the project <span className="font-mono text-ink">{container.project}</span>
+          </>
+        ) : (
+          'In no project'
+        )}
+        {' · '}
+        <button onClick={() => onMoveProject(container)} className="text-muted underline-offset-2 transition hover:text-ink hover:underline">
+          Move&hellip;
+        </button>
       </p>
 
       {error && (
@@ -376,7 +393,7 @@ function Empty({ onDeploy }) {
         onClick={onDeploy}
         className="mt-3 rounded border border-edge-strong bg-raised px-2.5 py-1 text-xs transition hover:border-ink/30"
       >
-        Deploy a project
+        Deploy a service
       </button>
     </div>
   )

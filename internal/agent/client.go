@@ -120,6 +120,7 @@ func (c *Client) FindAll(ctx context.Context) ([]*instanceEntities.Instance, err
 			Port: dto.Port, Domain: dto.Domain, CPULimit: dto.CPULimit,
 			MemLimit: dto.MemLimit, Status: dto.Status, Created: dto.Created,
 			Managed: dto.Managed,
+			Project: dto.Project,
 		}))
 	}
 	return out, nil
