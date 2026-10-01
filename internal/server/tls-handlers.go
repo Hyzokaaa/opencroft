@@ -84,8 +84,9 @@ func (d Deps) enableTLS(w http.ResponseWriter, r *http.Request) {
 	if wantsPlan(r) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"summary": fmt.Sprintf(
-				"Serve %s over https with a certificate croft obtains from Let's Encrypt and renews from then on. "+
-					"The http address will redirect. If certbot renewed the one it had, certbot stops — its files stay.", domain),
+				"Serve %s over https with a certificate croft keeps and renews: a wildcard it already has that "+
+					"covers the name, or else a new one from Let's Encrypt — the plan says which. The http address "+
+					"will redirect. If certbot renewed the one it had, certbot stops — its files stay.", domain),
 			"plan": p,
 		})
 		return
