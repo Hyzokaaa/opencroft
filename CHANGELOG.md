@@ -14,6 +14,15 @@ descargó.
 
 ## No publicado
 
+### v0.26.0 — 2026-09-30
+- docs: file v0.26.0 in the changelog
+- docs: describe internal names and a database shared within a project
+- feat: connect a container to a database in another container of its project
+- feat: show each container's name on the bridge, and offer it where a .env holds an address
+- feat: group containers into projects, declared on the host and labelled on each container
+- docs: describe projects, declared on the host and labelled on containers
+- fix: say when https is served with a wildcard croft already keeps
+
 ### v0.25.0 — 2026-09-29
 - docs: file v0.25.0 in the changelog
 - docs: describe moving a certificate off certbot and wildcards
