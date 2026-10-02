@@ -224,7 +224,7 @@ function Members({ containers, problems, flush }) {
 
 // ProjectPage is one project in full: its containers, the domains that reach
 // them, the data they hold, and what was done to them lately.
-export default function ProjectPage({ name, data, projects, problems, commandMode, actions, tableProps, jobs }) {
+export default function ProjectPage({ name, data, projects, problems, commandMode, actions, tableProps, jobsReading }) {
   if (!projects) return <p role="status" className="text-xs text-muted">Reading the projects&hellip;</p>
   const project = projects.find((p) => p.name === name)
   if (!project) {
@@ -287,7 +287,7 @@ export default function ProjectPage({ name, data, projects, problems, commandMod
         containers={containers.map((c) => c.name)}
         title="What was done here"
         limit={10}
-        jobs={jobs}
+        reading={jobsReading}
       />
 
       {project.declared && containers.length === 0 && (

@@ -59,6 +59,7 @@ export default function AdoptDialog({ container, subject, onClose, onFinished })
           },
         }}
         onClose={onClose}
+        dirty
         onBack={() => setAdopting(false)}
         onFinished={onFinished}
       />

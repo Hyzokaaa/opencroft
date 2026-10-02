@@ -60,7 +60,8 @@ function Dashboard({ onSignOut, onSessionLost }) {
   // Read again whenever the overview is: a move or a declaration shows on the
   // next poll without a second clock.
   const { projects, error: projectsError } = useProjects(data)
-  const { jobs } = useJobs()
+  const jobsReading = useJobs()
+  const { jobs } = jobsReading
   const running = jobs.filter((j) => j.status === 'running').length
 
   // Subjects named by a problem, so the tables carry the same severity the
@@ -141,7 +142,10 @@ function Dashboard({ onSignOut, onSessionLost }) {
       fields: [
         { name: "domain", label: "Domain", autoFocus: true, placeholder: "app.example.com",
           hint: "It has to already point at this server. DNS is not ours to change." },
-        ...(container ? [] : [{ name: 'target', label: 'Container', options: data.instances.map((i) => i.name) }]),
+        ...(container ? [] : [{
+          name: 'target', label: 'Container', options: data.instances.map((i) => i.name),
+          derive: (v) => ({ ...v, port: data.instances.find((i) => i.name === v.target)?.port || 80 }),
+        }]),
         { name: "port", label: "Port inside the container", type: "number" },
       ],
       next: (values) => ({
@@ -563,7 +567,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
           commandMode={commandMode}
           actions={projectActions}
           tableProps={tableProps}
-          jobs={jobs}
+          jobsReading={jobsReading}
         />
       )}
 
@@ -679,7 +683,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
 
       {section === 'settings' && <Settings onExpose={exposePanel} />}
 
-      {section === 'activity' && <Activity commandMode={commandMode} jobs={jobs} />}
+      {section === 'activity' && <Activity commandMode={commandMode} reading={jobsReading} />}
 
       {/* Deploying has a step in the middle — look at the repository, then
           decide — so it runs its own flow and hands off to the same plan

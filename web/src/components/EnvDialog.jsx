@@ -47,6 +47,7 @@ export default function EnvDialog({ container, service, peers, onClose, onFinish
           defaults: { hash: found.hash, vars: toObject(text) },
         }}
         onClose={onClose}
+        dirty
         onBack={() => setSaving(false)}
         onFinished={onFinished}
       />

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 
 // The actions of a row, always on screen. Hidden until hovered they did not
 // exist on a phone and were never found on a desktop; a quiet button that is
@@ -15,6 +15,7 @@ export default function Actions({ actions, label = 'Actions' }) {
   const [at, setAt] = useState(null)
   const trigger = useRef(null)
   const menu = useRef(null)
+  const id = useId()
 
   useEffect(() => {
     if (!at) return
@@ -62,7 +63,12 @@ export default function Actions({ actions, label = 'Actions' }) {
     e.stopPropagation()
     if (at) return setAt(null)
     const rect = trigger.current.getBoundingClientRect()
-    setAt({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+    const right = window.innerWidth - rect.right
+    // Near the bottom of the screen it opens upwards, so it is never cut off.
+    const tall = 40 * shown.length + 16
+    setAt(rect.bottom + tall > window.innerHeight
+      ? { bottom: window.innerHeight - rect.top + 4, right }
+      : { top: rect.bottom + 4, right })
   }
 
   return (
@@ -73,8 +79,9 @@ export default function Actions({ actions, label = 'Actions' }) {
           ref={trigger}
           onClick={toggle}
           aria-label={label}
-          aria-haspopup="menu"
+          aria-haspopup="true"
           aria-expanded={Boolean(at)}
+          aria-controls={id}
           className="flex size-8 items-center justify-center rounded border border-edge text-muted transition hover:text-ink"
         >
           &hellip;
@@ -82,9 +89,11 @@ export default function Actions({ actions, label = 'Actions' }) {
         {at && (
           <div
             ref={menu}
-            role="menu"
+            id={id}
             onClick={(e) => e.stopPropagation()}
-            style={{ position: 'fixed', top: at.top, right: at.right }}
+            // Leaving it with Tab closes it, as a click elsewhere does.
+            onBlur={(e) => !menu.current?.contains(e.relatedTarget) && e.relatedTarget !== trigger.current && setAt(null)}
+            style={{ position: 'fixed', top: at.top, bottom: at.bottom, right: at.right }}
             className="z-50 flex min-w-40 flex-col gap-1 rounded border border-edge-strong bg-raised p-1.5 shadow-2xl"
           >
             {shown.map((a) => button(a, 'w-full py-1.5 text-left'))}

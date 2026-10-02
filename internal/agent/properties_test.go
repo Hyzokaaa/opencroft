@@ -87,3 +87,19 @@ func TestAServiceWithoutAFingerprintIsNotPending(t *testing.T) {
 		t.Error("pending without a fingerprint")
 	}
 }
+
+// A service deployed before fingerprints were kept gets one, from what it runs
+// now, before its change is saved — so the change shows as pending.
+func TestAnOlderServiceIsFingerprintedBeforeItsFirstSave(t *testing.T) {
+	server := aDeployedBackend(t)
+	_ = server.instances.Annotate(context.Background(), "helpdesk", "service.backend.deployed", "")
+
+	want := backend(t, server)
+	want.Start = "node dist/server"
+	body := serve(server, http.MethodPut, "/instances/helpdesk/services/backend/properties/plan", want).Body.String()
+	first := strings.Index(body, "service.backend.deployed")
+	change := strings.Index(body, "service.backend.start")
+	if first < 0 || change < 0 || first > change {
+		t.Errorf("the fingerprint is not recorded before the change:\n%s", body)
+	}
+}

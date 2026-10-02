@@ -79,6 +79,14 @@ func (s *Server) configurePlan(r *http.Request) (string, plan.Plan, error) {
 
 	record := wanted.Record()
 	steps := []plan.Step{}
+	// A service deployed before fingerprints were kept has none to compare
+	// with. What is saved now is what it runs, so that is recorded first —
+	// otherwise the change about to be saved could never show as pending.
+	if config[full(wanted.Name, "deployed")] == "" {
+		steps = append(steps, plan.Command("Record what "+wanted.Name+" runs now, before changing it",
+			s.bin, "config", "set", name, full(wanted.Name, "deployed"), Fingerprint(config, wanted.Name)))
+	}
+	before := len(steps)
 	for _, key := range configurable {
 		key := key
 		now, value := config[full(wanted.Name, key)], record[key]
@@ -92,7 +100,7 @@ func (s *Server) configurePlan(r *http.Request) (string, plan.Plan, error) {
 				s.bin, "config", "set", name, full(wanted.Name, key), value))
 		}
 	}
-	if len(steps) == 0 {
+	if len(steps) == before {
 		return "", plan.Plan{}, errors.New("nothing would change")
 	}
 	return name, plan.New(steps...), nil

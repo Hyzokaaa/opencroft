@@ -13,9 +13,9 @@ import { Progress } from './PlanDialog.jsx'
 // history on the project's page.
 // jobs, when given, is a reading the page already has: the header counts
 // what is running from the same one, rather than a second poll beside it.
-export default function Activity({ commandMode, containers, title, limit, jobs: given }) {
-  const polled = useJobs(!given)
-  const { jobs, error, read } = given ? { jobs: given, error: null, read: true } : polled
+export default function Activity({ commandMode, containers, title, limit, reading }) {
+  const polled = useJobs(!reading)
+  const { jobs, error, read } = reading ?? polled
   const [scope, setScope] = useState('all')
   const [failedOnly, setFailedOnly] = useState(false)
   const [open, setOpen] = useState(null)

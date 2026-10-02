@@ -205,12 +205,15 @@ function Rail({ data, section, tab, open }) {
                             {/* Not a total: only what is running out, which is
                                 why this is in the sidebar at all. */}
                             {c.id === 'certificates' && expiring.length > 0 && (
-                              <span
-                                className={`text-xs font-medium ${expired ? 'text-problem' : 'text-caution'}`}
-                                aria-label={`${expiring.length} expiring`}
-                              >
-                                {expiring.length}
-                              </span>
+                              <>
+                                <span
+                                  aria-hidden="true"
+                                  className={`text-xs font-medium ${expired ? 'text-problem' : 'text-caution'}`}
+                                >
+                                  {expiring.length}
+                                </span>
+                                <span className="sr-only"> — {expiring.length} expiring</span>
+                              </>
                             )}
                           </a>
                         </li>

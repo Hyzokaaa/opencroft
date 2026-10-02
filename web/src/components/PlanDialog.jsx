@@ -8,7 +8,9 @@ import { useDialog, dialogProps } from '../lib/useDialog.js'
 // onBack, when given, returns to whatever came before the plan — the form of a
 // longer flow — with everything typed still there. A plan with fields of its
 // own goes back to them without being told.
-export default function PlanDialog({ request, onClose, onFinished, onResult, onBack }) {
+// dirty says the flow that opened this holds unsaved work — the form of
+// Properties or Environment behind its plan — so leaving asks first there too.
+export default function PlanDialog({ request, onClose, onFinished, onResult, onBack, dirty = false }) {
   const [stage, setStage] = useState(request.fields ? 'form' : 'loading')
   const [values, setValues] = useState(request.defaults ?? {})
   const [plan, setPlan] = useState(null)
@@ -21,9 +23,12 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
   const stream = useRef(null)
   const job = useRef(null)
   const formId = useId()
-  const edited = stage === 'form' && JSON.stringify(values) !== JSON.stringify(request.defaults ?? {})
-  const dialog = useDialog(onClose, { dirty: edited })
-  const leave = () => (!edited || window.confirm('Discard your changes?')) && onClose()
+  const [asking, setAsking] = useState(false)
+  const edited =
+    (stage === 'form' && JSON.stringify(values) !== JSON.stringify(request.defaults ?? {})) ||
+    (dirty && !['running', 'error', 'immediate'].includes(stage) && !done)
+  const leave = () => (edited ? setAsking(true) : onClose())
+  const dialog = useDialog(leave)
 
   // A URL can depend on what was chosen: moving the container picked in the
   // form is a request about that container.
@@ -266,6 +271,9 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
             </p>
           </div>
 
+          {asking ? (
+            <Discard onKeep={() => setAsking(false)} onDiscard={onClose} />
+          ) : (
           <div className="flex shrink-0 gap-2">
             <button
               onClick={leave}
@@ -320,6 +328,7 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
               </button>
             )}
           </div>
+          )}
         </footer>
       </div>
     </div>
@@ -367,7 +376,12 @@ function Form({ id, fields, values, onChange, error, touched, onBlur, onSubmit }
           {field.options ? (
             <select
               value={values[field.name] ?? ''}
-              onChange={(e) => onChange({ ...values, [field.name]: e.target.value })}
+              onChange={(e) => {
+                const next = { ...values, [field.name]: e.target.value }
+                // A choice can carry its consequences: picking a container
+                // brings the port it listens on.
+                onChange(field.derive ? field.derive(next) : next)
+              }}
               className="w-full rounded border border-field-edge bg-ground px-3 py-2 text-sm outline-none transition focus:border-ink/40"
             >
               {field.options.map((o) => {
@@ -415,6 +429,29 @@ function Form({ id, fields, values, onChange, error, touched, onBlur, onSubmit }
         </p>
       )}
     </form>
+  )
+}
+
+// Discard asks in the dialog itself, with the safe answer focused: a box from
+// the browser on top of a dialog that is already modal reads as an error.
+export function Discard({ onKeep, onDiscard }) {
+  return (
+    <div role="alertdialog" aria-label="Discard your changes?" className="flex shrink-0 items-center gap-2">
+      <span className="text-xs text-ink">Discard your changes?</span>
+      <button
+        autoFocus
+        onClick={onKeep}
+        className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30"
+      >
+        Keep editing
+      </button>
+      <button
+        onClick={onDiscard}
+        className="rounded border border-problem/50 px-3 py-1.5 text-xs text-problem transition hover:bg-problem/10"
+      >
+        Discard
+      </button>
+    </div>
   )
 }
 

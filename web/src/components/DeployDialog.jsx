@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useDialog, dialogProps } from '../lib/useDialog.js'
+import { Discard } from './PlanDialog.jsx'
 import PlanDialog from './PlanDialog.jsx'
 import EnvEditor, { toObject } from './EnvEditor.jsx'
 
@@ -28,6 +29,10 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
     deployed ? `Saved on the container. Changes take effect the next time ${deployed.name} is deployed.` : '',
   )
   const changed = Boolean(service) && (!original || JSON.stringify(body(service)) !== JSON.stringify(body(original)))
+  // Anything worth asking about before it is thrown away: a new service is
+  // all unsaved work once a repository has been typed; an existing one only
+  // when something was changed.
+  const dirty = deployed ? changed : Boolean(source.repo.trim()) || Boolean(service)
   const [error, setError] = useState(null)
 
   const name = source.name || guessName(source.repo)
@@ -47,6 +52,7 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
           working: 'Cloning and reading the repository…',
         }}
         onClose={onClose}
+        dirty={dirty}
         onBack={() => setStage('source')}
         onResult={(detection) => {
           setWhy(detection.why ?? '')
@@ -86,6 +92,7 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
           verb: 'Save',
         }}
         onClose={onClose}
+        dirty={dirty}
         onBack={() => setStage('found')}
         onFinished={onFinished}
       />
@@ -105,6 +112,7 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
           next: !container.domains?.length && onAddDomain ? { label: 'Add a domain…', onClick: onAddDomain } : null,
         }}
         onClose={onClose}
+        dirty={dirty}
         // Back to the form, with every field as it was left.
         onBack={() => setStage('found')}
         onFinished={onFinished}
@@ -116,7 +124,7 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
     <Frame
       title={deployed ? `Properties of ${deployed.name}` : `Deploy a service to ${container.name}`}
       onClose={onClose}
-      dirty={stage === 'found' && Boolean(deployed) && changed}
+      dirty={dirty}
     >
       {stage === 'source' && (
         <Source
@@ -143,6 +151,7 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
           onDeploy={() => setStage('deploying')}
           onSave={() => setStage('saving')}
           changed={changed}
+          pending={Boolean(deployed?.pending)}
           onEditSource={deployed ? () => setStage('source') : null}
           adopted={deployed?.adopted}
           existing={Boolean(deployed)}
@@ -205,20 +214,23 @@ export function split(joined) {
 // dirty, when true, makes closing ask first: Escape or ✕ on a form somebody
 // has been filling in should not throw it away without a word.
 export function Frame({ title, onClose, children, dirty }) {
-  const dialog = useDialog(onClose, { dirty })
+  const [asking, setAsking] = useState(false)
+  const leave = () => (dirty ? setAsking(true) : onClose())
+  const dialog = useDialog(leave)
   return (
     <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/60 px-4 py-10">
       <div {...dialogProps(dialog)} className="w-full max-w-2xl rounded-lg border border-edge bg-panel shadow-2xl outline-none">
         <header className="flex items-center justify-between border-b border-edge px-5 py-3">
           <h2 id={dialog.titleId} className="text-sm font-medium">{title}</h2>
-          <button
-            onClick={() => (!dirty || window.confirm('Discard your changes?')) && onClose()}
-            className="text-muted hover:text-ink"
-            aria-label="Close"
-          >
+          <button onClick={leave} className="text-muted hover:text-ink" aria-label="Close">
             ✕
           </button>
         </header>
+        {asking && (
+          <div className="flex justify-end border-b border-edge bg-raised px-5 py-2.5">
+            <Discard onKeep={() => setAsking(false)} onDiscard={onClose} />
+          </div>
+        )}
         {children}
       </div>
     </div>
@@ -277,7 +289,7 @@ function Source({ value, name, onChange, error, onSubmit }) {
 
 // Everything here is editable on purpose. What was detected is a suggestion,
 // and a suggestion you cannot change is a decision made behind your back.
-function Found({ service, why, onChange, onDeploy, onSave, changed, onEditSource, adopted, existing, peers }) {
+function Found({ service, why, onChange, onDeploy, onSave, changed, pending, onEditSource, adopted, existing, peers }) {
   const set = (key) => (v) => onChange({ ...service, [key]: v })
   const runnable = Boolean(adopted) || Boolean(service.start?.trim())
 
@@ -379,7 +391,9 @@ function Found({ service, why, onChange, onDeploy, onSave, changed, onEditSource
           {!runnable
             ? 'Nothing says how to start it, so there is no deployment to run.'
             : existing
-              ? changed ? 'Saving changes nothing that runs.' : 'Nothing changed yet.'
+              ? changed
+                ? 'Saving changes nothing that runs.'
+                : pending ? 'Saved changes are waiting to be deployed.' : 'Nothing changed yet.'
               : 'A snapshot is taken first, so this can be undone.'}
         </p>
         <div className="flex gap-2">
@@ -394,10 +408,10 @@ function Found({ service, why, onChange, onDeploy, onSave, changed, onEditSource
           )}
           <button
             onClick={onDeploy}
-            disabled={!runnable || (existing && !changed)}
+            disabled={!runnable || (existing && !changed && !pending)}
             className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30 disabled:opacity-40"
           >
-            {existing ? 'Save and redeploy…' : 'Deploy…'}
+            {!existing ? 'Deploy…' : changed ? 'Save and redeploy…' : 'Redeploy…'}
           </button>
         </div>
       </footer>
