@@ -14,6 +14,10 @@ descargó.
 
 ## No publicado
 
+### v0.26.1 — 2026-10-02
+- docs: file v0.26.1 in the changelog
+- fix: show dashes as dashes, let a form go with a box unticked or an optional field empty, and use generic examples
+
 ### v0.26.0 — 2026-09-30
 - docs: file v0.26.0 in the changelog
 - docs: describe internal names and a database shared within a project
