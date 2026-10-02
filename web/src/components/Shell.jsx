@@ -8,7 +8,12 @@ import { href } from '../lib/useRoute.js'
 const SECTIONS = [
   { id: 'home', label: 'Home' },
   { id: 'containers', label: 'Containers', count: (d) => d?.instances.length },
-  { id: 'domains', label: 'Domains', count: (d) => d?.routes.length },
+  {
+    id: 'domains', label: 'Domains', count: (d) => d?.routes.length,
+    // Certificates hang off Domains: the one thing on the panel with a
+    // deadline, a click away from anywhere and able to say so before it runs.
+    children: [{ id: 'certificates', label: 'Certificates', to: () => href('domains', 'certificates') }],
+  },
   { id: 'activity', label: 'Activity' },
   { id: 'settings', label: 'Settings' },
 ]
@@ -17,7 +22,7 @@ export { SECTIONS }
 
 // crumbs is where you are, from the section down: [{ label, href }], the
 // last one being this page.
-export default function Shell({ data, section, crumbs, commandMode, onToggleCommands, freshness, onReload, stale, running, onSignOut, children }) {
+export default function Shell({ data, section, tab, crumbs, commandMode, onToggleCommands, freshness, onReload, stale, running, onSignOut, children }) {
   const [navOpen, setNavOpen] = useState(false)
 
   useEffect(() => {
@@ -39,7 +44,7 @@ export default function Shell({ data, section, crumbs, commandMode, onToggleComm
       {navOpen && (
         <div className="fixed inset-0 z-10 bg-black/50 md:hidden" onClick={() => setNavOpen(false)} aria-hidden="true" />
       )}
-      <Rail data={data} section={section} open={navOpen} />
+      <Rail data={data} section={section} tab={tab} open={navOpen} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center justify-between gap-4 border-b border-edge bg-ground/90 px-4 backdrop-blur md:px-6">
@@ -130,7 +135,7 @@ export default function Shell({ data, section, crumbs, commandMode, onToggleComm
   )
 }
 
-function Rail({ data, section, open }) {
+function Rail({ data, section, tab, open }) {
   // Hidden off-screen on a phone is still reachable by Tab unless it is inert.
   const [narrow, setNarrow] = useState(() => matchMedia('(max-width: 767px)').matches)
   useEffect(() => {
@@ -164,19 +169,55 @@ function Rail({ data, section, open }) {
         <ul className="flex-1 space-y-px overflow-y-auto p-2">
           {SECTIONS.map((s) => {
             const count = s.count?.(data)
-            const active = s.id === section
+            const here = s.id === section
+            // Only one entry is the current page: on a child's page the
+            // parent is lit, not marked.
+            const child = here && s.children?.find((c) => c.id === tab)
+            const active = here && !child
             return (
               <li key={s.id}>
                 <a
                   href={href(s.id)}
                   aria-current={active ? 'page' : undefined}
                   className={`flex w-full items-center justify-between rounded px-2.5 py-1.5 text-sm transition ${
-                    active ? 'bg-raised text-ink' : 'text-muted hover:bg-white/[0.03] hover:text-ink'
+                    active ? 'bg-raised text-ink' : here ? 'text-ink hover:bg-white/[0.03]' : 'text-muted hover:bg-white/[0.03] hover:text-ink'
                   }`}
                 >
                   <span>{s.label}</span>
                   {count !== undefined && <span className="text-xs text-faint">{count}</span>}
                 </a>
+                {s.children && (
+                  <ul className="ml-4 mt-px space-y-px border-l border-edge pl-2">
+                    {s.children.map((c) => {
+                      const on = here && c.id === tab
+                      const expiring = (data?.certificates ?? []).filter((x) => x.daysLeft < 21)
+                      const expired = expiring.some((x) => x.daysLeft < 0)
+                      return (
+                        <li key={c.id}>
+                          <a
+                            href={c.to()}
+                            aria-current={on ? 'page' : undefined}
+                            className={`flex w-full items-center justify-between rounded px-2 py-1 text-[13px] transition ${
+                              on ? 'bg-raised text-ink' : 'text-muted hover:bg-white/[0.03] hover:text-ink'
+                            }`}
+                          >
+                            <span>{c.label}</span>
+                            {/* Not a total: only what is running out, which is
+                                why this is in the sidebar at all. */}
+                            {c.id === 'certificates' && expiring.length > 0 && (
+                              <span
+                                className={`text-xs font-medium ${expired ? 'text-problem' : 'text-caution'}`}
+                                aria-label={`${expiring.length} expiring`}
+                              >
+                                {expiring.length}
+                              </span>
+                            )}
+                          </a>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
               </li>
             )
           })}

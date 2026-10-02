@@ -4,7 +4,6 @@ import Chip from './Chip.jsx'
 import Activity from './Activity.jsx'
 import InstanceTable, { StatusDot } from './InstanceTable.jsx'
 import RouteTable from './RouteTable.jsx'
-import { useDatabases } from '../lib/useContainer.js'
 import { href } from '../lib/useRoute.js'
 
 // A project is the containers that belong together — a web, the backend and
@@ -47,13 +46,15 @@ export function routesOf(containers, routes) {
   return routes.filter((r) => addresses.has(r.target) || (r.paths ?? []).some((p) => addresses.has(p.target)))
 }
 
+// domainsOf is every domain, or prefix of one, reaching these containers,
+// with the container it reaches — which is where a click on it goes.
 function domainsOf(containers, routes) {
-  const addresses = new Set(containers.map((c) => c.address).filter(Boolean))
+  const byAddress = new Map(containers.filter((c) => c.address).map((c) => [c.address, c.name]))
   return routes.flatMap((r) => [
-    ...(addresses.has(r.target) ? [{ key: r.domain, label: r.domain, ssl: r.ssl }] : []),
+    ...(byAddress.has(r.target) ? [{ key: r.domain, label: r.domain, ssl: r.ssl, container: byAddress.get(r.target) }] : []),
     ...(r.paths ?? [])
-      .filter((p) => addresses.has(p.target))
-      .map((p) => ({ key: r.domain + p.prefix, label: r.domain + p.prefix, ssl: r.ssl })),
+      .filter((p) => byAddress.has(p.target))
+      .map((p) => ({ key: r.domain + p.prefix, label: r.domain + p.prefix, ssl: r.ssl, container: byAddress.get(p.target) })),
   ])
 }
 
@@ -126,7 +127,7 @@ export function ProjectCards({ data, projects, error, problems, actions }) {
 
 function ProjectCard({ project, containers, routes, problems, actions, others }) {
   const domains = domainsOf(containers, routes)
-  const troubled = containers.some((c) => problems.has(c.name) || (c.domain && problems.has(c.domain)))
+  const troubled = containers.filter((c) => problems.has(c.name) || (c.domain && problems.has(c.domain)))
 
   return (
     <Card
@@ -153,12 +154,18 @@ function ProjectCard({ project, containers, routes, problems, actions, others })
       }
     >
       <div className="space-y-3 px-4 py-3">
-        {(project.description || troubled) && (
-          <p className="text-xs text-muted">
-            {troubled && <span className="mr-2 text-problem">Needs attention.</span>}
-            {project.description}
+        {troubled.length > 0 && (
+          <p className="text-xs text-problem">
+            Needs attention:{" "}
+            {troubled.map((c, i) => (
+              <span key={c.name}>
+                {i > 0 && ", "}
+                <a href={href("containers", c.name)} className="font-mono underline underline-offset-4">{c.name}</a>
+              </span>
+            ))}
           </p>
         )}
+        {project.description && <p className="text-xs text-muted">{project.description}</p>}
         {/* Found on containers, declared nowhere on this host: most often it
             arrived with a migrated container. */}
         {!project.declared && (
@@ -177,10 +184,10 @@ function ProjectCard({ project, containers, routes, problems, actions, others })
         {domains.length > 0 && (
           <p className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs text-muted">
             {domains.map((d) => (
-              <span key={d.key}>
+              <a key={d.key} href={href('containers', d.container)} className="underline-offset-4 hover:text-ink hover:underline">
                 {d.ssl ? 'https://' : 'http://'}
                 {d.label}
-              </span>
+              </a>
             ))}
           </p>
         )}
@@ -217,7 +224,7 @@ function Members({ containers, problems, flush }) {
 
 // ProjectPage is one project in full: its containers, the domains that reach
 // them, the data they hold, and what was done to them lately.
-export default function ProjectPage({ name, data, projects, problems, commandMode, actions, tableProps }) {
+export default function ProjectPage({ name, data, projects, problems, commandMode, actions, tableProps, jobs }) {
   if (!projects) return <p role="status" className="text-xs text-muted">Reading the projects&hellip;</p>
   const project = projects.find((p) => p.name === name)
   if (!project) {
@@ -280,6 +287,7 @@ export default function ProjectPage({ name, data, projects, problems, commandMod
         containers={containers.map((c) => c.name)}
         title="What was done here"
         limit={10}
+        jobs={jobs}
       />
 
       {project.declared && containers.length === 0 && (
@@ -296,8 +304,21 @@ export default function ProjectPage({ name, data, projects, problems, commandMod
   )
 }
 
+// Read once, not every few seconds for every container in the project: what
+// databases exist changes when somebody adds one, and the container's own
+// page is where that is watched.
 function ProjectDatabases({ container }) {
-  const { data } = useDatabases(container.name)
+  const [data, setData] = useState(null)
+  useEffect(() => {
+    let current = true
+    fetch(`/api/hosts/local/instances/${container.name}/databases`)
+      .then((res) => (res.ok ? res.json() : { databases: [] }))
+      .then((payload) => current && setData(payload))
+      .catch(() => current && setData({ databases: [] }))
+    return () => {
+      current = false
+    }
+  }, [container.name])
   const databases = data?.databases ?? []
   return (
     <li className="px-4 py-2.5 text-xs">

@@ -10,7 +10,7 @@ import EnvEditor, { toObject } from './EnvEditor.jsx'
 //
 // That is the whole difference from a buildpack. We guess as much as anyone
 // does; we just do it where you can see it and change it.
-export default function DeployDialog({ container, service: deployed, peers, onClose, onFinished }) {
+export default function DeployDialog({ container, service: deployed, peers, onClose, onFinished, onAddDomain }) {
   // Deploying something already here is the same second half, with what the
   // container remembers instead of what was just detected. Asking again for a
   // repository it already knows would be asking a question we can answer.
@@ -22,9 +22,12 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
     path: deployed?.path ?? '',
   }))
   const [service, setService] = useState(() => (deployed ? remembered(deployed) : null))
+  // What was saved when this opened, to tell a change from none.
+  const [original] = useState(() => (deployed ? remembered(deployed) : null))
   const [why, setWhy] = useState(
-    deployed ? 'What this container remembers. Change anything before it runs again.' : '',
+    deployed ? `Saved on the container. Changes take effect the next time ${deployed.name} is deployed.` : '',
   )
+  const changed = Boolean(service) && (!original || JSON.stringify(body(service)) !== JSON.stringify(body(original)))
   const [error, setError] = useState(null)
 
   const name = source.name || guessName(source.repo)
@@ -70,27 +73,36 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
     )
   }
 
+  // Saving writes the properties and nothing else; they take effect at the
+  // next deployment, and the service says so until then.
+  if (stage === 'saving') {
+    return (
+      <PlanDialog
+        request={{
+          title: `Save the properties of ${service.name}`,
+          url: `/api/hosts/local/instances/${container.name}/services/${service.name}/properties`,
+          method: 'PUT',
+          defaults: body(service),
+          verb: 'Save',
+        }}
+        onClose={onClose}
+        onBack={() => setStage('found')}
+        onFinished={onFinished}
+      />
+    )
+  }
+
   if (stage === 'deploying') {
     return (
       <PlanDialog
         request={{
-          title: `Deploy ${service.name} to ${container.name}`,
+          title: deployed ? `Save and redeploy ${service.name}` : `Deploy ${service.name} to ${container.name}`,
           url: `/api/hosts/local/instances/${container.name}/services/deploy`,
           method: 'POST',
-          defaults: {
-            name: service.name,
-            repo: service.repo,
-            branch: service.branch,
-            path: service.path,
-            install: split(service.install),
-            build: split(service.build),
-            start: service.start.trim(),
-            runtime: service.runtime,
-            port: Number(service.port) || 0,
-            packages: service.packages.split(/\s+/).filter(Boolean),
-            env: toObject(service.env),
-            health: { path: service.health.trim(), contains: service.contains.trim(), status: 0 },
-          },
+          defaults: body(service),
+          verb: deployed ? 'Redeploy' : 'Deploy',
+          // Running and reachable by nothing is half done.
+          next: !container.domains?.length && onAddDomain ? { label: 'Add a domain…', onClick: onAddDomain } : null,
         }}
         onClose={onClose}
         // Back to the form, with every field as it was left.
@@ -104,6 +116,7 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
     <Frame
       title={deployed ? `Properties of ${deployed.name}` : `Deploy a service to ${container.name}`}
       onClose={onClose}
+      dirty={stage === 'found' && Boolean(deployed) && changed}
     >
       {stage === 'source' && (
         <Source
@@ -128,6 +141,8 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
           why={why}
           onChange={setService}
           onDeploy={() => setStage('deploying')}
+          onSave={() => setStage('saving')}
+          changed={changed}
           onEditSource={deployed ? () => setStage('source') : null}
           adopted={deployed?.adopted}
           existing={Boolean(deployed)}
@@ -136,6 +151,24 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
       )}
     </Frame>
   )
+}
+
+// body is what the form sends: the same for saving and for deploying.
+function body(service) {
+  return {
+    name: service.name,
+    repo: service.repo,
+    branch: service.branch,
+    path: service.path,
+    install: split(service.install),
+    build: split(service.build),
+    start: (service.start ?? '').trim(),
+    runtime: service.runtime,
+    port: Number(service.port) || 0,
+    packages: (service.packages ?? '').split(/\s+/).filter(Boolean),
+    env: toObject(service.env),
+    health: { path: (service.health ?? '').trim(), contains: (service.contains ?? '').trim(), status: 0 },
+  }
 }
 
 // remembered turns what is stored on the container back into what the form
@@ -169,14 +202,20 @@ export function split(joined) {
   return joined.split('&&').map((c) => c.trim()).filter(Boolean)
 }
 
-export function Frame({ title, onClose, children }) {
-  const dialog = useDialog(onClose)
+// dirty, when true, makes closing ask first: Escape or ✕ on a form somebody
+// has been filling in should not throw it away without a word.
+export function Frame({ title, onClose, children, dirty }) {
+  const dialog = useDialog(onClose, { dirty })
   return (
     <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/60 px-4 py-10">
       <div {...dialogProps(dialog)} className="w-full max-w-2xl rounded-lg border border-edge bg-panel shadow-2xl outline-none">
         <header className="flex items-center justify-between border-b border-edge px-5 py-3">
           <h2 id={dialog.titleId} className="text-sm font-medium">{title}</h2>
-          <button onClick={onClose} className="text-muted hover:text-ink" aria-label="Close">
+          <button
+            onClick={() => (!dirty || window.confirm('Discard your changes?')) && onClose()}
+            className="text-muted hover:text-ink"
+            aria-label="Close"
+          >
             ✕
           </button>
         </header>
@@ -238,7 +277,7 @@ function Source({ value, name, onChange, error, onSubmit }) {
 
 // Everything here is editable on purpose. What was detected is a suggestion,
 // and a suggestion you cannot change is a decision made behind your back.
-function Found({ service, why, onChange, onDeploy, onEditSource, adopted, existing, peers }) {
+function Found({ service, why, onChange, onDeploy, onSave, changed, onEditSource, adopted, existing, peers }) {
   const set = (key) => (v) => onChange({ ...service, [key]: v })
   const runnable = Boolean(adopted) || Boolean(service.start?.trim())
 
@@ -332,19 +371,35 @@ function Found({ service, why, onChange, onDeploy, onEditSource, adopted, existi
         )}
       </div>
 
-      <footer className="flex items-center justify-between gap-3 border-t border-edge px-5 py-3">
-        <p className="text-xs text-faint">
-          {runnable
-            ? 'A snapshot is taken first, so this can be undone.'
-            : 'Nothing says how to start it, so there is no deployment to run.'}
+      {/* Configuring and deploying are two intentions. A service that exists
+          can have its properties saved for the next deployment, or saved and
+          deployed now; a new one has nothing to save until it is deployed. */}
+      <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-edge px-5 py-3">
+        <p className="text-xs text-muted">
+          {!runnable
+            ? 'Nothing says how to start it, so there is no deployment to run.'
+            : existing
+              ? changed ? 'Saving changes nothing that runs.' : 'Nothing changed yet.'
+              : 'A snapshot is taken first, so this can be undone.'}
         </p>
-        <button
-          onClick={onDeploy}
-          disabled={!runnable}
-          className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30 disabled:opacity-40"
-        >
-          Show me the deploy plan
-        </button>
+        <div className="flex gap-2">
+          {existing && (
+            <button
+              onClick={onSave}
+              disabled={!changed}
+              className="rounded border border-edge px-3 py-1.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink disabled:opacity-40"
+            >
+              Save&hellip;
+            </button>
+          )}
+          <button
+            onClick={onDeploy}
+            disabled={!runnable || (existing && !changed)}
+            className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30 disabled:opacity-40"
+          >
+            {existing ? 'Save and redeploy…' : 'Deploy…'}
+          </button>
+        </div>
       </footer>
     </>
   )

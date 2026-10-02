@@ -56,7 +56,11 @@ export default function EnvDialog({ container, service, peers, onClose, onFinish
   const rebuild = found?.applies === 'rebuild'
 
   return (
-    <Frame title={`Environment of ${service.name}`} onClose={onClose}>
+    <Frame
+      title={`Environment of ${service.name}`}
+      onClose={onClose}
+      dirty={JSON.stringify(toObject(text)) !== JSON.stringify(toObject(original))}
+    >
       <div className="space-y-3 px-5 py-4">
         {error && (
           <p className="rounded border border-problem/30 bg-problem/[0.06] px-3 py-2 text-xs text-problem">

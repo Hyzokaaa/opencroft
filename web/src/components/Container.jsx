@@ -563,6 +563,14 @@ function Service({ service, onLogs, onDeploy, onRedeploy, onEnvironment, onDestr
               />
             )}
 
+            {service.pending && (
+              <Chip
+                label="changes not deployed"
+                tone="border-yours/40 text-yours"
+                explain="Saved in Properties, not running yet. Redeploy to apply them."
+              />
+            )}
+
             {!running && service.state && (
               <span className="rounded border border-problem/40 px-1.5 py-px text-[11px] text-problem">
                 {service.state}
@@ -624,7 +632,7 @@ function Service({ service, onLogs, onDeploy, onRedeploy, onEnvironment, onDestr
           {/* Redeploy is the everyday one: what is configured, from the tip of
               its branch, straight to the plan. Properties is for changing
               what is configured first. */}
-          <button onClick={onRedeploy} className={SECONDARY}>
+          <button onClick={onRedeploy} className={service.pending ? PRIMARY : SECONDARY}>
             Redeploy
           </button>
           {environment && (

@@ -21,7 +21,9 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
   const stream = useRef(null)
   const job = useRef(null)
   const formId = useId()
-  const dialog = useDialog(onClose)
+  const edited = stage === 'form' && JSON.stringify(values) !== JSON.stringify(request.defaults ?? {})
+  const dialog = useDialog(onClose, { dirty: edited })
+  const leave = () => (!edited || window.confirm('Discard your changes?')) && onClose()
 
   // A URL can depend on what was chosen: moving the container picked in the
   // form is a request about that container.
@@ -164,6 +166,11 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
   const unconfirmed = Boolean(request.confirm) && confirmed.trim() !== request.confirm
   const back = onBack ?? (request.fields ? () => { setError(null); setStage('form') } : null)
 
+  // What usually comes next, offered once this has worked: a container just
+  // created is opened, a domain just added is put on https. A finished job
+  // that only says "Finished." leaves the person to go and look for it.
+  const next = done && !error && (typeof request.next === 'function' ? request.next(values) : request.next)
+
   function submit() {
     setTouched(Object.fromEntries((request.fields ?? []).map((f) => [f.name, true])))
     if (ready) askForPlan(values)
@@ -174,7 +181,7 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
       <div {...dialogProps(dialog)} className="w-full max-w-2xl rounded-lg border border-edge bg-panel shadow-2xl outline-none">
         <header className="flex items-center justify-between border-b border-edge px-5 py-3">
           <h2 id={dialog.titleId} className="text-sm font-medium">{request.title}</h2>
-          <button onClick={onClose} className="text-muted hover:text-ink" aria-label="Close">
+          <button onClick={leave} className="text-muted hover:text-ink" aria-label="Close">
             ✕
           </button>
         </header>
@@ -261,7 +268,7 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
 
           <div className="flex shrink-0 gap-2">
             <button
-              onClick={onClose}
+              onClick={leave}
               className="rounded border border-edge px-3 py-1.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
             >
               {done || failed ? 'Close' : running ? 'Leave it running' : 'Cancel'}
@@ -274,6 +281,16 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
                 className="rounded border border-problem/50 bg-problem/10 px-3 py-1.5 text-xs text-problem transition hover:bg-problem/15 disabled:opacity-40"
               >
                 {stopping ? 'Stopping…' : 'Stop it'}
+              </button>
+            )}
+
+            {next && (
+              <button
+                onClick={next.onClick}
+                autoFocus
+                className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30"
+              >
+                {next.label}
               </button>
             )}
 

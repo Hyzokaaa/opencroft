@@ -11,8 +11,11 @@ import { Progress } from './PlanDialog.jsx'
 // much as a deployment that did, and hiding it behind a toggle hid it.
 // containers, when given, narrows it to what was done to them — a project's
 // history on the project's page.
-export default function Activity({ commandMode, containers, title, limit }) {
-  const { jobs, error, read } = useJobs()
+// jobs, when given, is a reading the page already has: the header counts
+// what is running from the same one, rather than a second poll beside it.
+export default function Activity({ commandMode, containers, title, limit, jobs: given }) {
+  const polled = useJobs(!given)
+  const { jobs, error, read } = given ? { jobs: given, error: null, read: true } : polled
   const [scope, setScope] = useState('all')
   const [failedOnly, setFailedOnly] = useState(false)
   const [open, setOpen] = useState(null)
@@ -82,7 +85,7 @@ const KIND = {
   'route-edit': 'Edit domain', 'route-remove': 'Remove domain', 'route-path': 'Change a path',
   tls: 'Enable https', takeover: 'Take over', wildcard: 'Wildcard certificate',
   expose: 'Expose the panel', database: 'Database', 'database-remove': 'Remove database',
-  environment: 'Change environment', project: 'Project',
+  environment: 'Change environment', project: 'Project', configure: 'Save properties',
 }
 
 // destroy is both a container and a service; the subject says which.
@@ -194,7 +197,7 @@ function Toggle({ on, onClick, children }) {
 
 // Read every few seconds, like everything else on the panel: a deployment that
 // is running now should be seen finishing without a reload.
-export function useJobs() {
+export function useJobs(enabled = true) {
   const [jobs, setJobs] = useState([])
   const [error, setError] = useState(null)
   const [read, setRead] = useState(false)
@@ -213,10 +216,11 @@ export function useJobs() {
   }, [])
 
   useEffect(() => {
+    if (!enabled) return
     load()
     const timer = setInterval(load, 5000)
     return () => clearInterval(timer)
-  }, [load])
+  }, [load, enabled])
 
   return { jobs, error, read }
 }

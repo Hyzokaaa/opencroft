@@ -34,13 +34,16 @@ export const SEVERITY = {
 }
 
 // What resolves each kind of finding: the action this panel takes for it, and
-// the command it amounts to for whoever would rather type it. A finding
+// — where there is one — the command it amounts to for whoever would rather
+// type it. Only commands that exist: one that does not is worse than none,
+// since the plan behind each action already shows exactly what runs. A finding
 // without a fix is a notification, and notifications get ignored — and a fix
 // that does nothing when pressed is worse, so every remedy names an action
 // the dashboard really performs.
 //
 //   act: start | open | edit-route | remove-route | add-route | take-over | issue-tls
-export function remediesFor(finding, { instances, routes }) {
+export function remediesFor(finding, { instances, routes, runtime = 'lxc' }) {
+  const bin = runtime === 'incus' ? 'incus' : 'lxc'
   const subject = finding.subject
   const route = routes.find((r) => r.domain === subject)
   const served = route && instances.find((i) => i.address === route.target)
@@ -49,40 +52,40 @@ export function remediesFor(finding, { instances, routes }) {
   switch (finding.kind) {
     case 'target-down':
       return served
-        ? [{ act: 'start', target: served, label: `Start ${served.name}`, command: `lxc start ${served.name}` }]
+        ? [{ act: 'start', target: served, label: `Start ${served.name}`, command: `${bin} start ${served.name}` }]
         : []
     case 'nothing-listening':
       return served
-        ? [{ act: 'open', target: served, label: `Open ${served.name}`, command: `lxc exec ${served.name} -- systemctl --failed` }]
+        ? [{ act: 'open', target: served, label: `Open ${served.name}`, command: `${bin} exec ${served.name} -- systemctl --failed` }]
         : []
     case 'stale-route':
       return route
-        ? [{ act: 'edit-route', target: route, label: 'Point it at the container', command: `croft route edit ${subject}` }]
+        ? [{ act: 'edit-route', target: route, label: 'Point it at the container' }]
         : []
     case 'orphan-route':
       return route
         ? [
-            { act: 'edit-route', target: route, label: 'Point it at a container', command: `croft route edit ${subject}` },
-            { act: 'remove-route', target: route, label: 'Stop serving it', command: `croft route rm ${subject}` },
+            { act: 'edit-route', target: route, label: 'Point it at a container' },
+            { act: 'remove-route', target: route, label: 'Stop serving it' },
           ]
         : []
     case 'missing-route':
       return owner
-        ? [{ act: 'add-route', target: owner, label: `Serve ${owner.domain}`, command: `croft route add ${owner.domain} --target ${owner.name}` }]
+        ? [{ act: 'add-route', target: owner, label: `Serve ${owner.domain}` }]
         : []
     case 'unmanaged':
       return route
-        ? [{ act: 'take-over', target: route, label: VERBS.takeOver, command: `croft route takeover ${subject}` }]
+        ? [{ act: 'take-over', target: route, label: VERBS.takeOver }]
         : []
     case 'certificate-expired':
     case 'certificate-expiring':
     case 'certificate-self-signed':
       if (!route) return []
       if (route.state === 'unmanaged') {
-        return [{ act: 'take-over', target: route, label: 'Take it over to renew it', command: `croft route takeover ${subject}` }]
+        return [{ act: 'take-over', target: route, label: 'Take it over to renew it' }]
       }
       if (route.state === 'managed' && !route.certificates?.startsWith('/var/lib/croft/')) {
-        return [{ act: 'issue-tls', target: route, label: 'Renew with croft', command: `croft cert issue ${subject}` }]
+        return [{ act: 'issue-tls', target: route, label: 'Renew with croft' }]
       }
       return []
     default:

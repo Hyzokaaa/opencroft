@@ -12,11 +12,16 @@ import { useEffect, useId, useRef } from 'react'
 // render of the parent — every five seconds, on a page that polls — and each
 // run handed focus back to the page and took it again, so a person in the
 // middle of a field lost their place.
-export function useDialog(onClose) {
+export function useDialog(onClose, { dirty = false } = {}) {
   const frame = useRef(null)
   const close = useRef(onClose)
   const titleId = useId()
-  close.current = onClose
+  // Escape on a form somebody has been filling in asks before throwing it
+  // away; the Back buttons keep what was typed, and this keeps that promise.
+  close.current = () => {
+    if (dirty && !window.confirm('Discard your changes?')) return
+    onClose()
+  }
 
   useEffect(() => {
     const restore = document.activeElement

@@ -52,7 +52,8 @@ function Dashboard({ onSignOut, onSessionLost }) {
   const [commandMode, toggleCommands] = useCommandMode()
   const [route] = useRoute()
   const [highlighted, setHighlighted] = useState(null)
-  const [dialog, setDialog] = useState(null)
+  const [dialog, setDialogState] = useState(null)
+  const setDialog = (d) => setDialogState(d ? { ...d, id: Math.random() } : null)
   const [deploying, setDeploying] = useState(null)
   const [adopting, setAdopting] = useState(null)
   const [environment, setEnvironment] = useState(null)
@@ -85,6 +86,10 @@ function Dashboard({ onSignOut, onSessionLost }) {
       url: "/api/hosts/local/instances",
       method: "POST",
       defaults: { name: "", port: 80, cpuLimit: 4, memLimit: "4GB", project },
+      next: (values) => ({
+        label: `Open ${values.name}`,
+        onClick: () => { setDialog(null); location.hash = href('containers', values.name) },
+      }),
       fields: [
         { name: "name", label: "Name", autoFocus: true, placeholder: "my-app", ...CONTAINER_NAME },
         { name: "port", label: "Port inside the container", type: "number",
@@ -123,17 +128,26 @@ function Dashboard({ onSignOut, onSessionLost }) {
 
   // ── Domains ─────────────────────────────────────────────────────────────────
 
+  // From a container, the container is given; from the Domains page it is
+  // chosen. Either way the domain is put on https next, which is nearly
+  // always what comes after.
   function addDomain(container, domain = '') {
+    const chosen = container ?? data.instances.find((i) => i.address) ?? data.instances[0]
     setDialog({
-      title: `Serve a domain from ${container.name}`,
+      title: container ? `Serve a domain from ${container.name}` : 'Serve a domain',
       url: "/api/hosts/local/routes",
       method: "POST",
-      defaults: { domain, target: container.name, port: container.port || 80 },
+      defaults: { domain, target: chosen?.name ?? '', port: chosen?.port || 80 },
       fields: [
         { name: "domain", label: "Domain", autoFocus: true, placeholder: "app.example.com",
           hint: "It has to already point at this server. DNS is not ours to change." },
+        ...(container ? [] : [{ name: 'target', label: 'Container', options: data.instances.map((i) => i.name) }]),
         { name: "port", label: "Port inside the container", type: "number" },
       ],
+      next: (values) => ({
+        label: 'Enable https…',
+        onClick: () => enableTLS({ domain: values.domain, ssl: false }),
+      }),
     })
   }
 
@@ -494,6 +508,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
     <Shell
       data={data}
       section={section === 'projects' ? 'home' : section}
+      tab={tab}
       crumbs={crumbs}
       commandMode={commandMode}
       onToggleCommands={toggleCommands}
@@ -525,6 +540,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
             commandMode={commandMode}
             onFocus={focusSubject}
             onRemedy={remedy}
+            runtime={data.runtime}
             checkedAt={fetchedAt ? relative(fetchedAt) : null}
           />
 
@@ -547,6 +563,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
           commandMode={commandMode}
           actions={projectActions}
           tableProps={tableProps}
+          jobs={jobs}
         />
       )}
 
@@ -608,12 +625,12 @@ function Dashboard({ onSignOut, onSessionLost }) {
 
       {section === 'domains' && (
         <>
-          <div role="tablist" aria-label="Domains and certificates" className="flex gap-1.5">
+          <nav aria-label="Domains" className="flex gap-1.5 md:hidden">
             <Tab on={tab !== 'certificates'} to={href('domains')}>Domains ({data.routes.length})</Tab>
             <Tab on={tab === 'certificates'} to={href('domains', 'certificates')}>
               Certificates ({data.certificates?.length ?? 0})
             </Tab>
-          </div>
+          </nav>
 
           {tab !== 'certificates' ? (
             <Card
@@ -622,11 +639,19 @@ function Dashboard({ onSignOut, onSessionLost }) {
               commandMode={commandMode}
               commands={routeCommands}
               action={
-                query.tls && (
-                  <a href={href('domains')} className="text-xs text-muted transition hover:text-ink">
-                    Show all
-                  </a>
-                )
+                <div className="flex items-center gap-3">
+                  {query.tls && (
+                    <a href={href('domains')} className="text-xs text-muted transition hover:text-ink">
+                      Show all
+                    </a>
+                  )}
+                  <button
+                    onClick={() => addDomain(null)}
+                    className="rounded border border-edge-strong bg-raised px-2 py-1 text-xs transition hover:border-ink/30"
+                  >
+                    Add domain
+                  </button>
+                </div>
               }
             >
               <RouteTable {...tableProps} routes={routesListed} />
@@ -654,7 +679,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
 
       {section === 'settings' && <Settings onExpose={exposePanel} />}
 
-      {section === 'activity' && <Activity commandMode={commandMode} />}
+      {section === 'activity' && <Activity commandMode={commandMode} jobs={jobs} />}
 
       {/* Deploying has a step in the middle — look at the repository, then
           decide — so it runs its own flow and hands off to the same plan
@@ -666,6 +691,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
           peers={data.instances}
           onClose={() => { setDeploying(null); reload() }}
           onFinished={reload}
+          onAddDomain={() => { setDeploying(null); addDomain(deploying.container) }}
         />
       )}
 
@@ -690,6 +716,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
 
       {dialog && (
         <PlanDialog
+          key={dialog.id}
           request={dialog}
           onClose={() => { setDialog(null); reload() }}
           onFinished={reload}
@@ -703,8 +730,7 @@ function Tab({ on, to, children }) {
   return (
     <a
       href={to}
-      role="tab"
-      aria-selected={on}
+      aria-current={on ? 'page' : undefined}
       className={`rounded border px-2.5 py-1 text-xs transition ${
         on ? 'border-edge-strong bg-raised text-ink' : 'border-transparent text-muted hover:text-ink'
       }`}

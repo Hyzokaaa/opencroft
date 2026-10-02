@@ -7,10 +7,10 @@ import Chevron from './Chevron.jsx'
 // keeping its promise; listing it beside an outage says the opposite.
 //
 // onRemedy(remedy) performs the fix a remedy names; see remediesFor.
-export default function Findings({ findings, instances, routes, commandMode, onFocus, onRemedy, checkedAt }) {
+export default function Findings({ findings, instances, routes, runtime, commandMode, onFocus, onRemedy, checkedAt }) {
   const problems = findings.filter((f) => f.severity !== 'info')
   const notices = findings.filter((f) => f.severity === 'info')
-  const context = { instances, routes }
+  const context = { instances, routes, runtime }
 
   return (
     <div className="space-y-2">
@@ -46,6 +46,7 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
 function Problem({ finding, remedies, commandMode, onFocus, onRemedy }) {
   const tone = SEVERITY[finding.severity] ?? SEVERITY.warning
   const [showCommand, setShowCommand] = useState(false)
+  const commands = remedies.map((r) => r.command).filter(Boolean)
 
   return (
     <div className="flex overflow-hidden rounded-lg border border-edge bg-panel">
@@ -87,7 +88,7 @@ function Problem({ finding, remedies, commandMode, onFocus, onRemedy }) {
                       {remedy.label}
                     </button>
                   ))}
-                  {!commandMode && (
+                  {!commandMode && commands.length > 0 && (
                     <button
                       onClick={() => setShowCommand(!showCommand)}
                       aria-expanded={showCommand}
@@ -97,8 +98,8 @@ function Problem({ finding, remedies, commandMode, onFocus, onRemedy }) {
                     </button>
                   )}
                 </div>
-                {(showCommand || commandMode) && (
-                  <Command lines={remedies.map((r) => r.command)} className="mt-2 max-w-lg" />
+                {(showCommand || commandMode) && commands.length > 0 && (
+                  <Command lines={commands} className="mt-2 max-w-lg" />
                 )}
               </div>
             )}
