@@ -91,8 +91,13 @@ export default function Actions({ actions, label = 'Actions' }) {
             ref={menu}
             id={id}
             onClick={(e) => e.stopPropagation()}
-            // Leaving it with Tab closes it, as a click elsewhere does.
-            onBlur={(e) => !menu.current?.contains(e.relatedTarget) && e.relatedTarget !== trigger.current && setAt(null)}
+            // Leaving it with Tab closes it, as a click elsewhere does. Only
+            // when focus really went somewhere: Safari on a phone gives a
+            // tapped button no focus, and closing on that empty blur would
+            // take the menu away before the tap's click arrives.
+            onBlur={(e) =>
+              e.relatedTarget && !menu.current?.contains(e.relatedTarget) && e.relatedTarget !== trigger.current && setAt(null)
+            }
             style={{ position: 'fixed', top: at.top, bottom: at.bottom, right: at.right }}
             className="z-50 flex min-w-40 flex-col gap-1 rounded border border-edge-strong bg-raised p-1.5 shadow-2xl"
           >

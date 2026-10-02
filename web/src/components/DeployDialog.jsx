@@ -32,7 +32,8 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
   // Anything worth asking about before it is thrown away: a new service is
   // all unsaved work once a repository has been typed; an existing one only
   // when something was changed.
-  const dirty = deployed ? changed : Boolean(source.repo.trim()) || Boolean(service)
+  const sourceChanged = Boolean(deployed) && (source.repo !== (deployed.repo ?? '') || source.branch !== (deployed.branch ?? 'main') || source.path !== (deployed.path ?? ''))
+  const dirty = deployed ? changed || sourceChanged : Boolean(source.repo.trim()) || Boolean(service)
   const [error, setError] = useState(null)
 
   const name = source.name || guessName(source.repo)
@@ -103,7 +104,9 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
     return (
       <PlanDialog
         request={{
-          title: deployed ? `Save and redeploy ${service.name}` : `Deploy ${service.name} to ${container.name}`,
+          title: deployed
+            ? `${changed ? 'Save and redeploy' : 'Redeploy'} ${service.name}`
+            : `Deploy ${service.name} to ${container.name}`,
           url: `/api/hosts/local/instances/${container.name}/services/deploy`,
           method: 'POST',
           defaults: body(service),
@@ -215,7 +218,7 @@ export function split(joined) {
 // has been filling in should not throw it away without a word.
 export function Frame({ title, onClose, children, dirty }) {
   const [asking, setAsking] = useState(false)
-  const leave = () => (dirty ? setAsking(true) : onClose())
+  const leave = () => (asking ? setAsking(false) : dirty ? setAsking(true) : onClose())
   const dialog = useDialog(leave)
   return (
     <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/60 px-4 py-10">

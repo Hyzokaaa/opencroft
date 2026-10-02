@@ -27,7 +27,7 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
   const edited =
     (stage === 'form' && JSON.stringify(values) !== JSON.stringify(request.defaults ?? {})) ||
     (dirty && !['running', 'error', 'immediate'].includes(stage) && !done)
-  const leave = () => (edited ? setAsking(true) : onClose())
+  const leave = () => (asking ? setAsking(false) : edited ? setAsking(true) : onClose())
   const dialog = useDialog(leave)
 
   // A URL can depend on what was chosen: moving the container picked in the
