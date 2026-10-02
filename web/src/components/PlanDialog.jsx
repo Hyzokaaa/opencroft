@@ -214,7 +214,8 @@ export default function PlanDialog({ request, onClose, onFinished, onResult }) {
             {stage === 'form' && (
               <button
                 onClick={() => askForPlan(values)}
-                disabled={request.fields?.some((f) => !values[f.name])}
+                // A checkbox left unticked and a field marked optional are answers too.
+                disabled={request.fields?.some((f) => !f.optional && f.type !== 'checkbox' && !values[f.name])}
                 className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30 disabled:opacity-40"
               >
                 Show me the plan
@@ -265,7 +266,10 @@ function Form({ fields, values, onChange, error, onSubmit }) {
           </label>
         ) : (
         <label key={field.name} className="block">
-          <span className="mb-1 block text-xs text-muted">{field.label}</span>
+          <span className="mb-1 block text-xs text-muted">
+            {field.label}
+            {field.optional && <span className="text-faint"> · optional</span>}
+          </span>
           {field.options ? (
             <select
               value={values[field.name] ?? ''}

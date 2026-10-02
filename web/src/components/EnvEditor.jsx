@@ -119,7 +119,7 @@ export default function EnvEditor({ value, onChange, note, peers = [] }) {
           onChange={(e) => onChange(e.target.value)}
           rows={Math.max(6, pairs.length + 2)}
           spellCheck={false}
-          placeholder={'JWT_SECRET=…\nDB_HOST=postgres'}
+          placeholder={'SECRET_KEY=…\nDATABASE_URL=…'}
           className="w-full rounded border border-edge bg-ground px-3 py-2 font-mono text-xs outline-none transition focus:border-edge-strong"
         />
       )}
