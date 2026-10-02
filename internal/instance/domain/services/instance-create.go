@@ -22,12 +22,19 @@ var (
 
 var namePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$`)
 
+// projectPattern is a project's name as the project module declares it. It is
+// checked here too because it ends up on a command line.
+var projectPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$`)
+
+var ErrProjectInvalid = errors.New("that is not a project name")
+
 type CreateInstanceProps struct {
 	Name     string
 	Image    string
 	Port     int
 	CPULimit int
 	MemLimit string
+	Project  string
 }
 
 type CreateInstance struct {
@@ -47,6 +54,10 @@ func (s *CreateInstance) Prepare(ctx context.Context, props CreateInstanceProps)
 	}
 	if !namePattern.MatchString(props.Name) {
 		return nil, plan.Plan{}, ErrNameInvalid
+	}
+
+	if props.Project != "" && !projectPattern.MatchString(props.Project) {
+		return nil, plan.Plan{}, ErrProjectInvalid
 	}
 
 	existing, err := s.instances.FindByName(ctx, props.Name)
@@ -73,6 +84,7 @@ func (s *CreateInstance) Prepare(ctx context.Context, props CreateInstanceProps)
 		Status:   enums.StatusRunning,
 		Created:  time.Now().UTC().Format("2006-01-02"),
 		Managed:  true,
+		Project:  props.Project,
 	})
 
 	return instance, s.instances.CreatePlan(instance), nil

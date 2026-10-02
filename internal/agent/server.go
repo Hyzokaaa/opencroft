@@ -348,11 +348,26 @@ func (s *Server) accept(r *http.Request) (*instanceEntities.Instance, error) {
 	if strings.ContainsAny(dto.Id+dto.Created, " \t\n;|&$`") {
 		return nil, errors.New("unacceptable metadata")
 	}
+	// Only into a project declared here: a name typed wrong would otherwise
+	// make one.
+	if dto.Project != "" {
+		declared, err := s.projects.List(r.Context())
+		if err != nil {
+			return nil, err
+		}
+		known := false
+		for _, p := range declared {
+			known = known || (p.Name == dto.Project && p.Declared)
+		}
+		if !known {
+			return nil, errors.New("there is no declared project called " + dto.Project)
+		}
+	}
 
 	return instanceEntities.NewInstance(instanceEntities.InstanceProps{
 		Id: dto.Id, Name: dto.Name, Image: dto.Image, Address: dto.Address,
 		Port: dto.Port, CPULimit: dto.CPULimit, MemLimit: dto.MemLimit,
-		Status: dto.Status, Created: dto.Created, Managed: true,
+		Status: dto.Status, Created: dto.Created, Managed: true, Project: dto.Project,
 	}), nil
 }
 

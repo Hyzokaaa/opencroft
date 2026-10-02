@@ -44,6 +44,7 @@ func (d Deps) createInstance(w http.ResponseWriter, r *http.Request) {
 		Port:     body.Port,
 		CPULimit: body.CPULimit,
 		MemLimit: body.MemLimit,
+		Project:  body.Project,
 	})
 	if err != nil {
 		writeError(w, statusFor(err), err)

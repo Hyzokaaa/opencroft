@@ -143,7 +143,11 @@ func (r *CLIInstanceRepository) CreatePlan(instance *entities.Instance) plan.Pla
 		{"image", instance.Image},
 		{"port", strconv.Itoa(instance.Port)},
 		{"created", instance.Created},
+		{"project", instance.Project},
 	} {
+		if a[1] == "" {
+			continue
+		}
 		steps = append(steps, plan.Command(
 			"Record "+a[0]+" on the container",
 			r.bin, "config", "set", instance.Name, AnnotationPrefix+"."+a[0], a[1]))

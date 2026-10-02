@@ -63,3 +63,23 @@ func TestProjectsAreListedWithTheirContainers(t *testing.T) {
 		t.Errorf("listed %+v", listed)
 	}
 }
+
+// A container is created into a project only if that project is declared:
+// a name typed wrong would otherwise make one.
+func TestANewContainerGoesOnlyIntoADeclaredProject(t *testing.T) {
+	server, fake := testServer()
+	want := InstanceDTO{Name: "web", Image: "images:ubuntu/24.04", Address: "10.146.38.210", Port: 80,
+		CPULimit: 1, MemLimit: "1GB", Project: "typo"}
+
+	if recorder := serve(server, http.MethodPost, "/instances/plan", want); recorder.Code != http.StatusBadRequest ||
+		!strings.Contains(recorder.Body.String(), "no declared project") {
+		t.Errorf("into an undeclared project: %d %s", recorder.Code, recorder.Body.String())
+	}
+
+	fake.Dirs[files.Dir] = []string{"shop.conf"}
+	fake.Files[files.Dir+"/shop.conf"] = "description = \n"
+	want.Project = "shop"
+	if recorder := serve(server, http.MethodPost, "/instances/plan", want); recorder.Code != http.StatusOK {
+		t.Errorf("into a declared project: %d %s", recorder.Code, recorder.Body.String())
+	}
+}

@@ -12,6 +12,8 @@ type CreateInstanceRequest struct {
 	Port     int    `json:"port"`
 	CPULimit int    `json:"cpuLimit"`
 	MemLimit string `json:"memLimit"`
+	// Project, when given, is the declared project the container starts in.
+	Project string `json:"project,omitempty"`
 }
 
 type CreateInstanceProps struct {
