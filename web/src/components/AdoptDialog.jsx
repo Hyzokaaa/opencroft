@@ -45,7 +45,7 @@ export default function AdoptDialog({ container, subject, onClose, onFinished })
     return (
       <PlanDialog
         request={{
-          title: `Take on ${subject.name}`,
+          title: `Adopt ${subject.name}`,
           url: `${base}/adopt`,
           method: 'POST',
           defaults: {
@@ -59,6 +59,7 @@ export default function AdoptDialog({ container, subject, onClose, onFinished })
           },
         }}
         onClose={onClose}
+        onBack={() => setAdopting(false)}
         onFinished={onFinished}
       />
     )
@@ -67,7 +68,7 @@ export default function AdoptDialog({ container, subject, onClose, onFinished })
   const set = (key) => (value) => setAnswer({ ...answer, [key]: value })
 
   return (
-    <Frame title={`Take on ${subject.name}`} onClose={onClose}>
+    <Frame title={`Adopt ${subject.name}`} onClose={onClose}>
       <div className="space-y-4 px-5 py-4">
         {error && <p className="text-xs text-problem">{error}</p>}
         {!found && !error && (

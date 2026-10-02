@@ -6,6 +6,12 @@ export default function Chip({ label, tone, explain }) {
   const [open, setOpen] = useState(false)
   const id = useId()
 
+  // With nothing to explain it is a label, not a control: a button there is
+  // one more empty stop on the way through the page with Tab.
+  if (!explain) {
+    return <span className={'inline-block rounded border px-1.5 py-px text-[11px] leading-4 ' + (tone ?? '')}>{label}</span>
+  }
+
   return (
     <span className="relative inline-block">
       <button

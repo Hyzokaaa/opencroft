@@ -6,27 +6,35 @@ import { Progress } from './PlanDialog.jsx'
 // What croft did, newest first — the one record the machine itself cannot give
 // back. A container shows what it runs now; this is where a deployment that
 // failed an hour ago is still visible, with the step it stopped at and why.
-export default function Activity({ commandMode }) {
+//
+// Everything is shown by default: an https that failed to turn on matters as
+// much as a deployment that did, and hiding it behind a toggle hid it.
+// containers, when given, narrows it to what was done to them — a project's
+// history on the project's page.
+export default function Activity({ commandMode, containers, title, limit }) {
   const { jobs, error, read } = useJobs()
-  const [scope, setScope] = useState('deploys')
+  const [scope, setScope] = useState('all')
   const [failedOnly, setFailedOnly] = useState(false)
   const [open, setOpen] = useState(null)
 
-  const shown = jobs.filter(
-    (j) => (scope === 'all' || j.kind === 'deploy') && (!failedOnly || j.status === 'failed'),
-  )
-  const failures = jobs.filter((j) => (scope === 'all' || j.kind === 'deploy') && j.status === 'failed').length
+  const mine = containers
+    ? jobs.filter((j) => containers.includes(j.subject.split('/')[0]))
+    : jobs
+  const shown = mine
+    .filter((j) => (scope === 'all' || j.kind === 'deploy') && (!failedOnly || j.status === 'failed'))
+    .slice(0, limit ?? Infinity)
+  const failures = mine.filter((j) => (scope === 'all' || j.kind === 'deploy') && j.status === 'failed').length
 
   return (
     <Card
-      title={scope === 'deploys' ? 'Deployments' : 'Everything croft did'}
+      title={title ?? (scope === 'deploys' ? 'Deployments' : 'Everything croft did')}
       count={read ? shown.length : undefined}
       commandMode={commandMode}
       commands={['sqlite3 /var/lib/croft/croft.db "SELECT started, kind, subject, status FROM jobs ORDER BY started DESC"']}
       action={
         <div className="flex items-center gap-1.5">
-          <Toggle on={scope === 'deploys'} onClick={() => setScope('deploys')}>Deploys</Toggle>
           <Toggle on={scope === 'all'} onClick={() => setScope('all')}>Everything</Toggle>
+          <Toggle on={scope === 'deploys'} onClick={() => setScope('deploys')}>Deploys</Toggle>
           <span className="mx-1 h-4 w-px bg-edge" />
           <Toggle on={failedOnly} onClick={() => setFailedOnly(!failedOnly)}>
             Failed{failures ? ` (${failures})` : ''}
@@ -65,11 +73,22 @@ const OUTCOME = {
   },
 }
 
+// Every kind of job, in the words the button that started it used. One that
+// is missing here shows its internal name, which is how "takeover" and
+// "wildcard" used to appear.
 const KIND = {
-  deploy: 'Deploy', rollback: 'Restore', destroy: 'Remove', release: 'Let go of', adopt: 'Adopt',
-  restart: 'Restart', stop: 'Stop', start: 'Start', create: 'Create', route: 'Add domain',
-  'route-edit': 'Edit domain', 'route-remove': 'Remove domain', tls: 'Enable https',
-  expose: 'Expose the panel', database: 'Add database', 'database-remove': 'Remove database',
+  deploy: 'Deploy', rollback: 'Restore', release: 'Release', adopt: 'Adopt',
+  restart: 'Restart', stop: 'Stop', start: 'Start', create: 'Create container', route: 'Add domain',
+  'route-edit': 'Edit domain', 'route-remove': 'Remove domain', 'route-path': 'Change a path',
+  tls: 'Enable https', takeover: 'Take over', wildcard: 'Wildcard certificate',
+  expose: 'Expose the panel', database: 'Database', 'database-remove': 'Remove database',
+  environment: 'Change environment', project: 'Project',
+}
+
+// destroy is both a container and a service; the subject says which.
+function kindOf(job) {
+  if (job.kind === 'destroy') return job.subject.includes('/') ? 'Remove service' : 'Destroy container'
+  return KIND[job.kind] ?? job.kind
 }
 
 function Row({ job, open, onToggle }) {
@@ -85,7 +104,7 @@ function Row({ job, open, onToggle }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <Chip label={outcome.label} tone={outcome.tone} explain={outcome.explain} />
-            <span className="text-sm">{KIND[job.kind] ?? job.kind}</span>
+            <span className="text-sm">{kindOf(job)}</span>
             <span className="font-mono text-sm">{service ?? container}</span>
             {service && <span className="font-mono text-xs text-muted">in {container}</span>}
           </div>
@@ -175,7 +194,7 @@ function Toggle({ on, onClick, children }) {
 
 // Read every few seconds, like everything else on the panel: a deployment that
 // is running now should be seen finishing without a reload.
-function useJobs() {
+export function useJobs() {
   const [jobs, setJobs] = useState([])
   const [error, setError] = useState(null)
   const [read, setRead] = useState(false)

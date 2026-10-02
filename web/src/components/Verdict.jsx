@@ -1,6 +1,9 @@
+import { href } from '../lib/useRoute.js'
+
 // One headline, not four decorative counters. The counters that remain are
-// filters: a number you cannot act on is wallpaper.
-export default function Verdict({ data, problemCount, onFilter }) {
+// filters: each opens the list it counts, already narrowed to it. A number you
+// cannot act on is wallpaper.
+export default function Verdict({ data, problemCount }) {
   const running = data.instances.filter((i) => i.status === 'running').length
   const stopped = data.instances.length - running
   const secured = data.routes.filter((r) => r.ssl).length
@@ -26,23 +29,23 @@ export default function Verdict({ data, problemCount, onFilter }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-1 text-xs">
-        <Pill label="containers" value={data.instances.length} onClick={() => onFilter('containers')} />
-        <Pill label="running" value={running} onClick={() => onFilter('containers')} />
-        {stopped > 0 && <Pill label="stopped" value={stopped} onClick={() => onFilter('containers')} />}
-        <Pill label="domains" value={data.routes.length} onClick={() => onFilter('domains')} />
-        <Pill label="with TLS" value={secured} onClick={() => onFilter('domains')} />
+        <Pill label="containers" value={data.instances.length} to={href('containers')} />
+        <Pill label="running" value={running} to={href('containers', null, { status: 'running' })} />
+        {stopped > 0 && <Pill label="stopped" value={stopped} to={href('containers', null, { status: 'stopped' })} />}
+        <Pill label="domains" value={data.routes.length} to={href('domains')} />
+        <Pill label="with TLS" value={secured} to={href('domains', null, { tls: 'yes' })} />
       </div>
     </div>
   )
 }
 
-function Pill({ label, value, onClick }) {
+function Pill({ label, value, to }) {
   return (
-    <button
-      onClick={onClick}
+    <a
+      href={to}
       className="rounded border border-edge px-2.5 py-1.5 transition hover:border-edge-strong hover:bg-white/[0.03]"
     >
       <span className="font-medium">{value}</span> <span className="text-muted">{label}</span>
-    </button>
+    </a>
   )
 }

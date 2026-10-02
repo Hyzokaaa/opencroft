@@ -99,7 +99,7 @@ export default function Settings({ onExpose }) {
                   setProvider(e.target.value)
                   setValues({})
                 }}
-                className="w-full rounded border border-edge bg-ground px-3 py-2 text-sm outline-none transition focus:border-edge-strong"
+                className="w-full rounded border border-field-edge bg-ground px-3 py-2 text-sm outline-none transition focus:border-ink/40"
               >
                 {PROVIDERS.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -117,7 +117,7 @@ export default function Settings({ onExpose }) {
                   autoComplete="off"
                   value={values[key] ?? ''}
                   onChange={(e) => setValues({ ...values, [key]: e.target.value })}
-                  className="w-full rounded border border-edge bg-ground px-3 py-2 font-mono text-sm outline-none transition focus:border-edge-strong"
+                  className="w-full rounded border border-field-edge bg-ground px-3 py-2 font-mono text-sm outline-none transition focus:border-ink/40"
                 />
               </label>
             ))}
@@ -193,7 +193,7 @@ function PanelAddress({ onExpose }) {
             value={domain}
             onChange={(e) => setDomain(e.target.value)}
             placeholder="panel.example.com"
-            className="min-w-0 flex-1 rounded border border-edge bg-ground px-3 py-2 font-mono text-sm outline-none transition focus:border-edge-strong"
+            className="min-w-0 flex-1 rounded border border-field-edge bg-ground px-3 py-2 font-mono text-sm outline-none transition focus:border-ink/40"
           />
           <button
             type="submit"

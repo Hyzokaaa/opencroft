@@ -2,7 +2,7 @@ import Chip from './Chip.jsx'
 
 // Certificates are the one thing on this panel with a deadline. The column
 // that matters is not who issued it — it is how long you have.
-export default function CertificateTable({ certificates, onFocus }) {
+export default function CertificateTable({ certificates }) {
   if (!certificates.length) {
     return (
       <div className="px-4 py-8 text-center">
@@ -15,22 +15,19 @@ export default function CertificateTable({ certificates, onFocus }) {
   }
 
   return (
+    <div className="overflow-x-auto">
     <table className="w-full text-sm">
       <thead>
         <tr className="border-b border-edge text-left text-[11px] uppercase tracking-wide text-faint">
           <th className="px-4 py-2 font-medium">Domain</th>
           <th className="px-4 py-2 font-medium">Expires</th>
           <th className="px-4 py-2 font-medium">Issuer</th>
-          <th className="px-4 py-2 font-medium">File</th>
+          <th className="hidden px-4 py-2 font-medium lg:table-cell">File</th>
         </tr>
       </thead>
       <tbody>
         {certificates.map((c) => (
-          <tr
-            key={c.domain}
-            onClick={() => onFocus?.(c.domain)}
-            className="cursor-pointer border-b border-edge/50 transition-colors last:border-0 hover:bg-white/[0.03]"
-          >
+          <tr key={c.domain} className="border-b border-edge/50 last:border-0">
             <td className="relative px-4 py-2.5">
               {c.daysLeft < 21 && <span className="absolute left-0 top-0 h-full w-[2px] bg-problem" />}
               <div className="flex items-center gap-2">
@@ -54,11 +51,12 @@ export default function CertificateTable({ certificates, onFocus }) {
             </td>
 
             <td className="px-4 py-2.5 text-xs text-muted">{c.issuer || '—'}</td>
-            <td className="px-4 py-2.5 font-mono text-xs text-faint">{c.path}</td>
+            <td className="hidden px-4 py-2.5 font-mono text-xs text-faint lg:table-cell">{c.path}</td>
           </tr>
         ))}
       </tbody>
     </table>
+    </div>
   )
 }
 

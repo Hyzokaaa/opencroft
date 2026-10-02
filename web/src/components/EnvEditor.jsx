@@ -74,7 +74,7 @@ export default function EnvEditor({ value, onChange, note, peers = [] }) {
                 value={pair.key}
                 placeholder="KEY"
                 onChange={(e) => replace(i, e.target.value, pair.value)}
-                className="w-2/5 rounded border border-edge bg-ground px-2 py-1.5 font-mono text-xs outline-none transition focus:border-edge-strong"
+                className="w-2/5 rounded border border-field-edge bg-ground px-2 py-1.5 font-mono text-xs outline-none transition focus:border-ink/40"
               />
               <input
                 // Masked by default: it is your own server and you can read
@@ -84,7 +84,7 @@ export default function EnvEditor({ value, onChange, note, peers = [] }) {
                 value={pair.value}
                 placeholder="value"
                 onChange={(e) => replace(i, pair.key, e.target.value)}
-                className="min-w-0 flex-1 rounded border border-edge bg-ground px-2 py-1.5 font-mono text-xs outline-none transition focus:border-edge-strong"
+                className="min-w-0 flex-1 rounded border border-field-edge bg-ground px-2 py-1.5 font-mono text-xs outline-none transition focus:border-ink/40"
               />
               <button
                 type="button"
@@ -120,7 +120,7 @@ export default function EnvEditor({ value, onChange, note, peers = [] }) {
           rows={Math.max(6, pairs.length + 2)}
           spellCheck={false}
           placeholder={'SECRET_KEY=…\nDATABASE_URL=…'}
-          className="w-full rounded border border-edge bg-ground px-3 py-2 font-mono text-xs outline-none transition focus:border-edge-strong"
+          className="w-full rounded border border-field-edge bg-ground px-3 py-2 font-mono text-xs outline-none transition focus:border-ink/40"
         />
       )}
 

@@ -3,7 +3,11 @@ import Card from './Card.jsx'
 import Chip from './Chip.jsx'
 import LogView from './LogView.jsx'
 import PlanDialog from './PlanDialog.jsx'
+import Actions from './Actions.jsx'
+import { routeActions } from './RouteTable.jsx'
 import { useServices, useDatabases } from '../lib/useContainer.js'
+import { href } from '../lib/useRoute.js'
+import { SEVERITY, VERBS, remediesFor } from '../lib/vocabulary.js'
 
 // What a container actually is, once something has been deployed into it.
 //
@@ -28,6 +32,12 @@ export default function Container({
   onAdopt,
   onAddDomain,
   onMoveProject,
+  onPower,
+  onDestroyContainer,
+  routeHandlers,
+  findings = [],
+  instances = [],
+  onRemedy,
 }) {
   const { data, error, fetchedAt, read } = useServices(container.name)
   const databases = useDatabases(container.name)
@@ -42,12 +52,18 @@ export default function Container({
   const snapshots = data?.snapshots ?? []
   // What reaches this container: whole domains, and prefixes of domains that
   // send one path here while the rest goes elsewhere.
+  // Each keeps its route, so the same actions the Domains list offers are
+  // offered here: this is where a person lands when something is wrong.
   const domains = routes.flatMap((r) => [
-    ...(r.target === container.address ? [{ key: r.domain, domain: r.domain, ssl: r.ssl, port: r.port }] : []),
+    ...(r.target === container.address ? [{ key: r.domain, domain: r.domain, ssl: r.ssl, port: r.port, route: r }] : []),
     ...(r.paths ?? [])
       .filter((p) => p.target === container.address)
-      .map((p) => ({ key: r.domain + p.prefix, domain: r.domain + p.prefix, ssl: r.ssl, port: p.port })),
+      .map((p) => ({ key: r.domain + p.prefix, domain: r.domain + p.prefix, ssl: r.ssl, port: p.port, route: r, prefix: p.prefix })),
   ])
+  const running = container.status === 'running'
+  // What the home page says is wrong with this container, said here too.
+  const mine = new Set([container.name, ...domains.filter((d) => !d.prefix).map((d) => d.domain)])
+  const problems = findings.filter((f) => f.severity !== 'info' && mine.has(f.subject))
 
   return (
     <>
@@ -64,12 +80,26 @@ export default function Container({
           />
         </div>
 
-        <button
-          onClick={() => onDeploy(container)}
-          className="rounded border border-edge-strong bg-raised px-2.5 py-1 text-xs transition hover:border-ink/30"
-        >
-          Deploy a service
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => onPower(container, running)}
+            className="rounded border border-edge px-2.5 py-1 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
+          >
+            {running ? 'Stop' : 'Start'}
+          </button>
+          <button
+            onClick={() => onAddDomain(container)}
+            className="rounded border border-edge px-2.5 py-1 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
+          >
+            Add domain
+          </button>
+          <button
+            onClick={() => onDeploy(container)}
+            className="rounded border border-edge-strong bg-raised px-2.5 py-1 text-xs transition hover:border-ink/30"
+          >
+            Deploy a service
+          </button>
+        </div>
       </div>
 
       <p className="font-mono text-xs text-muted">
@@ -84,7 +114,10 @@ export default function Container({
       <p className="text-xs text-muted">
         {container.project ? (
           <>
-            In the project <span className="font-mono text-ink">{container.project}</span>
+            In the project{' '}
+            <a href={href('projects', container.project)} className="font-mono text-ink underline-offset-4 hover:underline">
+              {container.project}
+            </a>
           </>
         ) : (
           'In no project'
@@ -94,6 +127,29 @@ export default function Container({
           Move&hellip;
         </button>
       </p>
+
+      {problems.map((f) => {
+        const tone = SEVERITY[f.severity] ?? SEVERITY.warning
+        const remedies = remediesFor(f, { instances, routes }).filter((r) => r.act !== 'open')
+        return (
+          <div key={f.kind + f.subject} className="flex flex-wrap items-center gap-3 rounded-lg border border-edge bg-panel px-4 py-2.5 text-xs">
+            <span className={`h-4 w-[3px] rounded ${tone.accent}`} aria-hidden="true" />
+            <span className="min-w-0 flex-1">
+              <span className="sr-only">{tone.label}: </span>
+              <span className="font-mono">{f.subject}</span> <span className="text-muted">&mdash; {f.message}</span>
+            </span>
+            {remedies.map((r) => (
+              <button
+                key={r.act}
+                onClick={() => onRemedy(r)}
+                className="rounded border border-edge-strong bg-raised px-2 py-0.5 text-xs transition hover:border-ink/30"
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        )
+      })}
 
       {error && (
         <div className="rounded-lg border border-caution/30 bg-panel px-4 py-2.5 text-xs">
@@ -120,13 +176,23 @@ export default function Container({
           <p className="px-4 py-5 text-center text-xs text-muted">Nothing points here yet.</p>
         ) : (
           <ul className="divide-y divide-edge">
-            {domains.map((route) => (
-              <li key={route.key} className="flex items-center justify-between px-4 py-2.5">
+            {domains.map((d) => (
+              <li key={d.key} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
                 <span className="font-mono text-xs">
-                  <span className="text-muted">{route.ssl ? 'https://' : 'http://'}</span>
-                  {route.domain}
+                  <span className="text-muted">{d.ssl ? 'https://' : 'http://'}</span>
+                  {d.domain}
+                  <span className="text-muted"> &rarr; :{d.port}</span>
                 </span>
-                <span className="font-mono text-[11px] text-muted">:{route.port}</span>
+                {d.prefix ? (
+                  d.route.state === 'managed' && (
+                    <Actions
+                      label={`Actions for ${d.domain}`}
+                      actions={[{ label: 'Stop sending it here', onClick: () => routeHandlers.onRemovePath(d.route, d.prefix) }]}
+                    />
+                  )
+                ) : (
+                  <Actions label={`Actions for ${d.domain}`} actions={routeActions(d.route, routeHandlers)} />
+                )}
               </li>
             ))}
           </ul>
@@ -230,6 +296,20 @@ export default function Container({
         databases={databases.data?.databases ?? []}
       />
 
+      <Card title="Danger zone">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <p className="text-xs text-muted">
+            Destroying {container.name} deletes it with its disk, its snapshots and every database inside it.
+          </p>
+          <button
+            onClick={() => onDestroyContainer(container.name)}
+            className="rounded border border-problem/50 px-2.5 py-1 text-xs text-problem transition hover:bg-problem/10"
+          >
+            {VERBS.destroy} container&hellip;
+          </button>
+        </div>
+      </Card>
+
       {logs && (
         <LogView
           container={container.name}
@@ -270,6 +350,8 @@ function databaseRequest(container, dialog) {
       url: `${url}/${dialog.database.name}`,
       method: 'DELETE',
       destructive: !away,
+      // Dropping the data is the one thing here a snapshot alone brings back.
+      ...(away ? {} : { confirm: dialog.database.name, verb: `Drop ${dialog.database.name}` }),
     }
   }
 
@@ -589,7 +671,7 @@ function FoundSite({ site, onAdopt }) {
             <span className="font-mono text-sm">{site.domains.join(', ')}</span>
             <Chip label="site" tone="border-edge text-muted" />
             <Chip
-              label="not created by croft"
+              label="found here"
               tone="border-yours/40 text-yours"
               explain="Found in the web server's configuration inside this container. Croft did not publish it, so it cannot rebuild it until it is taken on."
             />
@@ -616,7 +698,7 @@ function ExternalUnit({ unit, onLogs, onPower, onAdopt }) {
           <StateDot state={unit.state} />
           <span className="font-mono text-sm">{unit.name}</span>
           <Chip
-            label="not created by croft"
+            label="found here"
             tone="border-yours/40 text-yours"
             explain="Found on this container. Croft did not deploy it, so it has no snapshots and no redeploy — only what any process gets: logs, restart, stop and start."
           />
@@ -857,9 +939,7 @@ function Snapshot({ snapshot, healthy, orphaned, onRollback }) {
 
       <button
         onClick={onRollback}
-        className={`shrink-0 rounded border border-edge px-2 py-0.5 text-xs text-muted transition hover:border-problem/50 hover:text-problem group-hover:opacity-100 focus:opacity-100 ${
-          healthy ? '' : 'opacity-0'
-        }`}
+        className="shrink-0 rounded border border-edge px-2 py-0.5 text-xs text-muted transition hover:border-problem/50 hover:text-problem"
       >
         Restore&hellip;
       </button>

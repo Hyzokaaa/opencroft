@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useDialog, dialogProps } from '../lib/useDialog.js'
 import PlanDialog from './PlanDialog.jsx'
 import EnvEditor, { toObject } from './EnvEditor.jsx'
 
@@ -43,6 +44,7 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
           working: 'Cloning and reading the repository…',
         }}
         onClose={onClose}
+        onBack={() => setStage('source')}
         onResult={(detection) => {
           setWhy(detection.why ?? '')
           // Re-detecting a service that already exists — after changing its
@@ -91,6 +93,8 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
           },
         }}
         onClose={onClose}
+        // Back to the form, with every field as it was left.
+        onBack={() => setStage('found')}
         onFinished={onFinished}
       />
     )
@@ -166,11 +170,12 @@ export function split(joined) {
 }
 
 export function Frame({ title, onClose, children }) {
+  const dialog = useDialog(onClose)
   return (
     <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/60 px-4 py-10">
-      <div className="w-full max-w-2xl rounded-lg border border-edge bg-panel shadow-2xl">
+      <div {...dialogProps(dialog)} className="w-full max-w-2xl rounded-lg border border-edge bg-panel shadow-2xl outline-none">
         <header className="flex items-center justify-between border-b border-edge px-5 py-3">
-          <h2 className="text-sm font-medium">{title}</h2>
+          <h2 id={dialog.titleId} className="text-sm font-medium">{title}</h2>
           <button onClick={onClose} className="text-muted hover:text-ink" aria-label="Close">
             ✕
           </button>
@@ -355,7 +360,7 @@ export function Field({ label, hint, value, onChange, mono, type, placeholder, a
         placeholder={placeholder}
         autoFocus={autoFocus}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full rounded border border-edge bg-ground px-3 py-2 text-sm outline-none transition focus:border-edge-strong ${
+        className={`w-full rounded border border-field-edge bg-ground px-3 py-2 text-sm outline-none transition focus:border-ink/40 ${
           mono ? 'font-mono text-xs' : ''
         }`}
       />

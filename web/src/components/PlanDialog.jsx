@@ -1,10 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
+import { useDialog, dialogProps } from '../lib/useDialog.js'
 
 // Three states, in order: fill in the form, read the plan, watch it run.
 //
 // The plan is the dialog — not a "details" disclosure tucked under an OK
 // button. Approving a write means approving a list of commands you have read.
-export default function PlanDialog({ request, onClose, onFinished, onResult }) {
+// onBack, when given, returns to whatever came before the plan — the form of a
+// longer flow — with everything typed still there. A plan with fields of its
+// own goes back to them without being told.
+export default function PlanDialog({ request, onClose, onFinished, onResult, onBack }) {
   const [stage, setStage] = useState(request.fields ? 'form' : 'loading')
   const [values, setValues] = useState(request.defaults ?? {})
   const [plan, setPlan] = useState(null)
@@ -12,8 +16,16 @@ export default function PlanDialog({ request, onClose, onFinished, onResult }) {
   const [error, setError] = useState(null)
   const [done, setDone] = useState(null)
   const [stopping, setStopping] = useState(false)
+  const [confirmed, setConfirmed] = useState('')
+  const [touched, setTouched] = useState({})
   const stream = useRef(null)
   const job = useRef(null)
+  const formId = useId()
+  const dialog = useDialog(onClose)
+
+  // A URL can depend on what was chosen: moving the container picked in the
+  // form is a request about that container.
+  const url = typeof request.url === 'function' ? request.url(values) : request.url
 
   useEffect(() => {
     if (stage === 'loading') askForPlan(values)
@@ -25,7 +37,7 @@ export default function PlanDialog({ request, onClose, onFinished, onResult }) {
     setStage('loading')
     setError(null)
     try {
-      const res = await fetch(`${request.url}${request.url.includes('?') ? '&' : '?'}plan=1`, {
+      const res = await fetch(`${url}${url.includes('?') ? '&' : '?'}plan=1`, {
         method: request.method,
         headers: { 'Content-Type': 'application/json' },
         body: sends(request.method) ? JSON.stringify(body) : undefined,
@@ -51,7 +63,7 @@ export default function PlanDialog({ request, onClose, onFinished, onResult }) {
     setStage(request.immediate ? 'immediate' : 'running')
     setEvents([])
     try {
-      const res = await fetch(request.url, {
+      const res = await fetch(url, {
         method: request.method,
         headers: { 'Content-Type': 'application/json' },
         body: sends(request.method) ? JSON.stringify(values) : undefined,
@@ -141,12 +153,27 @@ export default function PlanDialog({ request, onClose, onFinished, onResult }) {
 
   const steps = plan?.plan?.steps ?? []
   const running = stage === 'running' && !done && !error
+  const failed = stage === 'error' || (stage === 'running' && Boolean(error))
+  const missing = (request.fields ?? []).filter(
+    (f) => !f.optional && f.type !== 'checkbox' && (values[f.name] === '' || values[f.name] == null),
+  )
+  const invalid = (request.fields ?? []).filter((f) => !valid(f, values[f.name]))
+  const ready = missing.length === 0 && invalid.length === 0
+  // What is typed to confirm something that cannot be taken back. The plan
+  // is still read in full; this only makes the click deliberate.
+  const unconfirmed = Boolean(request.confirm) && confirmed.trim() !== request.confirm
+  const back = onBack ?? (request.fields ? () => { setError(null); setStage('form') } : null)
+
+  function submit() {
+    setTouched(Object.fromEntries((request.fields ?? []).map((f) => [f.name, true])))
+    if (ready) askForPlan(values)
+  }
 
   return (
     <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/60 px-4 py-10">
-      <div className="w-full max-w-2xl rounded-lg border border-edge bg-panel shadow-2xl">
+      <div {...dialogProps(dialog)} className="w-full max-w-2xl rounded-lg border border-edge bg-panel shadow-2xl outline-none">
         <header className="flex items-center justify-between border-b border-edge px-5 py-3">
-          <h2 className="text-sm font-medium">{request.title}</h2>
+          <h2 id={dialog.titleId} className="text-sm font-medium">{request.title}</h2>
           <button onClick={onClose} className="text-muted hover:text-ink" aria-label="Close">
             ✕
           </button>
@@ -155,11 +182,14 @@ export default function PlanDialog({ request, onClose, onFinished, onResult }) {
         <div className="px-5 py-4">
           {stage === 'form' && (
             <Form
+              id={formId}
               fields={request.fields}
               values={values}
               onChange={setValues}
               error={error}
-              onSubmit={() => askForPlan(values)}
+              touched={touched}
+              onBlur={(name) => setTouched((t) => ({ ...t, [name]: true }))}
+              onSubmit={submit}
             />
           )}
 
@@ -178,27 +208,63 @@ export default function PlanDialog({ request, onClose, onFinished, onResult }) {
                 Nothing has happened yet. These are the commands, in order.
               </p>
               <StepList steps={steps} />
+              {request.confirm && (
+                <label className="mt-4 block">
+                  <span className="mb-1 block text-xs text-muted">
+                    This cannot be undone from here. Type{' '}
+                    <span className="font-mono text-ink">{request.confirm}</span> to confirm.
+                  </span>
+                  <input
+                    value={confirmed}
+                    onChange={(e) => setConfirmed(e.target.value)}
+                    autoFocus
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="w-full rounded border border-field-edge bg-ground px-3 py-2 font-mono text-sm outline-none transition focus:border-ink/40"
+                  />
+                </label>
+              )}
             </>
           )}
 
-          {(stage === 'running' || stage === 'error') && (
+          {stage === 'error' && !steps.length && (
+            <p className="rounded border border-problem/30 bg-problem/[0.06] px-3 py-2 text-xs text-problem">
+              {error}
+            </p>
+          )}
+
+          {(stage === 'running' || (stage === 'error' && steps.length > 0)) && (
             <Progress steps={steps} events={events} error={error} done={done} />
           )}
         </div>
 
         <footer className="flex items-center justify-between gap-3 border-t border-edge px-5 py-3">
-          <p className="text-xs text-faint">
-            {stage === 'plan' && `${steps.length} command${steps.length === 1 ? '' : 's'}`}
-            {running &&
-              'Stopping leaves the plan half applied. The snapshot from step one is still there.'}
-          </p>
+          <div className="flex min-w-0 items-center gap-3">
+            {back && (stage === 'plan' || (stage === 'error' && !steps.length)) && (
+              <button
+                onClick={back}
+                className="rounded border border-edge px-3 py-1.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
+              >
+                &larr; Back
+              </button>
+            )}
+            <p className="text-xs text-muted">
+              {stage === 'form' && !ready &&
+                (missing.length
+                  ? `Fill in ${missing.map((f) => f.label).join(', ')}`
+                  : `Check ${invalid.map((f) => f.label).join(', ')}`)}
+              {running &&
+                'Stopping leaves the plan half applied. The snapshot from step one is still there.'}
+              {failed && stage === 'running' && 'The steps before the failure ran; nothing after it did.'}
+            </p>
+          </div>
 
-          <div className="flex gap-2">
+          <div className="flex shrink-0 gap-2">
             <button
               onClick={onClose}
               className="rounded border border-edge px-3 py-1.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
             >
-              {done ? 'Close' : running ? 'Leave it running' : 'Cancel'}
+              {done || failed ? 'Close' : running ? 'Leave it running' : 'Cancel'}
             </button>
 
             {running && (
@@ -213,9 +279,10 @@ export default function PlanDialog({ request, onClose, onFinished, onResult }) {
 
             {stage === 'form' && (
               <button
-                onClick={() => askForPlan(values)}
+                type="submit"
+                form={formId}
                 // A checkbox left unticked and a field marked optional are answers too.
-                disabled={request.fields?.some((f) => !f.optional && f.type !== 'checkbox' && !values[f.name])}
+                disabled={!ready}
                 className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30 disabled:opacity-40"
               >
                 Show me the plan
@@ -225,13 +292,14 @@ export default function PlanDialog({ request, onClose, onFinished, onResult }) {
             {stage === 'plan' && (
               <button
                 onClick={run}
-                className={`rounded border px-3 py-1.5 text-xs transition ${
+                disabled={unconfirmed}
+                className={`rounded border px-3 py-1.5 text-xs transition disabled:opacity-40 ${
                   request.destructive
                     ? 'border-problem/50 bg-problem/10 text-problem hover:bg-problem/15'
                     : 'border-edge-strong bg-raised hover:border-ink/30'
                 }`}
               >
-                Run {steps.length === 1 ? 'this command' : `these ${steps.length} commands`}
+                {request.verb ?? 'Run'} · {steps.length} command{steps.length === 1 ? '' : 's'}
               </button>
             )}
           </div>
@@ -241,9 +309,18 @@ export default function PlanDialog({ request, onClose, onFinished, onResult }) {
   )
 }
 
-function Form({ fields, values, onChange, error, onSubmit }) {
+// valid checks a field against the shape it declares, so a mistake is said
+// beside the field when it is left rather than by the daemon a round trip later.
+function valid(field, value) {
+  if (!field.pattern || value === '' || value == null) return true
+  return new RegExp(field.pattern).test(String(value))
+}
+
+function Form({ id, fields, values, onChange, error, touched, onBlur, onSubmit }) {
   return (
     <form
+      id={id}
+      noValidate
       onSubmit={(e) => {
         e.preventDefault()
         onSubmit()
@@ -261,7 +338,7 @@ function Form({ fields, values, onChange, error, onSubmit }) {
             />
             <span>
               <span className="block text-xs">{field.label}</span>
-              {field.hint && <span className="block text-xs text-faint">{field.hint}</span>}
+              {field.hint && <span className="block text-xs text-muted">{field.hint}</span>}
             </span>
           </label>
         ) : (
@@ -274,7 +351,7 @@ function Form({ fields, values, onChange, error, onSubmit }) {
             <select
               value={values[field.name] ?? ''}
               onChange={(e) => onChange({ ...values, [field.name]: e.target.value })}
-              className="w-full rounded border border-edge bg-ground px-3 py-2 text-sm outline-none transition focus:border-edge-strong"
+              className="w-full rounded border border-field-edge bg-ground px-3 py-2 text-sm outline-none transition focus:border-ink/40"
             >
               {field.options.map((o) => {
                 // A plain string is its own label; { value, label } says
@@ -293,16 +370,24 @@ function Form({ fields, values, onChange, error, onSubmit }) {
             value={values[field.name] ?? ''}
             placeholder={field.placeholder}
             autoFocus={field.autoFocus}
+            onBlur={() => onBlur(field.name)}
+            aria-invalid={touched[field.name] && !valid(field, values[field.name]) ? true : undefined}
             onChange={(e) =>
               onChange({
                 ...values,
                 [field.name]: field.type === 'number' ? Number(e.target.value) : e.target.value,
               })
             }
-            className="w-full rounded border border-edge bg-ground px-3 py-2 text-sm outline-none transition focus:border-edge-strong"
+            className={`w-full rounded border bg-ground px-3 py-2 text-sm outline-none transition focus:border-ink/40 ${
+              touched[field.name] && !valid(field, values[field.name]) ? 'border-problem/60' : 'border-field-edge'
+            }`}
           />
           )}
-          {field.hint && <span className="mt-1 block text-xs text-faint">{field.hint}</span>}
+          {touched[field.name] && !valid(field, values[field.name]) ? (
+            <span className="mt-1 block text-xs text-problem">{field.invalid ?? field.hint}</span>
+          ) : (
+            field.hint && <span className="mt-1 block text-xs text-muted">{field.hint}</span>
+          )}
         </label>
         ),
       )}
@@ -390,7 +475,7 @@ export function Progress({ steps, events, error, done }) {
         <p className="mt-4 text-xs text-muted">Waiting for the first step to report&hellip;</p>
       )}
 
-      <ol className="mt-4 space-y-2">
+      <ol role="log" aria-live="polite" className="mt-4 space-y-2">
         {entries.map((entry, i) => {
           // A step is announced before it runs, so the last one reported is
           // the one happening now — not one that finished. Marking it done
@@ -428,7 +513,10 @@ export function Progress({ steps, events, error, done }) {
         })}
       </ol>
 
-      {done && !error && <p className="mt-4 text-xs text-running">Finished.</p>}
+      <p role="status" className="mt-4 text-xs">
+        {done && !error && <span className="text-running">Finished.</span>}
+        {error && <span className="text-problem">Stopped: {error}</span>}
+      </p>
     </div>
   )
 }

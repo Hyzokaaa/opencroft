@@ -10,6 +10,7 @@ import { Frame } from './DeployDialog.jsx'
 export default function EnvDialog({ container, service, peers, onClose, onFinished }) {
   const [found, setFound] = useState(null)
   const [text, setText] = useState('')
+  const [original, setOriginal] = useState('')
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
   const [reads, setReads] = useState(0)
@@ -26,7 +27,9 @@ export default function EnvDialog({ container, service, peers, onClose, onFinish
         if (!res.ok) throw new Error(payload.error ?? `The daemon answered ${res.status}`)
         if (!current) return
         setFound(payload)
-        setText(fromObject(Object.fromEntries((payload.vars ?? []).map((v) => [v.key, v.value]))))
+        const read = fromObject(Object.fromEntries((payload.vars ?? []).map((v) => [v.key, v.value])))
+        setOriginal(read)
+        setText(read)
       })
       .catch((e) => current && setError(e.message))
     return () => {
@@ -44,6 +47,7 @@ export default function EnvDialog({ container, service, peers, onClose, onFinish
           defaults: { hash: found.hash, vars: toObject(text) },
         }}
         onClose={onClose}
+        onBack={() => setSaving(false)}
         onFinished={onFinished}
       />
     )
@@ -90,7 +94,8 @@ export default function EnvDialog({ container, service, peers, onClose, onFinish
         </button>
         <button
           onClick={() => setSaving(true)}
-          disabled={!found}
+          // Nothing changed is nothing to plan.
+          disabled={!found || JSON.stringify(toObject(text)) === JSON.stringify(toObject(original))}
           className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30 disabled:opacity-40"
         >
           Show me the plan

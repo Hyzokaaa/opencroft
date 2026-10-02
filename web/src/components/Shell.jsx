@@ -1,24 +1,45 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { href } from '../lib/useRoute.js'
 
+// Five places. Projects are the home page rather than a section beside it,
+// because "is my thing working?" is asked of a project — the web, its API and
+// its database — before it is asked of any one container. Certificates live
+// with the domains they serve.
 const SECTIONS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'projects', label: 'Projects' },
+  { id: 'home', label: 'Home' },
   { id: 'containers', label: 'Containers', count: (d) => d?.instances.length },
   { id: 'domains', label: 'Domains', count: (d) => d?.routes.length },
-  { id: "certificates", label: "Certificates", count: (d) => d?.certificates?.length },
   { id: 'activity', label: 'Activity' },
   { id: 'settings', label: 'Settings' },
 ]
 
 export { SECTIONS }
 
-export default function Shell({ data, section, crumb, onSection, commandMode, onToggleCommands, freshness, onReload, stale, onSignOut, children }) {
+// crumbs is where you are, from the section down: [{ label, href }], the
+// last one being this page.
+export default function Shell({ data, section, crumbs, commandMode, onToggleCommands, freshness, onReload, stale, running, onSignOut, children }) {
   const [navOpen, setNavOpen] = useState(false)
-  const current = SECTIONS.find((s) => s.id === section)
+
+  useEffect(() => {
+    if (!navOpen) return
+    const onKey = (e) => e.key === 'Escape' && setNavOpen(false)
+    addEventListener('keydown', onKey)
+    return () => removeEventListener('keydown', onKey)
+  }, [navOpen])
+
+  // Any navigation closes the drawer: what was chosen is what you wanted to see.
+  useEffect(() => {
+    const close = () => setNavOpen(false)
+    addEventListener('hashchange', close)
+    return () => removeEventListener('hashchange', close)
+  }, [])
 
   return (
     <div className="flex min-h-screen">
-      <Rail data={data} section={section} onSection={(id) => { onSection(id); setNavOpen(false) }} open={navOpen} />
+      {navOpen && (
+        <div className="fixed inset-0 z-10 bg-black/50 md:hidden" onClick={() => setNavOpen(false)} aria-hidden="true" />
+      )}
+      <Rail data={data} section={section} open={navOpen} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center justify-between gap-4 border-b border-edge bg-ground/90 px-4 backdrop-blur md:px-6">
@@ -27,43 +48,51 @@ export default function Shell({ data, section, crumb, onSection, commandMode, on
               onClick={() => setNavOpen(!navOpen)}
               className="-ml-1 rounded p-1.5 text-muted hover:text-ink md:hidden"
               aria-label="Sections"
+              aria-expanded={navOpen}
+              aria-controls="sections"
             >
               <svg viewBox="0 0 16 16" className="size-4" stroke="currentColor" strokeWidth="1.5" fill="none">
                 <path d="M2 4h12M2 8h12M2 12h12" strokeLinecap="round" />
               </svg>
             </button>
-            {/* Without a router the section alone cannot say where you are: a
-                container page kept marking Overview as the current page — to a
-                screen reader most of all, where it meant you had never left. */}
             <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2">
               <span className="truncate font-mono text-xs text-muted">local</span>
-              <span className="text-faint" aria-hidden="true">/</span>
-
-              {crumb ? (
-                <>
-                  <button
-                    onClick={crumb.onParent}
-                    className="truncate text-sm text-muted transition hover:text-ink"
-                  >
-                    {crumb.parent}
-                  </button>
-                  <span className="text-faint" aria-hidden="true">/</span>
-                  <span className="truncate font-mono text-sm" aria-current="page">
-                    {crumb.label}
+              {crumbs.map((crumb, i) => {
+                const last = i === crumbs.length - 1
+                return (
+                  <span key={crumb.href ?? crumb.label} className="flex min-w-0 items-center gap-2">
+                    <span className="text-faint" aria-hidden="true">/</span>
+                    {last ? (
+                      <span className={`truncate text-sm ${crumb.mono ? 'font-mono' : ''}`} aria-current="page">
+                        {crumb.label}
+                      </span>
+                    ) : (
+                      <a href={crumb.href} className={`truncate text-sm text-muted transition hover:text-ink ${crumb.mono ? 'font-mono' : ''}`}>
+                        {crumb.label}
+                      </a>
+                    )}
                   </span>
-                </>
-              ) : (
-                <span className="truncate text-sm" aria-current="page">
-                  {current?.label}
-                </span>
-              )}
+                )
+              })}
             </nav>
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
+            {/* Work left running behind a closed dialog has to stay findable. */}
+            {running > 0 && (
+              <a
+                href={href('activity')}
+                className="flex items-center gap-1.5 rounded border border-caution/40 px-2 py-1 text-xs text-caution transition hover:bg-caution/10"
+              >
+                <span className="size-1.5 animate-pulse rounded-full bg-caution" />
+                {running} running
+              </a>
+            )}
+
             <button
               onClick={onToggleCommands}
               aria-pressed={commandMode}
+              aria-label="Show commands"
               title="Show the command behind everything on screen"
               className={`rounded border px-2 py-1 font-mono text-xs transition ${
                 commandMode
@@ -71,13 +100,14 @@ export default function Shell({ data, section, crumb, onSection, commandMode, on
                   : 'border-edge text-muted hover:border-edge-strong hover:text-ink'
               }`}
             >
-              $_
+              $_<span className="hidden font-sans sm:inline"> Commands</span>
             </button>
 
             <button
               onClick={onReload}
               className="flex items-center gap-1.5 rounded border border-edge px-2 py-1 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
               title="Refresh now"
+              aria-label={`Refresh now — last read ${freshness}`}
             >
               <span className={`size-1.5 rounded-full ${stale ? "bg-caution" : "bg-running"}`} />
               <span className="hidden sm:inline">{freshness}</span>
@@ -100,30 +130,35 @@ export default function Shell({ data, section, crumb, onSection, commandMode, on
   )
 }
 
-function Rail({ data, section, onSection, open }) {
+function Rail({ data, section, open }) {
+  // Hidden off-screen on a phone is still reachable by Tab unless it is inert.
+  const [narrow, setNarrow] = useState(() => matchMedia('(max-width: 767px)').matches)
+  useEffect(() => {
+    const query = matchMedia('(max-width: 767px)')
+    const read = () => setNarrow(query.matches)
+    query.addEventListener('change', read)
+    return () => query.removeEventListener('change', read)
+  }, [])
+
   return (
     <nav
+      id="sections"
+      aria-label="Sections"
+      inert={narrow && !open ? true : undefined}
       className={`fixed inset-y-0 left-0 z-20 w-[220px] shrink-0 border-r border-edge bg-panel transition-transform md:static md:translate-x-0 ${
         open ? 'translate-x-0' : '-translate-x-full'
       }`}
     >
       <div className="flex h-full flex-col">
         <div className="flex h-12 items-center border-b border-edge px-4">
-          <span className="text-[15px] font-medium tracking-tight">OpenCroft</span>
+          <a href={href('home')} className="text-[15px] font-medium tracking-tight">OpenCroft</a>
         </div>
 
-        {/* The API is already /api/hosts/{id}/… — make it look like it manages
-            servers from day one, even with a single entry. */}
-        <div className="border-b border-edge p-3">
-          <button className="flex w-full items-center justify-between rounded border border-edge bg-raised px-2.5 py-2 text-left transition hover:border-edge-strong">
-            <span className="min-w-0">
-              <span className="block truncate font-mono text-xs">local</span>
-              <span className="block truncate text-[11px] text-faint">this machine</span>
-            </span>
-            <svg viewBox="0 0 16 16" className="size-3 shrink-0 text-faint" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="m4 6.5 4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
+        {/* One host for now. Shown as a fact rather than a control, so it
+            does not promise a choice that is not there yet. */}
+        <div className="border-b border-edge px-4 py-3">
+          <span className="block truncate font-mono text-xs">local</span>
+          <span className="block truncate text-[11px] text-faint">this machine</span>
         </div>
 
         <ul className="flex-1 space-y-px overflow-y-auto p-2">
@@ -132,8 +167,8 @@ function Rail({ data, section, onSection, open }) {
             const active = s.id === section
             return (
               <li key={s.id}>
-                <button
-                  onClick={() => onSection(s.id)}
+                <a
+                  href={href(s.id)}
                   aria-current={active ? 'page' : undefined}
                   className={`flex w-full items-center justify-between rounded px-2.5 py-1.5 text-sm transition ${
                     active ? 'bg-raised text-ink' : 'text-muted hover:bg-white/[0.03] hover:text-ink'
@@ -141,7 +176,7 @@ function Rail({ data, section, onSection, open }) {
                 >
                   <span>{s.label}</span>
                   {count !== undefined && <span className="text-xs text-faint">{count}</span>}
-                </button>
+                </a>
               </li>
             )
           })}

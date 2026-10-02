@@ -1,53 +1,50 @@
 import { useState } from 'react'
-import { SEVERITY, remedyFor } from '../lib/vocabulary.js'
+import { SEVERITY, remediesFor } from '../lib/vocabulary.js'
 import Command from './Command.jsx'
 import Chevron from './Chevron.jsx'
 
 // Problems and notices are different things. A hand-edited file is the product
 // keeping its promise; listing it beside an outage says the opposite.
-export default function Findings({ findings, instances, routes, commandMode, onFocus, checkedAt }) {
+//
+// onRemedy(remedy) performs the fix a remedy names; see remediesFor.
+export default function Findings({ findings, instances, routes, commandMode, onFocus, onRemedy, checkedAt }) {
   const problems = findings.filter((f) => f.severity !== 'info')
   const notices = findings.filter((f) => f.severity === 'info')
+  const context = { instances, routes }
 
   return (
     <div className="space-y-2">
+      {/* The verdict above already says "All good"; this says what that
+          claim rests on, which is what makes it believable. */}
       {problems.length === 0 && (
-        <AllClear instances={instances} routes={routes} checkedAt={checkedAt} />
+        <p className="px-1 text-xs text-muted">
+          Checked {plural(instances.length, 'container')} and {plural(routes.length, 'domain')}
+          {checkedAt ? ` ${checkedAt}` : ''}.
+        </p>
       )}
 
       {problems.map((f) => (
         <Problem
           key={`${f.kind}:${f.subject}`}
           finding={f}
-          instances={instances}
+          remedies={remediesFor(f, context)}
           commandMode={commandMode}
           onFocus={onFocus}
+          onRemedy={onRemedy}
         />
       ))}
 
-      {notices.length > 0 && <Notices notices={notices} onFocus={onFocus} />}
+      {notices.length > 0 && (
+        <Notices notices={notices} context={context} onFocus={onFocus} onRemedy={onRemedy} />
+      )}
     </div>
   )
 }
 
-// Saying what was checked is what makes "nothing wrong" believable.
-function AllClear({ instances, routes, checkedAt }) {
-  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
 
-  return (
-    <div className="flex items-center gap-3 rounded-lg border border-edge bg-panel px-4 py-3">
-      <span className="size-2 shrink-0 rounded-full bg-running" />
-      <p className="text-sm text-muted">
-        Checked {plural(instances.length, 'container')} and {plural(routes.length, 'domain')}
-        {checkedAt ? ` ${checkedAt}` : ''}. Nothing needs your attention.
-      </p>
-    </div>
-  )
-}
-
-function Problem({ finding, instances, commandMode, onFocus }) {
+function Problem({ finding, remedies, commandMode, onFocus, onRemedy }) {
   const tone = SEVERITY[finding.severity] ?? SEVERITY.warning
-  const remedy = remedyFor(finding, instances)
   const [showCommand, setShowCommand] = useState(false)
 
   return (
@@ -63,6 +60,7 @@ function Problem({ finding, instances, commandMode, onFocus }) {
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-sm">
+              <span className="sr-only">{tone.label}: </span>
               <button
                 onClick={() => onFocus(finding.subject)}
                 className="font-mono font-medium underline decoration-edge-strong underline-offset-4 hover:decoration-ink"
@@ -73,12 +71,22 @@ function Problem({ finding, instances, commandMode, onFocus }) {
             </p>
             {finding.hint && <p className="mt-1 text-xs text-muted">{finding.hint}</p>}
 
-            {remedy && (
+            {remedies.length > 0 && (
               <div className="mt-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <button className="rounded border border-edge-strong bg-raised px-2.5 py-1 text-xs transition hover:border-ink/30">
-                    {remedy.label}
-                  </button>
+                  {remedies.map((remedy, i) => (
+                    <button
+                      key={remedy.act}
+                      onClick={() => onRemedy(remedy)}
+                      className={`rounded border px-2.5 py-1 text-xs transition ${
+                        i === 0
+                          ? 'border-edge-strong bg-raised hover:border-ink/30'
+                          : 'border-edge text-muted hover:border-edge-strong hover:text-ink'
+                      }`}
+                    >
+                      {remedy.label}
+                    </button>
+                  ))}
                   {!commandMode && (
                     <button
                       onClick={() => setShowCommand(!showCommand)}
@@ -90,7 +98,7 @@ function Problem({ finding, instances, commandMode, onFocus }) {
                   )}
                 </div>
                 {(showCommand || commandMode) && (
-                  <Command lines={[remedy.command]} className="mt-2 max-w-lg" />
+                  <Command lines={remedies.map((r) => r.command)} className="mt-2 max-w-lg" />
                 )}
               </div>
             )}
@@ -103,7 +111,7 @@ function Problem({ finding, instances, commandMode, onFocus }) {
 
 // The positioning statement, delivered calmly, exactly where the user is
 // already looking. More persuasive than a line of copy in the footer.
-function Notices({ notices, onFocus }) {
+function Notices({ notices, context, onFocus, onRemedy }) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -115,28 +123,40 @@ function Notices({ notices, onFocus }) {
       >
         <Chevron open={open} />
         <span>
-          {notices.length} resource{notices.length === 1 ? ' is' : 's are'} yours, not ours &mdash;
-          listed, never touched.
+          {notices.length} found on the host, not created here &mdash; shown, and never changed
+          unless you take {notices.length === 1 ? 'it' : 'them'} over.
         </span>
       </button>
 
       {open && (
         <ul className="mt-2.5 space-y-2.5 border-t border-edge pt-2.5">
-          {notices.map((f) => (
-            <li key={`${f.kind}:${f.subject}`} className="flex gap-2.5 text-xs">
-              <span className="mt-1 size-1.5 shrink-0 rounded-full bg-yours" />
-              <div>
-                <button
-                  onClick={() => onFocus(f.subject)}
-                  className="font-mono text-ink underline decoration-edge-strong underline-offset-4 hover:decoration-ink"
-                >
-                  {f.subject}
-                </button>
-                <span className="text-muted"> &mdash; {f.message}</span>
-                {f.hint && <p className="mt-0.5 text-faint">{f.hint}</p>}
-              </div>
-            </li>
-          ))}
+          {notices.map((f) => {
+            const remedies = remediesFor(f, context)
+            return (
+              <li key={`${f.kind}:${f.subject}`} className="flex gap-2.5 text-xs">
+                <span className="mt-1 size-1.5 shrink-0 rounded-full bg-yours" />
+                <div className="min-w-0 flex-1">
+                  <button
+                    onClick={() => onFocus(f.subject)}
+                    className="font-mono text-ink underline decoration-edge-strong underline-offset-4 hover:decoration-ink"
+                  >
+                    {f.subject}
+                  </button>
+                  <span className="text-muted"> &mdash; {f.message}</span>
+                  {f.hint && <p className="mt-0.5 text-faint">{f.hint}</p>}
+                </div>
+                {remedies.map((remedy) => (
+                  <button
+                    key={remedy.act}
+                    onClick={() => onRemedy(remedy)}
+                    className="h-fit shrink-0 rounded border border-edge px-2 py-0.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
+                  >
+                    {remedy.label}&hellip;
+                  </button>
+                ))}
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>
