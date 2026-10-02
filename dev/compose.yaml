@@ -1,0 +1,11 @@
+# docker compose -f dev/compose.yaml up --build
+services:
+  croft:
+    build:
+      context: ..
+      dockerfile: dev/Dockerfile
+    ports:
+      - "${CROFT_PORT:-8080}:8080"
+    environment:
+      CROFT_PAUSE: ${CROFT_PAUSE:-400ms}
+      CROFT_PORT: ${CROFT_PORT:-8080}

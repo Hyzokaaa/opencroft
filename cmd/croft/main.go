@@ -699,7 +699,14 @@ func agentCommand(ctx context.Context, args []string) {
 	socket := fs.String("socket", agent.SocketPath, "unix socket to listen on")
 	group := fs.String("group", "croft", "group allowed to reach the socket")
 	nginxDir := fs.String("nginx-dir", "/etc/nginx/croft.d", "directory holding generated vhosts")
+	demo := fs.Bool("demo", false, "sample containers on a host that runs nothing, to try the panel")
+	pause := fs.Duration("pause", 400*time.Millisecond, "with --demo, how long each command pretends to take")
 	_ = fs.Parse(reorder(fs, args))
+
+	if *demo {
+		demoAgent(ctx, *socket, *pause)
+		return
+	}
 
 	if os.Geteuid() != 0 {
 		fmt.Fprintln(os.Stderr, "[ERROR] The agent is the privileged half; it must run as root.")
