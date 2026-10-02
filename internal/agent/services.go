@@ -96,6 +96,10 @@ type ServiceDTO struct {
 	// source of truth about whether something is running.
 	State string `json:"state,omitempty"`
 
+	// Pending is true when properties were saved after the last deployment
+	// and are not running yet.
+	Pending bool `json:"pending,omitempty"`
+
 	// Adopted is shown, never accepted: entity ignores it, and adoption is
 	// only ever read from the container itself.
 	Adopted *AdoptedDTO `json:"adopted,omitempty"`
@@ -473,6 +477,7 @@ func (s *Server) listServices(w http.ResponseWriter, r *http.Request) {
 
 	for _, service := range names {
 		dto := fromConfig(config, service)
+		dto.Pending = pending(config, service)
 		out = append(out, dto)
 
 		unit := "croft-" + service
@@ -775,6 +780,10 @@ func (s *Server) runDeployment(w http.ResponseWriter, r *http.Request, name stri
 
 		service.Source.Commit = s.commit(ctx, name, service)
 		if err := s.remember(ctx, name, service); err != nil {
+			return err
+		}
+		// What is saved is now what runs; a later Save can be told apart.
+		if err := s.markDeployed(r, name, service.Name); err != nil {
 			return err
 		}
 

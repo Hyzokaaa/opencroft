@@ -644,3 +644,53 @@ func (d Deps) showUnitLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"lines": text})
 }
+
+// Configurer saves a service's properties without deploying it; they take
+// effect at its next deployment, and the listing says so meanwhile.
+type Configurer interface {
+	ConfigurePlan(ctx context.Context, container string, want agent.ServiceDTO) (plan.Plan, error)
+	Configure(ctx context.Context, container string, want agent.ServiceDTO, report func(int, string)) error
+}
+
+func (d Deps) configureService(w http.ResponseWriter, r *http.Request) {
+	if !d.writable(w) {
+		return
+	}
+	configurer, ok := d.Services.(Configurer)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, errors.New("this host cannot save properties"))
+		return
+	}
+
+	name, service := r.PathValue("name"), r.PathValue("service")
+	var body agent.ServiceDTO
+	if err := readBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	body.Name = service
+
+	p, err := configurer.ConfigurePlan(r.Context(), name, body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if wantsPlan(r) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"summary": fmt.Sprintf("Save the properties of %s. Nothing that runs changes: they take effect "+
+				"the next time %s is deployed, and until then it shows as having changes not deployed.", service, service),
+			"plan": p,
+		})
+		return
+	}
+
+	started := d.Jobs.Start("configure", name+"/"+service, p,
+		func(ctx context.Context, report func(int, string)) error {
+			if d.Simulated {
+				return d.rehearse(p, report)
+			}
+			return configurer.Configure(ctx, name, body, report)
+		})
+	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": service})
+}

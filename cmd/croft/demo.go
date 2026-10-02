@@ -201,13 +201,13 @@ func seedDemo(ctx context.Context, instances *runtime.MemoryInstanceRepository,
 	annotate("shop-web", "project", "shop",
 		"services", "storefront",
 		"service.storefront.repo", "https://github.com/example/storefront.git",
-		"service.storefront.branch", "main", "service.storefront.commit", "4f2a9c1",
+		"service.storefront.branch", "main", "service.storefront.path", "/srv/storefront", "service.storefront.commit", "4f2a9c1",
 		"service.storefront.runtime", "node", "service.storefront.build", "npm ci && npm run build",
 		"service.storefront.start", "npm run start", "service.storefront.port", "80")
 	annotate("shop-api", "project", "shop",
 		"services", "api",
 		"service.api.repo", "https://github.com/example/shop-api.git",
-		"service.api.branch", "main", "service.api.commit", "b81e07d",
+		"service.api.branch", "main", "service.api.path", "/srv/api", "service.api.commit", "b81e07d",
 		"service.api.runtime", "node", "service.api.install", "npm ci",
 		"service.api.start", "node dist/main.js", "service.api.port", "3000",
 		"service.api.health", "/health",
@@ -216,9 +216,15 @@ func seedDemo(ctx context.Context, instances *runtime.MemoryInstanceRepository,
 		"database.shop.user", "shop", "database.shop.port", "5432")
 	annotate("blog", "services", "blog",
 		"service.blog.repo", "https://github.com/example/blog.git",
-		"service.blog.branch", "main", "service.blog.commit", "0c3d5e8",
+		"service.blog.branch", "main", "service.blog.path", "/srv/blog", "service.blog.commit", "0c3d5e8",
 		"service.blog.runtime", "static", "service.blog.build", "npm ci && npm run build",
 		"service.blog.output", "dist")
+
+	// As if each had been deployed as it is, so a saved change shows as one.
+	for container, service := range map[string]string{"shop-web": "storefront", "shop-api": "api", "blog": "blog"} {
+		config, _ := instances.Annotations(ctx, container)
+		_ = instances.Annotate(ctx, container, "service."+service+".deployed", agent.Fingerprint(config, service))
+	}
 
 	for _, route := range []routeEntities.RouteProps{
 		{Domain: "shop.example.com", Target: "10.146.38.200", Port: 80, SSL: true,

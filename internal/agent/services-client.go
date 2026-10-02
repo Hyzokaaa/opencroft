@@ -166,3 +166,17 @@ func (a *ServiceClient) UnitLogs(ctx context.Context, container, unit string, li
 		unitPath(container, unit, "/logs")+"?lines="+strconv.Itoa(lines), nil, &response)
 	return response.Lines, err
 }
+
+// ── Properties, saved without deploying ──────────────────────────────────────
+
+func (a *ServiceClient) ConfigurePlan(ctx context.Context, container string, want ServiceDTO) (plan.Plan, error) {
+	var response PlanResponse
+	err := a.c.call(ctx, http.MethodPut,
+		servicePath(container, "/"+url.PathEscape(want.Name)+"/properties/plan"), want, &response)
+	return response.Plan, err
+}
+
+func (a *ServiceClient) Configure(ctx context.Context, container string, want ServiceDTO, report func(int, string)) error {
+	return a.c.streamed(ctx, http.MethodPut,
+		servicePath(container, "/"+url.PathEscape(want.Name)+"/properties"), want, report)
+}
