@@ -14,6 +14,10 @@ descargó.
 
 ## No publicado
 
+### v0.29.0 — 2026-10-04
+- docs: file v0.29.0 in the changelog
+- feat: answer health with the agent's state, so a monitor learns when croft can do nothing
+
 ### v0.28.1 — 2026-10-04
 - docs: file v0.28.1 in the changelog
 - fix: keep the sidebar the height of the window, so its footer is always in sight
