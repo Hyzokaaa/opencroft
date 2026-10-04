@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { readJSON, humane } from './api.js'
 
 const HOST = 'local'
 const INTERVAL = 10000
@@ -24,12 +25,11 @@ export function useOverview() {
         setUnauthorized(true)
         return
       }
-      if (!res.ok) throw new Error(`The daemon answered ${res.status}`)
-      setData(await res.json())
+      setData(await readJSON(res))
       setFetchedAt(new Date())
       setError(null)
     } catch (e) {
-      setError(e.message)
+      setError(humane(e))
     } finally {
       setLoading(false)
     }
@@ -69,16 +69,24 @@ export function useCommandMode() {
 }
 
 // Who is signed in, and whether anybody can be. The panel shell renders before
-// this resolves, so the answer is three-state: unknown, in, out.
+// this resolves, so the answer is three-state: unknown, in, out — and a fourth
+// when nobody answered. That one used to pass for "out", and a person whose
+// daemon was down was shown a sign-in form that could never work.
 export function useAuth() {
   const [state, setState] = useState(null)
 
   const load = useCallback(async () => {
     try {
       const res = await fetch('/api/auth/state')
-      setState(await res.json())
-    } catch {
-      setState({ hasUsers: true, authenticated: false, unreachable: true })
+      const payload = await readJSON(res)
+      // Something that answers without saying whether you are signed in is
+      // not croft — a proxy's page, most often — and is not taken for "no".
+      if (typeof payload?.authenticated !== 'boolean') {
+        throw new Error('Something answered in place of croft, without saying who is signed in.')
+      }
+      setState(payload)
+    } catch (e) {
+      setState({ authenticated: false, unreachable: true, reason: humane(e) })
     }
   }, [])
 

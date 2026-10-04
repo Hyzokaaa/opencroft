@@ -5,6 +5,7 @@ import Activity from './Activity.jsx'
 import InstanceTable, { StatusDot } from './InstanceTable.jsx'
 import RouteTable from './RouteTable.jsx'
 import { href } from '../lib/useRoute.js'
+import { readJSON, humane } from '../lib/api.js'
 
 // A project is the containers that belong together — a web, the backend and
 // its database — and the domains that reach them. Nothing here is stored by
@@ -17,15 +18,14 @@ export function useProjects(refresh) {
   useEffect(() => {
     let current = true
     fetch('/api/hosts/local/projects')
-      .then(async (res) => {
-        const payload = await res.json()
-        if (!res.ok) throw new Error(payload.error ?? `The daemon answered ${res.status}`)
+      .then(readJSON)
+      .then((payload) => {
         if (current) {
           setProjects(payload ?? [])
           setError(null)
         }
       })
-      .catch((e) => current && setError(e.message))
+      .catch((e) => current && setError(humane(e)))
     return () => {
       current = false
     }
@@ -86,9 +86,15 @@ export function ProjectCards({ data, projects, error, problems, actions }) {
           >
             New container
           </button>
+          {/* With no containers yet, the first step is the one above the
+              list, and it alone stands out. */}
           <button
             onClick={actions.newProject}
-            className="rounded border border-edge-strong bg-raised px-2 py-1 text-xs transition hover:border-ink/30"
+            className={
+              data.instances.length
+                ? 'rounded border border-edge-strong bg-raised px-2 py-1 text-xs transition hover:border-ink/30'
+                : 'rounded border border-edge px-2 py-1 text-xs text-muted transition hover:border-edge-strong hover:text-ink'
+            }
           >
             New project
           </button>
@@ -311,10 +317,12 @@ function ProjectDatabases({ container }) {
   const [data, setData] = useState(null)
   useEffect(() => {
     let current = true
+    // A failure is said as one, not as "none": an empty list and an unread
+    // one are different answers to "where is the data".
     fetch(`/api/hosts/local/instances/${container.name}/databases`)
-      .then((res) => (res.ok ? res.json() : { databases: [] }))
-      .then((payload) => current && setData(payload))
-      .catch(() => current && setData({ databases: [] }))
+      .then(readJSON)
+      .then((payload) => current && setData(payload ?? { databases: [] }))
+      .catch((e) => current && setData({ failed: e.status === 503 ? 'not readable on this host' : 'could not be read' }))
     return () => {
       current = false
     }
@@ -327,6 +335,8 @@ function ProjectDatabases({ container }) {
       </a>
       {!data ? (
         <span className="ml-2 text-faint">reading&hellip;</span>
+      ) : data.failed ? (
+        <span className="ml-2 text-caution">{data.failed}</span>
       ) : databases.length === 0 ? (
         <span className="ml-2 text-faint">none</span>
       ) : (

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import Shell from './components/Shell.jsx'
-import Verdict from './components/Verdict.jsx'
+import Verdict, { StartHere } from './components/Verdict.jsx'
+import Gated from './components/Gated.jsx'
 import Findings from './components/Findings.jsx'
 import InstanceTable from './components/InstanceTable.jsx'
 import RouteTable from './components/RouteTable.jsx'
@@ -18,6 +19,7 @@ import ProjectPage, { ProjectCards, useProjects } from './components/Projects.js
 import { useOverview, useCommandMode, useAuth } from './lib/useOverview.js'
 import { useRoute, href } from './lib/useRoute.js'
 import { VERBS } from './lib/vocabulary.js'
+import { readJSON } from './lib/api.js'
 
 export default function App() {
   const { auth, refreshAuth, signOut } = useAuth()
@@ -32,7 +34,15 @@ export default function App() {
 
   // There is no sign-up: users are created on the host with `croft user add`.
   if (!auth.authenticated) {
-    return <Login hasUsers={auth.hasUsers} onSignedIn={refreshAuth} />
+    return (
+      <Login
+        hasUsers={auth.hasUsers}
+        unreachable={auth.unreachable}
+        reason={auth.reason}
+        onRetry={refreshAuth}
+        onSignedIn={refreshAuth}
+      />
+    )
   }
 
   return <Dashboard onSignOut={signOut} onSessionLost={refreshAuth} />
@@ -225,7 +235,30 @@ function Dashboard({ onSignOut, onSessionLost }) {
 
   // One certificate for a domain and every name one label below it. After it,
   // Enable https on a subdomain asks the authority for nothing.
-  function wildcard() {
+  //
+  // It is proved over DNS, so without credentials it cannot work — and that is
+  // said before the form, with the way to Settings, not after the domain was
+  // typed and the authority refused. When the answer cannot be read, the
+  // daemon is left to say so: guessing "missing" would send somebody with
+  // credentials off to store them again.
+  async function wildcard() {
+    let dns = null
+    try {
+      dns = await readJSON(await fetch('/api/hosts/local/dns'))
+    } catch {
+      dns = null
+    }
+    if (dns && !dns.configured) {
+      setDialog({
+        title: 'A wildcard certificate',
+        blocked: {
+          message:
+            'A wildcard is proved over DNS, so croft needs credentials for your DNS provider first. None are stored on this host yet.',
+          action: { label: 'Add DNS credentials in Settings', href: href('settings') },
+        },
+      })
+      return
+    }
     setDialog({
       title: 'A wildcard certificate',
       url: '/api/hosts/local/certificates/wildcard',
@@ -537,6 +570,8 @@ function Dashboard({ onSignOut, onSessionLost }) {
         <>
           <Verdict data={data} problemCount={problemCount} />
 
+          {data.instances.length === 0 && <StartHere onNewContainer={() => newContainer()} />}
+
           <Findings
             findings={data.findings}
             instances={data.instances}
@@ -581,6 +616,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
             instances={data.instances}
             findings={data.findings}
             commandMode={commandMode}
+            runtime={runtimeBin}
             onDeploy={(container, service) => setDeploying({ container, service })}
             onRollback={rollback}
             onDestroy={destroyService}
@@ -649,12 +685,15 @@ function Dashboard({ onSignOut, onSessionLost }) {
                       Show all
                     </a>
                   )}
-                  <button
+                  {/* A domain is served from a container; with none, the form
+                      would offer an empty list to choose from. */}
+                  <Gated
+                    reason={data.instances.length ? undefined : 'Create a container first.'}
                     onClick={() => addDomain(null)}
                     className="rounded border border-edge-strong bg-raised px-2 py-1 text-xs transition hover:border-ink/30"
                   >
                     Add domain
-                  </button>
+                  </Gated>
                 </div>
               }
             >

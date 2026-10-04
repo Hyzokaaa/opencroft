@@ -1,11 +1,25 @@
 import { useState } from 'react'
 import Command from './Command.jsx'
+import { readJSON, humane } from '../lib/api.js'
 
-export default function Login({ hasUsers, onSignedIn }) {
+// unreachable is its own screen. Taken for "signed out", a daemon that is down
+// showed a sign-in form that could never work, and the person retyped a
+// correct password wondering what they got wrong.
+export default function Login({ hasUsers, unreachable, reason, onRetry, onSignedIn }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [retrying, setRetrying] = useState(false)
+
+  async function retry() {
+    setRetrying(true)
+    try {
+      await onRetry()
+    } finally {
+      setRetrying(false)
+    }
+  }
 
   async function submit(event) {
     event.preventDefault()
@@ -19,14 +33,10 @@ export default function Login({ hasUsers, onSignedIn }) {
         body: JSON.stringify({ username, password }),
       })
 
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        setError(body.error ?? `The daemon answered ${res.status}`)
-        return
-      }
+      await readJSON(res)
       onSignedIn()
     } catch (e) {
-      setError(e.message)
+      setError(humane(e))
     } finally {
       setBusy(false)
     }
@@ -39,7 +49,23 @@ export default function Login({ hasUsers, onSignedIn }) {
 
         {/* There is no sign-up: users are created on the host, by someone who
             already has a shell there. */}
-        {!hasUsers ? (
+        {unreachable ? (
+          <div role="alert" className="mt-4 rounded-lg border border-problem/30 bg-panel px-4 py-4">
+            <p className="text-sm text-problem">The panel cannot reach croft.</p>
+            <p className="mt-1 text-xs text-muted">{reason}</p>
+            <p className="mt-2 text-xs text-muted">
+              Signing in needs croft to answer. On the server, check that it is running:
+            </p>
+            <Command lines={['systemctl status croft']} className="mt-2" />
+            <button
+              onClick={retry}
+              disabled={retrying}
+              className="mt-3 rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30 disabled:opacity-40"
+            >
+              {retrying ? 'Trying…' : 'Try again'}
+            </button>
+          </div>
+        ) : hasUsers === false ? (
           <div className="mt-4 rounded-lg border border-edge bg-panel px-4 py-4">
             <p className="text-sm">No users yet.</p>
             <p className="mt-1 text-xs text-muted">
@@ -65,7 +91,7 @@ export default function Login({ hasUsers, onSignedIn }) {
             />
 
             {error && (
-              <p className="rounded border border-problem/30 bg-problem/[0.06] px-3 py-2 text-xs text-problem">
+              <p role="alert" className="rounded border border-problem/30 bg-problem/[0.06] px-3 py-2 text-xs text-problem">
                 {error}
               </p>
             )}

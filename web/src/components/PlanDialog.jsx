@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useDialog, dialogProps } from '../lib/useDialog.js'
+import { readJSON, humane } from '../lib/api.js'
 
 // Three states, in order: fill in the form, read the plan, watch it run.
 //
@@ -10,8 +11,11 @@ import { useDialog, dialogProps } from '../lib/useDialog.js'
 // own goes back to them without being told.
 // dirty says the flow that opened this holds unsaved work — the form of
 // Properties or Environment behind its plan — so leaving asks first there too.
+// request.blocked, when given, is something missing before the form can mean
+// anything — credentials, say — and the dialog says what and where to get it
+// instead of letting the form be filled in for nothing.
 export default function PlanDialog({ request, onClose, onFinished, onResult, onBack, dirty = false }) {
-  const [stage, setStage] = useState(request.fields ? 'form' : 'loading')
+  const [stage, setStage] = useState(request.blocked ? 'blocked' : request.fields ? 'form' : 'loading')
   const [values, setValues] = useState(request.defaults ?? {})
   const [plan, setPlan] = useState(null)
   const [events, setEvents] = useState([])
@@ -49,16 +53,10 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
         headers: { 'Content-Type': 'application/json' },
         body: sends(request.method) ? JSON.stringify(body) : undefined,
       })
-      const payload = await res.json()
-      if (!res.ok) {
-        setError(payload.error ?? `The daemon answered ${res.status}`)
-        setStage(request.fields ? 'form' : 'error')
-        return
-      }
-      setPlan(payload)
+      setPlan(await readJSON(res))
       setStage('plan')
     } catch (e) {
-      setError(e.message)
+      setError(humane(e))
       setStage(request.fields ? 'form' : 'error')
     }
   }
@@ -75,12 +73,7 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
         headers: { 'Content-Type': 'application/json' },
         body: sends(request.method) ? JSON.stringify(values) : undefined,
       })
-      const payload = await res.json()
-      if (!res.ok) {
-        setError(payload.error ?? `The daemon answered ${res.status}`)
-        setStage('error')
-        return
-      }
+      const payload = await readJSON(res)
 
       if (request.immediate) {
         onResult?.(payload)
@@ -112,7 +105,7 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
         if (!done) askTheDaemon(payload.jobId)
       }
     } catch (e) {
-      setError(e.message)
+      setError(humane(e))
       setStage('error')
     }
   }
@@ -122,8 +115,7 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
   // else — and a job that is still running says so rather than looking stuck.
   async function askTheDaemon(jobId) {
     try {
-      const res = await fetch(`/api/jobs/${jobId}`)
-      const job = await res.json()
+      const job = await readJSON(await fetch(`/api/jobs/${jobId}`))
 
       if (Array.isArray(job.events)) setEvents(job.events)
 
@@ -205,6 +197,21 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
             />
           )}
 
+          {stage === 'blocked' && (
+            <div className="space-y-2 py-2 text-sm">
+              <p>{request.blocked.message}</p>
+              {request.blocked.action && (
+                <a
+                  href={request.blocked.action.href}
+                  onClick={onClose}
+                  className="inline-block text-xs text-muted underline underline-offset-4 transition hover:text-ink"
+                >
+                  {request.blocked.action.label}
+                </a>
+              )}
+            </div>
+          )}
+
           {stage === "loading" && (
             <p className="py-6 text-sm text-muted">Working out what this would do…</p>
           )}
@@ -240,7 +247,7 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
           )}
 
           {stage === 'error' && !steps.length && (
-            <p className="rounded border border-problem/30 bg-problem/[0.06] px-3 py-2 text-xs text-problem">
+            <p role="alert" className="rounded border border-problem/30 bg-problem/[0.06] px-3 py-2 text-xs text-problem">
               {error}
             </p>
           )}
@@ -279,7 +286,7 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
               onClick={leave}
               className="rounded border border-edge px-3 py-1.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
             >
-              {done || failed ? 'Close' : running ? 'Leave it running' : 'Cancel'}
+              {done || failed || stage === 'blocked' ? 'Close' : running ? 'Leave it running' : 'Cancel'}
             </button>
 
             {running && (
@@ -424,7 +431,7 @@ function Form({ id, fields, values, onChange, error, touched, onBlur, onSubmit }
       )}
 
       {error && (
-        <p className="rounded border border-problem/30 bg-problem/[0.06] px-3 py-2 text-xs text-problem">
+        <p role="alert" className="rounded border border-problem/30 bg-problem/[0.06] px-3 py-2 text-xs text-problem">
           {error}
         </p>
       )}
@@ -434,7 +441,9 @@ function Form({ id, fields, values, onChange, error, touched, onBlur, onSubmit }
 
 // Discard asks in the dialog itself, with the safe answer focused: a box from
 // the browser on top of a dialog that is already modal reads as an error.
-export function Discard({ onKeep, onDiscard }) {
+// verb names what discarding leads to, when it leads somewhere — "Discard and
+// read again" says both halves of what the click does.
+export function Discard({ onKeep, onDiscard, verb = 'Discard' }) {
   return (
     <div role="alertdialog" aria-label="Discard your changes?" className="flex shrink-0 items-center gap-2">
       <span className="text-xs text-ink">Discard your changes?</span>
@@ -449,7 +458,7 @@ export function Discard({ onKeep, onDiscard }) {
         onClick={onDiscard}
         className="rounded border border-problem/50 px-3 py-1.5 text-xs text-problem transition hover:bg-problem/10"
       >
-        Discard
+        {verb}
       </button>
     </div>
   )

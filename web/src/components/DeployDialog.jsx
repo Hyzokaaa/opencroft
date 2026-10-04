@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useDialog, dialogProps } from '../lib/useDialog.js'
 import { Discard } from './PlanDialog.jsx'
 import PlanDialog from './PlanDialog.jsx'
-import EnvEditor, { toObject } from './EnvEditor.jsx'
+import EnvEditor, { toObject, invalidKeys } from './EnvEditor.jsx'
 
 // Deploying is two plans, not one, because you cannot know how to build code
 // you have not seen. First: "I am going to look at the repository" — the git
@@ -136,8 +136,9 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
           onChange={setSource}
           error={error}
           onSubmit={() => {
-            if (!source.repo.trim()) {
-              setError('A repository URL is required.')
+            const problem = repoProblem(source.repo)
+            if (problem) {
+              setError(problem)
               return
             }
             setError(null)
@@ -155,7 +156,9 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
           onSave={() => setStage('saving')}
           changed={changed}
           pending={Boolean(deployed?.pending)}
-          onEditSource={deployed ? () => setStage('source') : null}
+          // A new service was just inspected from what was typed a moment
+          // ago; a typo in the branch is fixed by going back, not by closing.
+          onEditSource={() => setStage('source')}
           adopted={deployed?.adopted}
           existing={Boolean(deployed)}
           peers={peers}
@@ -204,6 +207,16 @@ function remembered(deployed) {
   }
 }
 
+// repoProblem says what is wrong with a repository URL before anything is
+// cloned: only public https is supported, so anything else is said here
+// rather than by git a round trip later.
+function repoProblem(repo) {
+  const value = (repo ?? '').trim()
+  if (!value) return 'A repository URL is required.'
+  if (!/^https:\/\//.test(value)) return 'Use the https address of the repository — it starts with https://. SSH addresses need a deploy key, which is not built yet.'
+  return null
+}
+
 // The repository name is what anybody would have typed anyway.
 function guessName(repo) {
   const last = (repo ?? '').replace(/\/+$/, '').split('/').pop() ?? ''
@@ -241,12 +254,19 @@ export function Frame({ title, onClose, children, dirty }) {
 }
 
 function Source({ value, name, onChange, error, onSubmit }) {
+  // Checked when the field is left, not on every keystroke: half a URL is
+  // not a mistake yet.
+  const [left, setLeft] = useState(false)
+  const problem = left && value.repo.trim() ? repoProblem(value.repo) : null
+
   return (
     <>
       <form onSubmit={(e) => { e.preventDefault(); onSubmit() }} className="space-y-3 px-5 py-4">
         <Field
           label="Repository"
           hint="A public https URL. Private repositories need a deploy key, which is not built yet."
+          invalid={problem}
+          onBlur={() => setLeft(true)}
           autoFocus
           placeholder="https://github.com/you/app.git"
           value={value.repo}
@@ -270,8 +290,8 @@ function Source({ value, name, onChange, error, onSubmit }) {
           />
         </div>
 
-        {error && (
-          <p className="rounded border border-problem/30 bg-problem/[0.06] px-3 py-2 text-xs text-problem">
+        {error && error !== problem && (
+          <p role="alert" className="rounded border border-problem/30 bg-problem/[0.06] px-3 py-2 text-xs text-problem">
             {error}
           </p>
         )}
@@ -295,6 +315,7 @@ function Source({ value, name, onChange, error, onSubmit }) {
 function Found({ service, why, onChange, onDeploy, onSave, changed, pending, onEditSource, adopted, existing, peers }) {
   const set = (key) => (v) => onChange({ ...service, [key]: v })
   const runnable = Boolean(adopted) || Boolean(service.start?.trim())
+  const badNames = existing ? [] : invalidKeys(service.env)
 
   return (
     <>
@@ -309,7 +330,7 @@ function Found({ service, why, onChange, onDeploy, onSave, changed, pending, onE
               onClick={onEditSource}
               className="shrink-0 text-xs text-muted underline decoration-dotted underline-offset-2 transition hover:text-ink"
             >
-              Advanced: change repository or branch
+              Change repository or branch
             </button>
           )}
         </div>
@@ -393,6 +414,8 @@ function Found({ service, why, onChange, onDeploy, onSave, changed, pending, onE
         <p className="text-xs text-muted">
           {!runnable
             ? 'Nothing says how to start it, so there is no deployment to run.'
+            : badNames.length
+              ? 'A variable name in Environment is not valid yet.'
             : existing
               ? changed
                 ? 'Saving changes nothing that runs.'
@@ -411,7 +434,7 @@ function Found({ service, why, onChange, onDeploy, onSave, changed, pending, onE
           )}
           <button
             onClick={onDeploy}
-            disabled={!runnable || (existing && !changed && !pending)}
+            disabled={!runnable || badNames.length > 0 || (existing && !changed && !pending)}
             className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30 disabled:opacity-40"
           >
             {!existing ? 'Deploy…' : changed ? 'Save and redeploy…' : 'Redeploy…'}
@@ -422,7 +445,9 @@ function Found({ service, why, onChange, onDeploy, onSave, changed, pending, onE
   )
 }
 
-export function Field({ label, hint, value, onChange, mono, type, placeholder, autoFocus }) {
+// invalid, when given, is what is wrong with the value, said under the field
+// in place of the hint — where the eye already is.
+export function Field({ label, hint, invalid, value, onChange, onBlur, mono, type, placeholder, autoFocus }) {
   return (
     <label className="block">
       <span className="mb-1 block text-xs text-muted">{label}</span>
@@ -431,12 +456,18 @@ export function Field({ label, hint, value, onChange, mono, type, placeholder, a
         value={value ?? ''}
         placeholder={placeholder}
         autoFocus={autoFocus}
+        onBlur={onBlur}
+        aria-invalid={invalid ? true : undefined}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full rounded border border-field-edge bg-ground px-3 py-2 text-sm outline-none transition focus:border-ink/40 ${
-          mono ? 'font-mono text-xs' : ''
-        }`}
+        className={`w-full rounded border bg-ground px-3 py-2 text-sm outline-none transition focus:border-ink/40 ${
+          invalid ? 'border-problem/60' : 'border-field-edge'
+        } ${mono ? 'font-mono text-xs' : ''}`}
       />
-      {hint && <span className="mt-1 block text-xs text-faint">{hint}</span>}
+      {invalid ? (
+        <span className="mt-1 block text-xs text-problem">{invalid}</span>
+      ) : (
+        hint && <span className="mt-1 block text-xs text-faint">{hint}</span>
+      )}
     </label>
   )
 }

@@ -24,12 +24,19 @@ export default function Command({ lines, className = '' }) {
           </div>
         ))}
       </pre>
+      {/* Visible, if quiet: hidden until hovered it did not exist on a phone.
+          The outcome is announced, since a word changing inside a button is
+          not news to a screen reader. */}
       <button
         onClick={copy}
-        className="absolute right-1.5 top-1.5 rounded border border-edge bg-panel px-1.5 py-0.5 text-[11px] text-muted opacity-0 transition hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
+        aria-label={`Copy ${lines.length === 1 ? 'the command' : 'the commands'}`}
+        className="absolute right-1.5 top-1.5 rounded border border-edge bg-panel px-1.5 py-0.5 text-[11px] text-muted opacity-60 transition hover:text-ink hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100"
       >
         {copied ? 'copied' : 'copy'}
       </button>
+      <span aria-live="polite" className="sr-only">
+        {copied ? 'Copied' : ''}
+      </span>
     </div>
   )
 }

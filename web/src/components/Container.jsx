@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import Card from './Card.jsx'
 import Chip from './Chip.jsx'
+import Gated from './Gated.jsx'
 import LogView from './LogView.jsx'
 import PlanDialog from './PlanDialog.jsx'
 import Actions from './Actions.jsx'
@@ -8,6 +9,7 @@ import { routeActions } from './RouteTable.jsx'
 import { useServices, useDatabases } from '../lib/useContainer.js'
 import { href } from '../lib/useRoute.js'
 import { SEVERITY, VERBS, remediesFor } from '../lib/vocabulary.js'
+import { readJSON } from '../lib/api.js'
 
 // What a container actually is, once something has been deployed into it.
 //
@@ -38,8 +40,9 @@ export default function Container({
   findings = [],
   instances = [],
   onRemedy,
+  runtime = 'lxc',
 }) {
-  const { data, error, fetchedAt, read } = useServices(container.name)
+  const { data, error, unavailable, fetchedAt, read, reload } = useServices(container.name)
   const databases = useDatabases(container.name)
   const [offersRead, setOffersRead] = useState(0)
   const offers = useShareable(container.name, `${container.project}-${offersRead}`)
@@ -64,6 +67,10 @@ export default function Container({
   // What the home page says is wrong with this container, said here too.
   const mine = new Set([container.name, ...domains.filter((d) => !d.prefix).map((d) => d.domain)])
   const problems = findings.filter((f) => f.severity !== 'info' && mine.has(f.subject))
+  // Why deploying is not possible right now, when it is not: said once, beside
+  // the buttons it stops, rather than discovered as an error after the form.
+  const blockedId = useId()
+  const deployBlocked = !running ? null : unavailable ? 'This host cannot deploy services.' : null
 
   return (
     <>
@@ -80,26 +87,37 @@ export default function Container({
           />
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => onPower(container, running)}
-            className="rounded border border-edge px-2.5 py-1 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
-          >
-            {running ? 'Stop' : 'Start'}
-          </button>
-          <button
-            onClick={() => onAddDomain(container)}
-            className="rounded border border-edge px-2.5 py-1 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
-          >
-            Add domain
-          </button>
-          <button
-            onClick={() => onDeploy(container)}
-            className="rounded border border-edge-strong bg-raised px-2.5 py-1 text-xs transition hover:border-ink/30"
-          >
-            Deploy a service
-          </button>
-        </div>
+        {/* A stopped container can be started and nothing else here: what
+            comes next is starting it, so that is the button that stands out,
+            and the two that need it running say so. */}
+        {running ? (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button onClick={() => onPower(container, true)} className={HEADER_SECONDARY}>
+              Stop
+            </button>
+            <button onClick={() => onAddDomain(container)} className={HEADER_SECONDARY}>
+              Add domain
+            </button>
+            <Gated reason={deployBlocked} onClick={() => onDeploy(container)} className={HEADER_PRIMARY}>
+              Deploy a service
+            </Gated>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <span id={blockedId} className="text-xs text-muted">
+              Start it first: deploying and adding need it running.
+            </span>
+            <Gated reasonId={blockedId} className={HEADER_SECONDARY}>
+              Add domain
+            </Gated>
+            <Gated reasonId={blockedId} className={HEADER_SECONDARY}>
+              Deploy a service
+            </Gated>
+            <button onClick={() => onPower(container, false)} className={HEADER_PRIMARY}>
+              Start
+            </button>
+          </div>
+        )}
       </div>
 
       <p className="font-mono text-xs text-muted">
@@ -151,10 +169,15 @@ export default function Container({
         )
       })}
 
-      {error && (
-        <div className="rounded-lg border border-caution/30 bg-panel px-4 py-2.5 text-xs">
-          <span className="text-caution">Could not read what is inside.</span>{' '}
-          <span className="text-muted">{error}</span>
+      {/* Before anything was read, a failure is said in each card, with a way
+          to try again. After, the last reading stays and this says how old
+          it is — the same rule the whole panel follows. */}
+      {read && error && (
+        <div role="status" className="rounded-lg border border-caution/30 bg-panel px-4 py-2.5 text-xs">
+          <span className="text-caution">Lost contact while reading what is inside.</span>{' '}
+          <span className="text-muted">
+            {error} Showing what was read{fetchedAt ? ` at ${fetchedAt.toLocaleTimeString()}` : ''}.
+          </span>
         </div>
       )}
 
@@ -164,12 +187,13 @@ export default function Container({
         commandMode={commandMode}
         commands={['nginx -T | grep server_name']}
         action={
-          <button
+          <Gated
+            reasonId={running ? undefined : blockedId}
             onClick={() => onAddDomain(container)}
             className="text-xs text-muted transition hover:text-ink"
           >
             Add
-          </button>
+          </Gated>
         }
       >
         {domains.length === 0 ? (
@@ -203,12 +227,18 @@ export default function Container({
         title="Services"
         count={read ? services.length : undefined}
         commandMode={commandMode}
-        commands={[`lxc exec ${container.name} -- systemctl list-units 'croft-*'`]}
+        commands={[`${runtime} exec ${container.name} -- systemctl list-units 'croft-*'`]}
       >
-        {!read ? (
-          <Reading what="what is running inside" />
+        {unavailable ? (
+          <Unavailable what="what runs inside its containers" reason={unavailable} />
+        ) : !read ? (
+          error ? (
+            <Failed what="what is running inside" error={error} onRetry={reload} stopped={!running} />
+          ) : (
+            <Reading what="what is running inside" />
+          )
         ) : services.length === 0 && external.length === 0 && sites.length === 0 ? (
-          <Empty onDeploy={() => onDeploy(container)} />
+          <Empty onDeploy={() => onDeploy(container)} blockedId={running ? undefined : blockedId} />
         ) : (
           <>
             {services.length > 0 && (
@@ -279,6 +309,8 @@ export default function Container({
       <Databases
         container={container}
         state={databases}
+        runtime={runtime}
+        blockedId={running ? undefined : blockedId}
         commandMode={commandMode}
         onAdd={() => setDialog({ kind: 'add' })}
         onRemove={(database) => setDialog({ kind: 'remove', database })}
@@ -292,6 +324,10 @@ export default function Container({
         container={container}
         commandMode={commandMode}
         read={read}
+        error={error}
+        unavailable={unavailable}
+        onRetry={reload}
+        runtime={runtime}
         onRollback={onRollback}
         databases={databases.data?.databases ?? []}
       />
@@ -388,23 +424,41 @@ function databaseRequest(container, dialog) {
 
 // The data lives in the container, so it is in the snapshots too. That is the
 // advantage, and it is also the thing to know before restoring one.
-function Databases({ container, state, commandMode, onAdd, onRemove, offers, onConnect }) {
+// The unit each engine runs as inside the container, which is what is asked
+// when checking it by hand — the same names the agent asks about.
+const ENGINE_UNIT = { postgres: 'postgresql', mysql: 'mariadb', redis: 'redis-server' }
+
+function Databases({ container, state, runtime, blockedId, commandMode, onAdd, onRemove, offers, onConnect }) {
   const databases = state.data?.databases ?? []
+  // The command for what is actually here, not for postgres whatever it is.
+  const engines = [...new Set(databases.filter((d) => !d.location).map((d) => d.engine))]
+  const units = engines.length ? engines.map((e) => ENGINE_UNIT[e] ?? e) : Object.values(ENGINE_UNIT)
 
   return (
     <Card
       title="Databases"
       count={state.read ? databases.length : undefined}
       commandMode={commandMode}
-      commands={[`lxc exec ${container.name} -- systemctl is-active postgresql`]}
+      commands={[`${runtime} exec ${container.name} -- systemctl is-active ${units.join(' ')}`]}
       action={
-        <button onClick={onAdd} className="text-xs text-muted transition hover:text-ink">
+        <Gated
+          reason={state.unavailable ? 'This host cannot add databases.' : undefined}
+          reasonId={state.unavailable ? undefined : blockedId}
+          onClick={onAdd}
+          className="text-xs text-muted transition hover:text-ink"
+        >
           Add
-        </button>
+        </Gated>
       }
     >
-      {!state.read ? (
-        <Reading what="what it stores" />
+      {state.unavailable ? (
+        <Unavailable what="the databases inside its containers" reason={state.unavailable} />
+      ) : !state.read ? (
+        state.error ? (
+          <Failed what="what it stores" error={state.error} onRetry={state.reload} />
+        ) : (
+          <Reading what="what it stores" />
+        )
       ) : databases.length === 0 ? (
         <div className="px-4 py-8 text-center">
           <p className="text-sm text-muted">No database here.</p>
@@ -419,6 +473,12 @@ function Databases({ container, state, commandMode, onAdd, onRemove, offers, onC
             <Database key={database.name} database={database} onRemove={() => onRemove(database)} />
           ))}
         </ul>
+      )}
+
+      {state.read && state.error && (
+        <p role="status" className="border-t border-edge px-4 py-2 text-[11px] text-caution">
+          Could not read them again just now: {state.error} This is the last reading.
+        </p>
       )}
 
       {/* What the other containers of its project hold, offered rather than
@@ -505,23 +565,60 @@ function Reading({ what }) {
   )
 }
 
-function Empty({ onDeploy }) {
+// Something failed before anything was read. Saying "Reading…" for ever was
+// the old answer; this one says what failed and offers the obvious next move.
+function Failed({ what, error, onRetry, stopped }) {
   return (
-    <div className="px-4 py-10 text-center">
-      <p className="text-sm text-muted">Nothing is deployed here.</p>
+    <div role="alert" className="px-4 py-8 text-center">
+      <p className="text-sm text-problem">Could not read {what}.</p>
       <p className="mt-1 text-xs text-muted">
-        A container is a small server. Put a project on it and it becomes something.
+        {stopped ? 'The container is stopped — start it, and what is inside can be read. ' : ''}
+        {error}
       </p>
-      <button
-        onClick={onDeploy}
-        className="mt-3 rounded border border-edge-strong bg-raised px-2.5 py-1 text-xs transition hover:border-ink/30"
-      >
-        Deploy a service
+      <button onClick={onRetry} className={`mt-3 ${PRIMARY}`}>
+        Try again
       </button>
     </div>
   )
 }
 
+// A host whose croft runs without its privileged side cannot look inside a
+// container at all. That is how the host is set up, not a failure: no retry,
+// and a word on why — so it is not mistaken for something broken here.
+function Unavailable({ what, reason }) {
+  return (
+    <div className="px-4 py-8 text-center">
+      <p className="text-sm text-muted">This host cannot read {what}.</p>
+      <p className="mt-1 text-xs text-muted">
+        Croft runs here without its privileged side, which is the part that works inside
+        containers. The daemon said: {reason}.
+      </p>
+    </div>
+  )
+}
+
+function Empty({ onDeploy, blockedId }) {
+  return (
+    <div className="px-4 py-10 text-center">
+      <p className="text-sm text-muted">Nothing is deployed here.</p>
+      <p className="mt-1 text-xs text-muted">
+        A container is a small server. Deploy an app from its repository and it becomes something.
+      </p>
+      <Gated
+        reasonId={blockedId}
+        onClick={onDeploy}
+        className="mt-3 rounded border border-edge-strong bg-raised px-2.5 py-1 text-xs transition hover:border-ink/30"
+      >
+        Deploy a service
+      </Gated>
+    </div>
+  )
+}
+
+const HEADER_PRIMARY =
+  'rounded border border-edge-strong bg-raised px-2.5 py-1 text-xs transition hover:border-ink/30'
+const HEADER_SECONDARY =
+  'rounded border border-edge px-2.5 py-1 text-xs text-muted transition hover:border-edge-strong hover:text-ink'
 const PRIMARY =
   'rounded border border-edge-strong bg-raised px-2 py-0.5 text-xs transition hover:border-ink/30'
 const SECONDARY =
@@ -535,6 +632,28 @@ function Service({ service, onLogs, onDeploy, onRedeploy, onEnvironment, onDestr
   const site = service.adopted?.site
   // An adopted unit that reads no environment file has none to edit.
   const environment = !service.adopted || site || service.adopted.envFile
+
+  // Every verb the row has, in the order they are reached for. A site is
+  // files the web server reads: there is no process of its own to read a
+  // journal of, restart or stop. Croft did not put an adopted service there,
+  // so it only lets go of it — and the button says which of the two it does.
+  const all = [
+    !site && { key: 'logs', label: 'Logs', onClick: onLogs },
+    { key: 'redeploy', label: 'Redeploy', onClick: onRedeploy },
+    !site && running && { key: 'restart', label: 'Restart', onClick: () => onPower('restart') },
+    !site && running && { key: 'stop', label: 'Stop', onClick: () => onPower('stop') },
+    !site && !running && { key: 'start', label: 'Start', onClick: () => onPower('start') },
+    environment && { key: 'environment', label: 'Environment…', onClick: onEnvironment },
+    { key: 'properties', label: 'Properties…', onClick: onDeploy },
+    service.adopted
+      ? { key: 'release', label: 'Release…', onClick: onDestroy }
+      : { key: 'remove', label: 'Remove…', onClick: onDestroy, danger: true },
+  ].filter(Boolean)
+  const visible = !site && !running ? ['logs', 'start'] : service.pending ? ['redeploy'] : site ? [] : ['logs']
+  const next = all
+    .filter((a) => visible.includes(a.key))
+    .map((a) => ({ ...a, primary: (a.key === 'logs' && !running) || (a.key === 'redeploy' && service.pending) }))
+  const rest = all.filter((a) => !visible.includes(a.key))
 
   return (
     <li className={`relative px-4 py-3 ${running ? '' : 'bg-problem/[0.04]'}`}>
@@ -602,61 +721,17 @@ function Service({ service, onLogs, onDeploy, onRedeploy, onEnvironment, onDestr
           </p>
         </div>
 
-        {/* When something is down the useful move is to look before writing,
-            so the prominent button follows the situation rather than the
-            layout. */}
-        <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
-          {/* A site is files the web server reads: there is no process of its
-              own to read a journal of, restart or stop. */}
-          {!site && (
-            <>
-              <button onClick={onLogs} className={running ? SECONDARY : PRIMARY}>
-                Logs
-              </button>
-              {running ? (
-                <>
-                  <button onClick={() => onPower('restart')} className={SECONDARY}>
-                    Restart
-                  </button>
-                  <button onClick={() => onPower('stop')} className={SECONDARY}>
-                    Stop
-                  </button>
-                </>
-              ) : (
-                <button onClick={() => onPower('start')} className={PRIMARY}>
-                  Start
-                </button>
-              )}
-            </>
-          )}
-          {/* Redeploy is the everyday one: what is configured, from the tip of
-              its branch, straight to the plan. Properties is for changing
-              what is configured first. */}
-          <button onClick={onRedeploy} className={service.pending ? PRIMARY : SECONDARY}>
-            Redeploy
-          </button>
-          {environment && (
-            <button onClick={onEnvironment} className={SECONDARY}>
-              Environment&hellip;
+        {/* The move the situation calls for stands on its own; the rest wait
+            in the row's actions, removing last. When something is down the
+            useful move is to look before writing — then to start it. With
+            saved changes waiting, it is to deploy them. */}
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+          {next.map((a) => (
+            <button key={a.key} onClick={a.onClick} className={a.primary ? PRIMARY : SECONDARY}>
+              {a.label}
             </button>
-          )}
-          <button onClick={onDeploy} className={SECONDARY}>
-            Properties&hellip;
-          </button>
-          {/* Croft did not put an adopted service there, so it only lets go of
-              it — the button says which of the two it does. */}
-          {service.adopted ? (
-            <button onClick={onDestroy} className={SECONDARY}>
-              Release&hellip;
-            </button>
-          ) : (
-            <button
-              onClick={onDestroy}
-              className="rounded border border-edge px-2 py-0.5 text-xs text-muted transition hover:border-problem/50 hover:text-problem"
-            >
-              Remove&hellip;
-            </button>
-          )}
+          ))}
+          <Actions label={`More for ${service.name}`} actions={rest} />
         </div>
       </div>
     </li>
@@ -829,7 +904,7 @@ function DataWarning({ databases }) {
   )
 }
 
-function Snapshots({ snapshots, services, container, commandMode, read, onRollback, databases }) {
+function Snapshots({ snapshots, services, container, commandMode, read, error, unavailable, onRetry, runtime, onRollback, databases }) {
   const healthy = new Set(services.map((s) => s.healthy).filter(Boolean))
   const alive = new Set(services.map((s) => s.name))
 
@@ -858,10 +933,16 @@ function Snapshots({ snapshots, services, container, commandMode, read, onRollba
       title="Snapshots"
       count={read ? snapshots.length : undefined}
       commandMode={commandMode}
-      commands={[`lxc info ${container.name}`]}
+      commands={[`${runtime} info ${container.name}`]}
     >
-      {!read ? (
-        <Reading what="what there is to go back to" />
+      {unavailable ? (
+        <Unavailable what="the snapshots of its containers" reason={unavailable} />
+      ) : !read ? (
+        error ? (
+          <Failed what="what there is to go back to" error={error} onRetry={onRetry} />
+        ) : (
+          <Reading what="what there is to go back to" />
+        )
       ) : snapshots.length === 0 ? (
         <p className="px-4 py-6 text-center text-xs text-muted">
           None yet. One is taken before every deployment.
@@ -924,10 +1005,12 @@ function Snapshot({ snapshot, healthy, orphaned, onRollback }) {
               explain="Taken immediately before this service was removed. Nothing ever prunes it, because it is the only way back to something you chose to delete."
             />
           )}
+          {/* Green says "running" here and nothing else; having worked once
+              is a fact about the past, so it is a tick on a neutral chip. */}
           {healthy && (
             <Chip
-              label="worked"
-              tone="border-running/40 text-running"
+              label="✓ worked"
+              tone="border-edge-strong text-ink"
               explain="This version passed its readiness check. It is where a rollback goes back to, and it is never pruned."
             />
           )}
@@ -963,8 +1046,10 @@ function useShareable(container, key) {
   const [offers, setOffers] = useState([])
   useEffect(() => {
     let current = true
+    // An offer that cannot be read is no offer: nothing here depends on it,
+    // so a failure leaves the list empty rather than in the way.
     fetch(`/api/hosts/local/instances/${container}/databases/shareable`)
-      .then((res) => (res.ok ? res.json() : []))
+      .then(readJSON)
       .then((payload) => current && setOffers(payload ?? []))
       .catch(() => current && setOffers([]))
     return () => {

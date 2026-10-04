@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import PlanDialog from './PlanDialog.jsx'
 import { Field, Frame, split } from './DeployDialog.jsx'
+import { readJSON, humane } from '../lib/api.js'
 
 // Taking on something croft found: a unit running, or a site its web server
 // serves. What it can read off the machine is shown as fact — where the code
@@ -21,9 +22,8 @@ export default function AdoptDialog({ container, subject, onClose, onFinished })
   useEffect(() => {
     let current = true
     fetch(`${base}/adoption`)
-      .then(async (res) => {
-        const payload = await res.json()
-        if (!res.ok) throw new Error(payload.error ?? `The daemon answered ${res.status}`)
+      .then(readJSON)
+      .then((payload) => {
         if (!current) return
         setFound(payload)
         setAnswer({
@@ -35,7 +35,7 @@ export default function AdoptDialog({ container, subject, onClose, onFinished })
           contains: '',
         })
       })
-      .catch((e) => current && setError(e.message))
+      .catch((e) => current && setError(humane(e)))
     return () => {
       current = false
     }
@@ -71,7 +71,7 @@ export default function AdoptDialog({ container, subject, onClose, onFinished })
   return (
     <Frame title={`Adopt ${subject.name}`} onClose={onClose}>
       <div className="space-y-4 px-5 py-4">
-        {error && <p className="text-xs text-problem">{error}</p>}
+        {error && <p role="alert" className="text-xs text-problem">{error}</p>}
         {!found && !error && (
           <p className="text-xs text-muted">
             {isSite

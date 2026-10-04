@@ -8,6 +8,16 @@ export default function Verdict({ data, problemCount }) {
   const stopped = data.instances.length - running
   const secured = data.routes.filter((r) => r.ssl).length
 
+  // An empty host is not "All good" — nothing is not working because nothing
+  // is there. Said plainly, and without counters that would all read 0.
+  if (data.instances.length === 0 && problemCount === 0) {
+    return (
+      <div className="rounded-lg border border-edge bg-panel px-5 py-4">
+        <span className="text-2xl font-medium">Nothing here yet</span>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-edge bg-panel px-5 py-4">
       <div className="flex items-center gap-3">
@@ -47,5 +57,28 @@ function Pill({ label, value, to }) {
     >
       <span className="font-medium">{value}</span> <span className="text-muted">{label}</span>
     </a>
+  )
+}
+
+// StartHere is the home page of a host with no containers: the order things
+// happen in, and the first of them as the one button that stands out. Without
+// it, the first screen offered a project — which is a group of containers
+// that do not exist yet.
+export function StartHere({ onNewContainer }) {
+  return (
+    <section aria-labelledby="start-here" className="rounded-lg border border-edge bg-panel px-5 py-4">
+      <h2 id="start-here" className="text-sm font-medium">Start here</h2>
+      <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-muted">
+        <li>Create a container — a small server of its own, with its own address.</li>
+        <li>Deploy an app into it from its repository.</li>
+        <li>Give it a domain, and turn on https.</li>
+      </ol>
+      <button
+        onClick={onNewContainer}
+        className="mt-3 rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30"
+      >
+        New container
+      </button>
+    </section>
   )
 }

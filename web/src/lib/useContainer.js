@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { readJSON, humane } from './api.js'
 
 const HOST = 'local'
 const INTERVAL = 5000
@@ -8,6 +9,7 @@ const INTERVAL = 5000
 export function useServices(container) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
+  const [unavailable, setUnavailable] = useState(null)
   const [fetchedAt, setFetchedAt] = useState(null)
   const timer = useRef(null)
 
@@ -15,14 +17,20 @@ export function useServices(container) {
     if (!container) return
     try {
       const res = await fetch(`/api/hosts/${HOST}/instances/${container}/services`)
-      const payload = await res.json()
-
-      if (!res.ok) throw new Error(payload.error ?? `The daemon answered ${res.status}`)
-      setData(payload)
+      setData(await readJSON(res))
       setFetchedAt(new Date())
       setError(null)
+      setUnavailable(null)
     } catch (e) {
-      setError(e.message)
+      // A host with no privileged side cannot look inside a container at all.
+      // That is a fact about the host, not a read that failed, and trying
+      // again changes nothing — so it is told apart from an error.
+      if (e.status === 503) {
+        setUnavailable(e.message)
+        setError(null)
+        return
+      }
+      setError(humane(e))
     }
   }, [container])
 
@@ -33,6 +41,7 @@ export function useServices(container) {
     // worst thing an infrastructure panel can do.
     setData(null)
     setError(null)
+    setUnavailable(null)
     setFetchedAt(null)
 
     load()
@@ -42,7 +51,7 @@ export function useServices(container) {
 
   // `read` is what separates "there is nothing here" from "I do not know yet".
   // Without it an empty array means both, and the panel asserts the first.
-  return { data, error, fetchedAt, read: data !== null, reload: load }
+  return { data, error, unavailable, fetchedAt, read: data !== null, reload: load }
 }
 
 // A database lives inside the container that uses it, which is what makes a
@@ -52,25 +61,25 @@ export function useServices(container) {
 export function useDatabases(container) {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
+  const [unavailable, setUnavailable] = useState(null)
   const timer = useRef(null)
 
   const load = useCallback(async () => {
     if (!container) return
     try {
       const res = await fetch(`/api/hosts/${HOST}/instances/${container}/databases`)
-      const payload = await res.json()
-
-      // A host with no privileged side says so rather than looking broken.
-      if (res.status === 503) {
-        setData({ databases: [] })
+      setData(await readJSON(res))
+      setError(null)
+      setUnavailable(null)
+    } catch (e) {
+      // A host with no privileged side says so rather than looking broken —
+      // and rather than looking empty, which was the other lie on offer.
+      if (e.status === 503) {
+        setUnavailable(e.message)
         setError(null)
         return
       }
-      if (!res.ok) throw new Error(payload.error ?? `The daemon answered ${res.status}`)
-      setData(payload)
-      setError(null)
-    } catch (e) {
-      setError(e.message)
+      setError(humane(e))
     }
   }, [container])
 
@@ -78,13 +87,14 @@ export function useDatabases(container) {
     // Another container is another subject, same as the services above.
     setData(null)
     setError(null)
+    setUnavailable(null)
 
     load()
     timer.current = setInterval(load, INTERVAL)
     return () => clearInterval(timer.current)
   }, [load])
 
-  return { data, error, read: data !== null, reload: load }
+  return { data, error, unavailable, read: data !== null, reload: load }
 }
 
 // Following logs is polling, and saying so is better than implying a stream we
@@ -106,13 +116,13 @@ export function useLogs(container, service, { lines = 200, follow = false, kind 
       const res = await fetch(
         `/api/hosts/${HOST}/instances/${container}/${segment}/${service}/logs?lines=${lines}`,
       )
-      const payload = await res.json()
-
-      if (!res.ok) throw new Error(payload.error ?? `The daemon answered ${res.status}`)
-      setText(payload.lines ?? '')
+      const payload = await readJSON(res)
+      setText(payload?.lines ?? '')
       setError(null)
     } catch (e) {
-      setError(e.message)
+      // The lines already read stay: a failed poll is said beside them, not
+      // in place of them.
+      setError(humane(e))
     } finally {
       setLoading(false)
     }

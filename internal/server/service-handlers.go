@@ -46,7 +46,7 @@ func (d Deps) deployer(w http.ResponseWriter) (Deployer, bool) {
 	deployer, ok := d.Services.(Deployer)
 	if !ok || d.Services == nil {
 		writeError(w, http.StatusServiceUnavailable,
-			errors.New("this host cannot deploy projects"))
+			errors.New("this host cannot deploy services"))
 		return nil, false
 	}
 	return deployer, true

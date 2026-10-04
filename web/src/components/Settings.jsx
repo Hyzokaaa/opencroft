@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import Command from './Command.jsx'
+import { readJSON, humane } from '../lib/api.js'
 
 const PROVIDERS = [
   { id: 'ovh', label: 'OVH' },
@@ -11,6 +12,7 @@ const PROVIDERS = [
 // read them back — the panel only ever learns *that* they exist.
 export default function Settings({ onExpose }) {
   const [status, setStatus] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   const [provider, setProvider] = useState('ovh')
   const [values, setValues] = useState({})
   const [error, setError] = useState(null)
@@ -19,12 +21,12 @@ export default function Settings({ onExpose }) {
 
   async function load() {
     try {
-      const res = await fetch('/api/hosts/local/dns')
-      const payload = await res.json()
-      setStatus(payload)
-      if (payload.provider) setProvider(payload.provider)
+      const payload = await readJSON(await fetch('/api/hosts/local/dns'))
+      setStatus(payload ?? {})
+      setLoadError(null)
+      if (payload?.provider) setProvider(payload.provider)
     } catch (e) {
-      setError(e.message)
+      setLoadError(humane(e))
     }
   }
 
@@ -44,22 +46,21 @@ export default function Settings({ onExpose }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider, values }),
       })
-      if (!res.ok) {
-        const payload = await res.json().catch(() => ({}))
-        setError(payload.error ?? `The daemon answered ${res.status}`)
-        return
-      }
+      await readJSON(res)
       setValues({})
       setSaved(true)
       load()
     } catch (e) {
-      setError(e.message)
+      setError(humane(e))
     } finally {
       setBusy(false)
     }
   }
 
   const keys = keysFor(provider, status)
+  // Every key a provider needs, or none stored: half a set of credentials
+  // fails at the first certificate, far from here.
+  const complete = keys.every((k) => values[k]?.trim())
 
   return (
     <div className="max-w-2xl space-y-4">
@@ -75,10 +76,17 @@ export default function Settings({ onExpose }) {
         </header>
 
         <div className="space-y-4 px-4 py-4">
-          {status?.configured ? (
+          {loadError ? (
+            <p role="alert" className="rounded border border-problem/30 bg-problem/[0.06] px-3 py-2 text-xs text-problem">
+              Could not read whether credentials are stored. {loadError}
+            </p>
+          ) : !status ? (
+            <p role="status" className="text-sm text-muted">Reading&hellip;</p>
+          ) : status.configured ? (
             <div className="rounded border border-edge bg-ground px-3 py-2.5">
+              {/* Green says "running" on this panel and nothing else. */}
               <p className="text-sm">
-                <span className="text-running">✓</span> {status.provider} is configured
+                <span className="text-muted">✓</span> {status.provider} is configured
               </p>
               <p className="mt-1 font-mono text-xs text-faint">read from {status.source}</p>
               <p className="mt-2 text-xs text-muted">
@@ -122,20 +130,35 @@ export default function Settings({ onExpose }) {
               </label>
             ))}
 
+            {/* Unlike everything else on this panel, this is not shown as a
+                plan first: a plan is read on screen, and a secret should not
+                be. It goes straight to the host. */}
+            <p className="text-xs text-muted">
+              Stored directly when you press Store, without a plan to read first — a plan would put
+              the secrets on screen.
+            </p>
+
             {error && (
-              <p className="rounded border border-problem/30 bg-problem/[0.06] px-3 py-2 text-xs text-problem">
+              <p role="alert" className="rounded border border-problem/30 bg-problem/[0.06] px-3 py-2 text-xs text-problem">
                 {error}
               </p>
             )}
-            {saved && <p className="text-xs text-running">Stored on the host, readable only by root.</p>}
+            {saved && (
+              <p role="status" className="text-xs text-ink">
+                <span className="text-muted">✓</span> Stored on the host, readable only by root.
+              </p>
+            )}
 
             <button
               type="submit"
-              disabled={busy || keys.every((k) => !values[k])}
+              disabled={busy || !complete}
               className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30 disabled:opacity-40"
             >
               {busy ? 'Storing…' : 'Store credentials'}
             </button>
+            {!complete && keys.length > 1 && (
+              <span className="ml-3 text-xs text-muted">All {keys.length} are needed.</span>
+            )}
           </form>
         </div>
 
@@ -166,6 +189,7 @@ function keysFor(provider, status) {
 // is removed again in that case, so the worst outcome is that nothing changed.
 function PanelAddress({ onExpose }) {
   const [domain, setDomain] = useState('')
+  const field = useId()
 
   return (
     <section className="rounded-lg border border-edge bg-panel">
@@ -187,9 +211,14 @@ function PanelAddress({ onExpose }) {
             e.preventDefault()
             onExpose?.(domain.trim())
           }}
-          className="flex gap-2"
+          className="space-y-1"
         >
+          <label htmlFor={field} className="block text-xs text-muted">
+            Domain
+          </label>
+          <div className="flex gap-2">
           <input
+            id={field}
             value={domain}
             onChange={(e) => setDomain(e.target.value)}
             placeholder="panel.example.com"
@@ -202,6 +231,7 @@ function PanelAddress({ onExpose }) {
           >
             Show me the plan
           </button>
+          </div>
         </form>
       </div>
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Card from './Card.jsx'
 import Chip from './Chip.jsx'
 import { Progress } from './PlanDialog.jsx'
+import { readJSON, humane } from '../lib/api.js'
 
 // What croft did, newest first — the one record the machine itself cannot give
 // back. A container shows what it runs now; this is where a deployment that
@@ -45,7 +46,7 @@ export default function Activity({ commandMode, containers, title, limit, readin
         </div>
       }
     >
-      {error && <p className="px-4 py-3 text-xs text-problem">{error}</p>}
+      {error && <p role="alert" className="px-4 py-3 text-xs text-problem">{error}</p>}
 
       {!read ? (
         <p role="status" className="px-4 py-8 text-center text-xs text-muted">Reading the history&hellip;</p>
@@ -66,7 +67,9 @@ export default function Activity({ commandMode, containers, title, limit, readin
 
 const OUTCOME = {
   running: { label: 'running', tone: 'border-caution/40 text-caution' },
-  done: { label: 'worked', tone: 'border-running/40 text-running' },
+  // Green says "running" on this panel and nothing else. A job that worked
+  // is a fact about the past: a tick, in the neutral tone.
+  done: { label: '✓ worked', tone: 'border-edge-strong text-ink' },
   failed: { label: 'failed', tone: 'border-problem/40 text-problem' },
   interrupted: {
     label: 'interrupted',
@@ -147,12 +150,9 @@ function Detail({ id, status }) {
   useEffect(() => {
     let current = true
     fetch(`/api/jobs/${id}`)
-      .then(async (res) => {
-        const payload = await res.json()
-        if (!res.ok) throw new Error(payload.error ?? `The daemon answered ${res.status}`)
-        if (current) setJob(payload)
-      })
-      .catch((e) => current && setError(e.message))
+      .then(readJSON)
+      .then((payload) => current && setJob(payload))
+      .catch((e) => current && setError(humane(e)))
     return () => {
       current = false
     }
@@ -204,14 +204,12 @@ export function useJobs(enabled = true) {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/jobs?limit=200')
-      const payload = await res.json()
-      if (!res.ok) throw new Error(payload.error ?? `The daemon answered ${res.status}`)
-      setJobs(payload.jobs ?? [])
+      const payload = await readJSON(await fetch('/api/jobs?limit=200'))
+      setJobs(payload?.jobs ?? [])
       setError(null)
       setRead(true)
     } catch (e) {
-      setError(e.message)
+      setError(humane(e))
     }
   }, [])
 
