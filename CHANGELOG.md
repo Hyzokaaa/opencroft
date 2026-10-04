@@ -14,6 +14,19 @@ descargó.
 
 ## No publicado
 
+### v0.27.0 — 2026-10-04
+- docs: file v0.27.0 in the changelog
+- docs: describe the panel's shape, saving without deploying, and the demo agent
+- fix: keep green for what runs, not for a plan that finished
+- fix: say what failed instead of reading for ever, guard the environment editor, and offer only what can work
+- fix: let a tap on a phone reach the row menu, and answer the discard question with Escape
+- fix: keep unsaved work on every step of a flow, apply saved properties from Properties, and the third review's details
+- feat: certificates under domains, a next step after each write, and fixes from the second review
+- feat: save a service's properties without deploying it, and show what is waiting for the next deployment
+- feat: give the panel a shape — projects as home, addresses, remedies that work, dialogs that go back
+- feat: create a container straight into a declared project
+- feat: try the panel locally against a demo agent that runs nothing
+
 ### v0.26.1 — 2026-10-02
 - docs: file v0.26.1 in the changelog
 - fix: show dashes as dashes, let a form go with a box unticked or an optional field empty, and use generic examples
