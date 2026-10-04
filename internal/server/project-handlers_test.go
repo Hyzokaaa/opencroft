@@ -119,3 +119,17 @@ func TestAnUnreachableAgentIsSaidAsOne(t *testing.T) {
 		t.Errorf("answered %d %v", recorder.Code, body)
 	}
 }
+
+// A monitor reading health learns the agent is down: a panel up without it
+// can do nothing, and must not answer "ok" for that.
+func TestHealthSaysWhenTheAgentIsDown(t *testing.T) {
+	down := api(Deps{AgentCheck: func(context.Context) error { return agent.ErrUnreachable }})
+	if r := send(down, http.MethodGet, "/api/health", nil); r.Code != http.StatusServiceUnavailable ||
+		!strings.Contains(r.Body.String(), `"agent":"unreachable"`) {
+		t.Errorf("with the agent down: %d %s", r.Code, r.Body.String())
+	}
+	up := api(Deps{AgentCheck: func(context.Context) error { return nil }})
+	if r := send(up, http.MethodGet, "/api/health", nil); r.Code != http.StatusOK || !strings.Contains(r.Body.String(), `"agent":"ok"`) {
+		t.Errorf("with the agent up: %d %s", r.Code, r.Body.String())
+	}
+}

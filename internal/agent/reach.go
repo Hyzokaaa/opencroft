@@ -84,10 +84,15 @@ func (c *Client) handshake(ctx context.Context) error {
 }
 
 // Reachable answers whether the agent answers right now, and why not.
+// It asks every time: a health check that remembered the last answer would
+// say the agent is up long after it went down.
 func (c *Client) Reachable(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	return c.handshake(ctx)
+	if err := c.handshake(ctx); err != nil {
+		return err
+	}
+	return c.raw(ctx, http.MethodGet, "/runtime", nil, nil)
 }
 
 // greeting is the state kept for the lazy handshake.

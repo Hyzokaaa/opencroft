@@ -5,6 +5,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -50,7 +51,10 @@ type Deps struct {
 	// Projects groups containers; see Projector.
 	Projects  any
 	PanelPort int
-	Simulated bool
+	// AgentCheck answers whether the agent answers now; nil when this panel
+	// has no agent to ask (demo, or root running the runtime itself).
+	AgentCheck func(ctx context.Context) error
+	Simulated  bool
 
 	// Auth guards every data endpoint. It is required: a nil here would
 	// serve the host to anyone who can reach the port.
@@ -71,8 +75,20 @@ func Handler(deps Deps) http.Handler {
 func api(deps Deps) *http.ServeMux {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	// health is for a monitor: no session, and nothing about the host beyond
+	// whether croft works. It asks the agent too, because a panel that is up
+	// with its agent down can read and change nothing — and answered "ok" for
+	// it, which is how a server went a day unnoticed.
+	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
+		if deps.AgentCheck == nil {
+			writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+			return
+		}
+		if err := deps.AgentCheck(r.Context()); err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "degraded", "agent": "unreachable"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "agent": "ok"})
 	})
 
 	// hostId is a parameter from the first day, even though only "local"

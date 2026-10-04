@@ -134,6 +134,7 @@ type deps struct {
 	// runtimeFrom names the runtime when it can only be learned later, from
 	// an agent that was not answering yet when this process started.
 	runtimeFrom  func() string
+	agentCheck   func(context.Context) error
 	instances    instanceRepositories.InstanceRepository
 	routes       routeRepositories.RouteRepository
 	certificates certificateRepositories.CertificateRepository
@@ -178,6 +179,7 @@ func wire(ctx context.Context, demo bool, nginxDir, socket string, grace time.Du
 			projects:     client.Projects(),
 			runtime:      client.Flavor(),
 			runtimeFrom:  client.Flavor,
+			agentCheck:   client.Reachable,
 			version:      version,
 		}
 	}
@@ -252,6 +254,7 @@ func serve(ctx context.Context, args []string) {
 		Databases:       d.databases,
 		Projects:        d.projects,
 		PanelPort:       portOf(*addr),
+		AgentCheck:      d.agentCheck,
 		Simulated:       d.demo,
 	})
 
