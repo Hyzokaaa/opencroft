@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Card from './Card.jsx'
 import Chip from './Chip.jsx'
 import { Progress } from './PlanDialog.jsx'
-import { readJSON, humane } from '../lib/api.js'
+import { readJSON, humane, isAgentDown } from '../lib/api.js'
 
 // What croft did, newest first — the one record the machine itself cannot give
 // back. A container shows what it runs now; this is where a deployment that
@@ -209,7 +209,9 @@ export function useJobs(enabled = true) {
       setError(null)
       setRead(true)
     } catch (e) {
-      setError(humane(e))
+      // The agent being down is said once, by the banner: the last reading
+      // stays, rather than a second copy of the same failure.
+      setError(isAgentDown(e) ? null : humane(e))
     }
   }, [])
 

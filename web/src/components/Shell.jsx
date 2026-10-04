@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
 import { href } from '../lib/useRoute.js'
+import Command from './Command.jsx'
+import CopyButton from './CopyButton.jsx'
+import { primaryAddress } from './AgentDown.jsx'
 
 // Five places. Projects are the home page rather than a section beside it,
 // because "is my thing working?" is asked of a project — the web, its API and
@@ -22,7 +25,7 @@ export { SECTIONS }
 
 // crumbs is where you are, from the section down: [{ label, href }], the
 // last one being this page.
-export default function Shell({ data, section, tab, crumbs, commandMode, onToggleCommands, freshness, onReload, stale, running, onSignOut, children }) {
+export default function Shell({ data, host, section, tab, crumbs, commandMode, onToggleCommands, freshness, onReload, stale, running, onSignOut, children }) {
   const [navOpen, setNavOpen] = useState(false)
 
   useEffect(() => {
@@ -44,7 +47,7 @@ export default function Shell({ data, section, tab, crumbs, commandMode, onToggl
       {navOpen && (
         <div className="fixed inset-0 z-10 bg-black/50 md:hidden" onClick={() => setNavOpen(false)} aria-hidden="true" />
       )}
-      <Rail data={data} section={section} tab={tab} open={navOpen} />
+      <Rail data={data} host={host} commandMode={commandMode} section={section} tab={tab} open={navOpen} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center justify-between gap-4 border-b border-edge bg-ground/90 px-4 backdrop-blur md:px-6">
@@ -135,7 +138,7 @@ export default function Shell({ data, section, tab, crumbs, commandMode, onToggl
   )
 }
 
-function Rail({ data, section, tab, open }) {
+function Rail({ data, host, commandMode, section, tab, open }) {
   // Hidden off-screen on a phone is still reachable by Tab unless it is inert.
   const [narrow, setNarrow] = useState(() => matchMedia('(max-width: 767px)').matches)
   useEffect(() => {
@@ -161,10 +164,7 @@ function Rail({ data, section, tab, open }) {
 
         {/* One host for now. Shown as a fact rather than a control, so it
             does not promise a choice that is not there yet. */}
-        <div className="border-b border-edge px-4 py-3">
-          <span className="block truncate font-mono text-xs">local</span>
-          <span className="block truncate text-[11px] text-faint">this machine</span>
-        </div>
+        <HostAddress host={host ?? data?.host} commandMode={commandMode} />
 
         <ul className="flex-1 space-y-px overflow-y-auto p-2">
           {SECTIONS.map((s) => {
@@ -237,5 +237,52 @@ function Rail({ data, section, tab, open }) {
         </div>
       </div>
     </nav>
+  )
+}
+
+// Where the server is: what somebody needs to ssh to it, or to point a domain
+// at it. Public addresses first; a private one is labelled, since it only
+// works from inside the same network.
+function HostAddress({ host, commandMode }) {
+  const addresses = host?.addresses ?? []
+  const first = primaryAddress(host)
+  const rest = addresses.filter((a) => a !== first)
+
+  return (
+    <div role="group" aria-label="Server address" className="space-y-1 border-b border-edge px-4 py-3">
+      <span className="block truncate font-mono text-xs">local</span>
+      {first ? (
+        <>
+          <Address entry={first} />
+          {rest.length > 0 && (
+            <details className="text-[11px]">
+              <summary className="cursor-pointer text-faint transition hover:text-ink">{rest.length} more</summary>
+              <ul className="mt-1 space-y-1">
+                {rest.map((a) => (
+                  <li key={a.address}>
+                    <Address entry={a} />
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          {commandMode && <Command lines={[`ssh <user>@${first.address}`]} className="mt-2" />}
+        </>
+      ) : (
+        <span className="block truncate text-[11px] text-faint">this machine</span>
+      )}
+    </div>
+  )
+}
+
+function Address({ entry }) {
+  return (
+    <div className="flex min-w-0 items-center gap-1.5">
+      <span className="min-w-0 truncate font-mono text-[11px] text-muted" title={entry.address}>
+        {entry.address}
+      </span>
+      {!entry.public && <span className="shrink-0 text-[11px] text-faint">private</span>}
+      <CopyButton text={entry.address} label={`Copy ${entry.address}`} className="ml-auto shrink-0" />
+    </div>
   )
 }

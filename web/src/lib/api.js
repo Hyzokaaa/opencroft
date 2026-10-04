@@ -20,8 +20,17 @@ export async function readJSON(res) {
   }
 
   if (!res.ok) {
-    const error = new Error(payload?.error ?? answered(res.status))
+    // The agent being down is one thing, whatever was asked: it travels on the
+    // error so the panel can say it once, in one place, rather than as a
+    // generic "did not answer" that sends somebody to restart the wrong unit.
+    const agentDown = payload?.agent === 'unreachable'
+    const error = new Error(
+      payload?.error ?? (agentDown ? AGENT_DOWN : answered(res.status)),
+    )
     error.status = res.status
+    error.agent = payload?.agent
+    error.detail = payload?.detail
+    error.host = payload?.host
     throw error
   }
   if (!parsed) {
@@ -43,6 +52,13 @@ export function humane(e) {
   }
   return e?.message || 'Something went wrong, and nothing said what.'
 }
+
+// isAgentDown is the one test for "the croft agent is not answering".
+export function isAgentDown(e) {
+  return e?.status === 503 && e?.agent === 'unreachable'
+}
+
+const AGENT_DOWN = 'The croft agent is not answering, so nothing can be read or changed until it is back.'
 
 function answered(status) {
   switch (status) {

@@ -5,7 +5,7 @@ import Activity from './Activity.jsx'
 import InstanceTable, { StatusDot } from './InstanceTable.jsx'
 import RouteTable from './RouteTable.jsx'
 import { href } from '../lib/useRoute.js'
-import { readJSON, humane } from '../lib/api.js'
+import { readJSON, humane, isAgentDown } from '../lib/api.js'
 
 // A project is the containers that belong together — a web, the backend and
 // its database — and the domains that reach them. Nothing here is stored by
@@ -25,7 +25,9 @@ export function useProjects(refresh) {
           setError(null)
         }
       })
-      .catch((e) => current && setError(humane(e)))
+      // The agent being down is said once, by the banner above: here the last
+      // reading stays, rather than a third copy of the same failure.
+      .catch((e) => current && setError(isAgentDown(e) ? null : humane(e)))
     return () => {
       current = false
     }
@@ -62,7 +64,7 @@ const SMALL = 'text-xs text-muted transition hover:text-ink'
 
 // ProjectCards is the home page's body: every project as a card, and the
 // containers in none of them last.
-export function ProjectCards({ data, projects, error, problems, actions }) {
+export function ProjectCards({ data, projects, error, agentDown, problems, actions }) {
   if (error) {
     return (
       <div className="rounded-lg border border-caution/30 bg-panel px-4 py-2.5 text-xs">
@@ -71,7 +73,13 @@ export function ProjectCards({ data, projects, error, problems, actions }) {
       </div>
     )
   }
-  if (!projects) return <p role="status" className="text-xs text-muted">Reading the projects&hellip;</p>
+  if (!projects) {
+    return (
+      <p role="status" className="text-xs text-muted">
+        {agentDown ? 'The projects are read once the agent answers.' : <>Reading the projects&hellip;</>}
+      </p>
+    )
+  }
 
   const loose = data.instances.filter((i) => !i.project)
 

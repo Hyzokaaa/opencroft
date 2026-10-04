@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Shell from './components/Shell.jsx'
 import Verdict, { StartHere } from './components/Verdict.jsx'
 import Gated from './components/Gated.jsx'
@@ -13,6 +13,7 @@ import PlanDialog from './components/PlanDialog.jsx'
 import DeployDialog from './components/DeployDialog.jsx'
 import AdoptDialog from './components/AdoptDialog.jsx'
 import EnvDialog from './components/EnvDialog.jsx'
+import { AgentDownScreen, AgentBanner, AGENT_BLOCKED } from './components/AgentDown.jsx'
 import Activity, { useJobs } from './components/Activity.jsx'
 import Container from './components/Container.jsx'
 import ProjectPage, { ProjectCards, useProjects } from './components/Projects.jsx'
@@ -53,7 +54,7 @@ const PROJECT_NAME = { pattern: '^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$', invalid:
 const CONTAINER_NAME = { pattern: '^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$', invalid: 'Letters, digits and dashes, starting with a letter or digit.' }
 
 function Dashboard({ onSignOut, onSessionLost }) {
-  const { data, error, fetchedAt, loading, unauthorized, reload } = useOverview()
+  const { data, error, agentDown, agentDetail, host, fetchedAt, loading, unauthorized, reload } = useOverview()
 
   // The session can expire while the panel sits open.
   useEffect(() => {
@@ -63,10 +64,41 @@ function Dashboard({ onSignOut, onSessionLost }) {
   const [route] = useRoute()
   const [highlighted, setHighlighted] = useState(null)
   const [dialog, setDialogState] = useState(null)
-  const setDialog = (d) => setDialogState(d ? { ...d, id: Math.random() } : null)
-  const [deploying, setDeploying] = useState(null)
-  const [adopting, setAdopting] = useState(null)
-  const [environment, setEnvironment] = useState(null)
+  const [deploying, setDeployingState] = useState(null)
+  const [adopting, setAdoptingState] = useState(null)
+  const [environment, setEnvironmentState] = useState(null)
+
+  // With the agent down nothing can be changed, and every way into a change
+  // passes here: the dialog it would have opened says so, once, instead of a
+  // form filled in for a request that cannot be carried out.
+  const blockedByAgent = (title) =>
+    setDialogState({ title, blocked: { message: AGENT_BLOCKED }, id: Math.random() })
+  const setDialog = (d) => {
+    if (d && agentDown && !d.blocked) return blockedByAgent(d.title)
+    setDialogState(d ? { ...d, id: Math.random() } : null)
+  }
+  const setDeploying = (d) =>
+    d && agentDown
+      ? blockedByAgent(d.service ? `Properties of ${d.service.name}` : `Deploy a service to ${d.container.name}`)
+      : setDeployingState(d)
+  const setEnvironment = (d) =>
+    d && agentDown ? blockedByAgent(`Environment of ${d.service.name}`) : setEnvironmentState(d)
+  const setAdopting = (d) =>
+    d && agentDown ? blockedByAgent(`Adopt ${d.subject.name}`) : setAdoptingState(d)
+
+  // Coming back is announced: the banner simply going away is not news to a
+  // screen reader.
+  const [recovered, setRecovered] = useState(false)
+  const wasDown = useRef(false)
+  useEffect(() => {
+    if (wasDown.current && !agentDown) {
+      setRecovered(true)
+      const t = setTimeout(() => setRecovered(false), 5000)
+      wasDown.current = agentDown
+      return () => clearTimeout(t)
+    }
+    wasDown.current = agentDown
+  }, [agentDown])
   // Read again whenever the overview is: a move or a declaration shows on the
   // next poll without a second clock.
   const { projects, error: projectsError } = useProjects(data)
@@ -143,6 +175,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
   // chosen. Either way the domain is put on https next, which is nearly
   // always what comes after.
   function addDomain(container, domain = '') {
+    const publicAddress = (host?.addresses ?? []).find((a) => a.public)?.address
     const chosen = container ?? data.instances.find((i) => i.address) ?? data.instances[0]
     setDialog({
       title: container ? `Serve a domain from ${container.name}` : 'Serve a domain',
@@ -151,7 +184,9 @@ function Dashboard({ onSignOut, onSessionLost }) {
       defaults: { domain, target: chosen?.name ?? '', port: chosen?.port || 80 },
       fields: [
         { name: "domain", label: "Domain", autoFocus: true, placeholder: "app.example.com",
-          hint: "It has to already point at this server. DNS is not ours to change." },
+          hint: publicAddress
+            ? `It has to already point at this server (${publicAddress}). DNS is not ours to change.`
+            : "It has to already point at this server. DNS is not ours to change." },
         ...(container ? [] : [{
           name: 'target', label: 'Container', options: data.instances.map((i) => i.name),
           derive: (v) => ({ ...v, port: data.instances.find((i) => i.name === v.target)?.port || 80 }),
@@ -456,6 +491,10 @@ function Dashboard({ onSignOut, onSessionLost }) {
     location.hash = name ? href('containers', name) : href('domains')
   }
 
+  if (!data && agentDown) {
+    return <AgentDownScreen detail={agentDetail} host={host} onCheck={reload} />
+  }
+
   if (!data) {
     return (
       <div className="flex min-h-screen items-center justify-center px-6">
@@ -552,12 +591,16 @@ function Dashboard({ onSignOut, onSessionLost }) {
       freshness={freshness(fetchedAt, loading)}
       onReload={reload}
       stale={Boolean(error)}
+      host={host}
       running={running}
       onSignOut={onSignOut}
     >
       {/* A failed poll must not blank the panel: the moment the daemon is
           shaky is the moment you most need the last known state. */}
-      {error && (
+      {agentDown && <AgentBanner fetchedAt={fetchedAt} onCheck={reload} />}
+      <p role="status" className="sr-only">{recovered ? 'The agent is answering again.' : ''}</p>
+
+      {error && !agentDown && (
         <div className="rounded-lg border border-caution/30 bg-panel px-4 py-2.5 text-xs">
           <span className="text-caution">No contact with the daemon.</span>
           <span className="text-muted">
@@ -587,6 +630,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
             data={data}
             projects={projects}
             error={projectsError}
+            agentDown={agentDown}
             problems={problems}
             actions={projectActions}
           />

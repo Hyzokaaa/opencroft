@@ -1,20 +1,8 @@
-import { useState } from 'react'
+import CopyButton from './CopyButton.jsx'
 
 // Commands in ink, comments in muted. Painting the product's main argument in
 // the faintest colour on the page was a mistake.
 export default function Command({ lines, className = '' }) {
-  const [copied, setCopied] = useState(false)
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(lines.join('\n'))
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1400)
-    } catch {
-      setCopied(false)
-    }
-  }
-
   return (
     <div className={`group relative rounded border border-edge bg-ground ${className}`}>
       <pre className="overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed">
@@ -24,19 +12,12 @@ export default function Command({ lines, className = '' }) {
           </div>
         ))}
       </pre>
-      {/* Visible, if quiet: hidden until hovered it did not exist on a phone.
-          The outcome is announced, since a word changing inside a button is
-          not news to a screen reader. */}
-      <button
-        onClick={copy}
-        aria-label={`Copy ${lines.length === 1 ? 'the command' : 'the commands'}`}
-        className="absolute right-1.5 top-1.5 rounded border border-edge bg-panel px-1.5 py-0.5 text-[11px] text-muted opacity-60 transition hover:text-ink hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100"
-      >
-        {copied ? 'copied' : 'copy'}
-      </button>
-      <span aria-live="polite" className="sr-only">
-        {copied ? 'Copied' : ''}
-      </span>
+      {/* Visible, if quiet: hidden until hovered it did not exist on a phone. */}
+      <CopyButton
+        text={lines.join('\n')}
+        label={`Copy ${lines.length === 1 ? 'the command' : 'the commands'}`}
+        className="absolute right-1.5 top-1.5 opacity-60 hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100"
+      />
     </div>
   )
 }

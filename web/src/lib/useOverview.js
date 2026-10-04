@@ -1,14 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { readJSON, humane } from './api.js'
+import { readJSON, humane, isAgentDown } from './api.js'
 
 const HOST = 'local'
-const INTERVAL = 10000
+export const INTERVAL = 10000
 
 // A failed poll must never blank the screen. The moment the daemon is shaky is
 // the moment you most need to see the last known state.
+//
+// agentDown is the one failure worth naming apart: the panel answers, the
+// agent behind it does not. It clears on the first good poll. host is where
+// the server is, and the panel knows it even then — it is what somebody needs
+// to go and look.
 export function useOverview() {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
+  const [agentDown, setAgentDown] = useState(false)
+  const [agentDetail, setAgentDetail] = useState(null)
+  const [host, setHost] = useState(null)
   const [unauthorized, setUnauthorized] = useState(false)
   const [fetchedAt, setFetchedAt] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -25,11 +33,19 @@ export function useOverview() {
         setUnauthorized(true)
         return
       }
-      setData(await readJSON(res))
+      const payload = await readJSON(res)
+      setData(payload)
+      if (payload?.host) setHost(payload.host)
       setFetchedAt(new Date())
       setError(null)
+      setAgentDown(false)
+      setAgentDetail(null)
     } catch (e) {
       setError(humane(e))
+      const down = isAgentDown(e)
+      setAgentDown(down)
+      setAgentDetail(down ? (e.detail ?? null) : null)
+      if (down && e.host) setHost(e.host)
     } finally {
       setLoading(false)
     }
@@ -41,7 +57,7 @@ export function useOverview() {
     return () => clearInterval(timer.current)
   }, [load])
 
-  return { data, error, fetchedAt, loading, unauthorized, reload: load }
+  return { data, error, agentDown, agentDetail, host, fetchedAt, loading, unauthorized, reload: load }
 }
 
 export function useCommandMode() {
