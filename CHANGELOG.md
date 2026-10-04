@@ -14,6 +14,10 @@ descargó.
 
 ## No publicado
 
+### v0.27.1 — 2026-10-04
+- docs: file v0.27.1 in the changelog
+- fix: wait for the agent's socket when the panel starts, instead of running without it
+
 ### v0.27.0 — 2026-10-04
 - docs: file v0.27.0 in the changelog
 - docs: describe the panel's shape, saving without deploying, and the demo agent
