@@ -114,6 +114,8 @@ un certificado que caduca en 9 días es exactamente lo que nadie detecta a tiemp
       el nombre lo irreversible
 - [x] Guardar las propiedades de un servicio sin desplegarlo, y ver lo que espera al próximo
 - [x] Agente de demostración para probar la interfaz en local (`dev/compose.yaml`)
+- [x] El panel se recupera solo si el agente cae o arranca tarde, y lo dice en vez de fallar
+- [x] La IP del servidor visible en el panel
 - [ ] Modo solo lectura visible en la interfaz
 
 **Regla de la fase**: cada acción de la UI llama al mismo Command que el CLI. Si aparece

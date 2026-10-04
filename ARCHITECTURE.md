@@ -730,6 +730,20 @@ que arrastra Portainer.
 `croft-agent` expone un conjunto cerrado de operaciones tipadas. No acepta cadenas de
 comando arbitrarias — no existe un endpoint "ejecuta esto".
 
+**Cuando el agente no responde.** El panel sin privilegios no tiene otra forma de hacer
+nada, así que nunca intenta hacerlo por su cuenta: siempre habla con el agente, y lo
+vuelve a intentar en cada petición. Arrancado antes que su agente, o dejado atrás cuando el
+agente se reinicia, se recupera solo en cuanto el agente responde, sin reiniciar nada.
+Mientras tanto, cualquier petición responde un 503 marcado como `agent: unreachable` y la
+interfaz lo dice tal cual —*the croft agent is not answering*— con el comando para
+comprobarlo, en lugar del error que el intento produjera. Las IPs del servidor se leen en el
+propio panel, sin el agente, para que se sepa adónde ir aunque sea él lo que falla.
+
+El agente avisa a systemd cuando su socket ya existe (`Type=notify`), y el panel, ordenado
+después, arranca con él listo. Esto nació de un servidor que cambió de IP y se reinició: el
+panel arrancó un instante antes que su agente, decidió una sola vez que no había agente, y
+pasó a ejecutar `lxc` sin privilegios, con errores de permisos que no explicaban nada.
+
 Otras decisiones:
 
 - Autenticación local con sesiones, tokens de API para automatización, OIDC opcional más
