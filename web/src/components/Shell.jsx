@@ -153,12 +153,12 @@ function Rail({ data, host, commandMode, section, tab, open }) {
       id="sections"
       aria-label="Sections"
       inert={narrow && !open ? true : undefined}
-      className={`fixed inset-y-0 left-0 z-20 w-[220px] shrink-0 border-r border-edge bg-panel transition-transform md:static md:translate-x-0 ${
+      className={`fixed inset-y-0 left-0 z-20 w-[220px] shrink-0 border-r border-edge bg-panel transition-transform md:sticky md:top-0 md:h-screen md:translate-x-0 ${
         open ? 'translate-x-0' : '-translate-x-full'
       }`}
     >
       <div className="flex h-full flex-col">
-        <div className="flex h-12 items-center border-b border-edge px-4">
+        <div className="flex h-12 shrink-0 items-center border-b border-edge px-4">
           <a href={href('home')} className="text-[15px] font-medium tracking-tight">OpenCroft</a>
         </div>
 
@@ -166,7 +166,7 @@ function Rail({ data, host, commandMode, section, tab, open }) {
             does not promise a choice that is not there yet. */}
         <HostAddress host={host ?? data?.host} commandMode={commandMode} />
 
-        <ul className="flex-1 space-y-px overflow-y-auto p-2">
+        <ul className="min-h-0 flex-1 space-y-px overflow-y-auto p-2">
           {SECTIONS.map((s) => {
             const count = s.count?.(data)
             const here = s.id === section
@@ -226,7 +226,7 @@ function Rail({ data, host, commandMode, section, tab, open }) {
           })}
         </ul>
 
-        <div className="space-y-1 border-t border-edge px-4 py-3 text-[11px] text-faint">
+        <div className="shrink-0 space-y-1 border-t border-edge px-4 py-3 text-[11px] text-faint">
           {data?.demo && (
             <span className="inline-block rounded border border-yours/40 px-1.5 py-px text-yours">
               demo data
@@ -249,7 +249,7 @@ function HostAddress({ host, commandMode }) {
   const rest = addresses.filter((a) => a !== first)
 
   return (
-    <div role="group" aria-label="Server address" className="space-y-1 border-b border-edge px-4 py-3">
+    <div role="group" aria-label="Server address" className="max-h-[40vh] shrink-0 space-y-1 overflow-y-auto border-b border-edge px-4 py-3">
       <span className="block truncate font-mono text-xs">local</span>
       {first ? (
         <>
