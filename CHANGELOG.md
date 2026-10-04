@@ -14,6 +14,12 @@ descargó.
 
 ## No publicado
 
+### v0.28.0 — 2026-10-04
+- docs: file v0.28.0 in the changelog
+- docs: describe how the panel lives through its agent being down
+- feat: say plainly when the agent is down, recover when it is back, and show where the server is
+- fix: keep talking to the agent when it is down or late, and say so instead of failing with whatever the attempt produced
+
 ### v0.27.1 — 2026-10-04
 - docs: file v0.27.1 in the changelog
 - fix: wait for the agent's socket when the panel starts, instead of running without it
