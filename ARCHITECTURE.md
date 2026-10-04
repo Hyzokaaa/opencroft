@@ -531,6 +531,28 @@ Se niega si el fichero sirve también otros dominios (se los llevaría por delan
 `nginx.conf` o si no tiene un destino que croft sepa leer. Lo que el original tuviera de
 más —un `location` con reglas propias— no se copia: por eso se ve el plan antes.
 
+### El panel
+
+La interfaz tiene cinco lugares: **Home** (el veredicto, los problemas y los proyectos),
+**Containers**, **Domains** (con **Certificates** colgando de él, que avisa cuando algo
+caduca), **Activity** y **Settings**. Cada uno es una dirección (`#/containers/web`,
+`#/projects/shop`), así que recargar, volver atrás y enlazar funcionan.
+
+Tres reglas que la sostienen:
+
+- **Toda escritura es un plan.** Formulario, los comandos exactos, y la ejecución con su
+  progreso. Desde el plan se vuelve al formulario sin perder lo escrito, cerrar un formulario a
+  medias pregunta antes, y lo irreversible —destruir, restaurar, borrar datos— se confirma
+  escribiendo el nombre.
+- **Cada problema trae su arreglo.** Un hallazgo de la reconciliación ofrece la acción que lo
+  resuelve, y el comando equivalente solo cuando existe de verdad.
+- **Verde es "en ejecución" y nada más.** Un plan que terminó, una snapshot que funcionó o una
+  credencial guardada no son algo que corre, y no se pintan como tal.
+
+Las decisiones de interfaz pasan por una revisión de usabilidad y accesibilidad
+(`.claude/agents/ui-ux-reviewer.md`) y se prueban en el agente de demostración antes de
+publicar.
+
 ### Proyectos
 
 Un proyecto son los contenedores que van juntos —la web, el backend y su base de datos— y,
@@ -750,6 +772,13 @@ agente, con un agente falso que registra lo que se le pidió. Las acciones de un
 cerrado —restart, stop, start— se registran en ambos lados desde la misma lista, para que
 no puedan desincronizarse.
 
+Y un cuarto, para la interfaz: **un agente de demostración**. `croft agent --demo` es el
+agente real sobre un host que no ejecuta nada: responde él mismo a cada comando y aplica en
+memoria lo que el comando cambiaría y el panel vuelve a leer —una anotación, un fichero en
+`/etc`—. `dev/compose.yaml` levanta el panel contra él, así que cada flujo se recorre de
+punta a punta, con sus planes, antes de publicar. No dice nada cierto sobre nginx ni systemd:
+es para probar la interfaz, no croft contra un sistema.
+
 ## Módulo `deploy`
 
 Un contenedor corre **servicios**, en plural. Un servicio es un origen en git, unos
@@ -840,7 +869,20 @@ El primer despliegue escribe el entorno inicial que se le da. Después, un despl
 —repositorio, rama, comandos, entorno— sin formulario y sin que la petición lleve nada. Se
 salta el formulario, no el plan: se muestra y se aprueba igual. Sigue la rama: el commit
 anotado dice qué se desplegó la última vez, no qué desplegar ahora. Cambiar rama, comandos
-o entorno es *Properties*, que es el mismo despliegue con el formulario delante.
+o entorno es *Properties*.
+
+### Guardar sin desplegar
+
+Configurar y desplegar son dos intenciones. *Properties* ofrece **Save…**, que solo reescribe
+las anotaciones del servicio —un `lxc config set` por propiedad que cambia, nada más—, y
+**Save and redeploy…**, que es el despliegue de siempre con lo nuevo.
+
+Lo que hace seguro ofrecer lo primero es saber que pasó. Cada despliegue deja una huella de
+las propiedades con que corrió (`user.croft.service.<nombre>.deployed`), calculada sobre las
+mismas anotaciones que se comparan después. Si lo guardado ya no coincide con esa huella, el
+servicio aparece como **changes not deployed** y *Redeploy* pasa a ser su acción principal. Un
+servicio desplegado antes de que existieran las huellas recibe la suya, con lo que corre en
+ese momento, en el mismo plan del primer *Save*.
 
 ### Servicios adoptados y sitios
 

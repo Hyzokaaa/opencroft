@@ -62,6 +62,17 @@ To see the panel without a server at all:
 croft serve --demo
 ```
 
+To try a change to croft itself before releasing it — the real panel, talking to a real
+agent over its socket, on a host that runs nothing:
+
+```bash
+docker compose -f dev/compose.yaml up --build
+```
+
+Then http://localhost:8080, user `demo`, password `demo-password`. Every plan runs and its
+effects show — a project created, a container moved, a database connected — because the
+demo agent answers each command itself instead of a shell. Restarting it starts over.
+
 ## Two processes
 
 The half that serves HTTP to a browser runs as an ordinary user and holds no privileges.

@@ -109,6 +109,12 @@ un certificado que caduca en 9 días es exactamente lo que nadie detecta a tiemp
 - [x] Pantalla de confirmación con el plan: los comandos exactos que se van a ejecutar
 - [x] Modo global de comandos en la barra superior
 - [x] Detección de drift en la UI
+- [x] Navegación con direcciones, proyectos como portada y Certificates bajo Domains
+- [x] Cada problema con su arreglo; volver del plan sin perder lo escrito; confirmar escribiendo
+      el nombre lo irreversible
+- [x] Guardar las propiedades de un servicio sin desplegarlo, y ver lo que espera al próximo
+- [x] Agente de demostración para probar la interfaz en local (`dev/compose.yaml`)
+- [ ] Modo solo lectura visible en la interfaz
 
 **Regla de la fase**: cada acción de la UI llama al mismo Command que el CLI. Si aparece
 lógica de negocio en un handler HTTP, está mal puesta.
