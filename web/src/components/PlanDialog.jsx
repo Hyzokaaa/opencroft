@@ -523,7 +523,9 @@ export function Progress({ steps, events, error, done }) {
       <div className="flex items-center gap-3">
         <div className="h-1 flex-1 overflow-hidden rounded bg-edge">
           <div
-            className={`h-full transition-all ${error ? 'bg-problem' : 'bg-running'}`}
+            // Green means running, and a plan that finished is not a service that
+            // runs: progress is neutral, and only a failure takes a colour.
+            className={`h-full transition-all ${error ? 'bg-problem' : 'bg-ink/60'}`}
             style={{ width: `${steps.length ? (through / steps.length) * 100 : 0}%` }}
           />
         </div>
@@ -547,7 +549,7 @@ export function Progress({ steps, events, error, done }) {
 
           return (
           <li key={i} className="flex gap-2 text-xs">
-            <span className={entry.failed ? 'text-problem' : working ? 'text-caution' : 'text-running'}>
+            <span className={entry.failed ? 'text-problem' : working ? 'text-caution' : 'text-muted'}>
               {entry.failed ? '✕' : working ? <Working /> : '✓'}
             </span>
             <div className="min-w-0 flex-1">
@@ -577,7 +579,7 @@ export function Progress({ steps, events, error, done }) {
       </ol>
 
       <p role="status" className="mt-4 text-xs">
-        {done && !error && <span className="text-running">Finished.</span>}
+        {done && !error && <span className="text-ink">✓ Finished.</span>}
         {error && <span className="text-problem">Stopped: {error}</span>}
       </p>
     </div>
