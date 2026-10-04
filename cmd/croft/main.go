@@ -139,7 +139,9 @@ type deps struct {
 	demo         bool
 }
 
-func wire(ctx context.Context, demo bool, nginxDir, socket string) deps {
+// grace is how long to wait for the agent to appear: the panel, started by
+// systemd beside it, waits; a command typed by hand does not.
+func wire(ctx context.Context, demo bool, nginxDir, socket string, grace time.Duration) deps {
 	if demo {
 		return deps{
 			instances:    runtime.NewDemoInstanceRepository(),
@@ -154,7 +156,7 @@ func wire(ctx context.Context, demo bool, nginxDir, socket string) deps {
 	// Prefer the agent: it is the half that holds the privileges, and this
 	// process then needs none of them.
 	if socket != "" {
-		if _, err := os.Stat(socket); err == nil {
+		if awaitSocket(socket, grace) {
 			client, err := agent.Dial(socket, version)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "[ERROR]", err)
@@ -182,6 +184,13 @@ func wire(ctx context.Context, demo bool, nginxDir, socket string) deps {
 		os.Exit(1)
 	}
 
+	if os.Geteuid() != 0 {
+		// Without the agent and without root this process cannot run the
+		// runtime at all, and every page fails with a permission error that
+		// does not say why. Said once, plainly, where the logs are read.
+		fmt.Fprintln(os.Stderr, "[WARN] No agent on "+socket+": every page will fail.")
+		fmt.Fprintln(os.Stderr, "       Check it with:  systemctl status croft-agent")
+	}
 	if os.Geteuid() == 0 {
 		fmt.Fprintln(os.Stderr, "[WARN] No agent on "+socket+", so this process talks to the runtime itself,")
 		fmt.Fprintln(os.Stderr, "       as root. Start croft-agent to keep the half that serves HTTP unprivileged.")
@@ -207,7 +216,7 @@ func serve(ctx context.Context, args []string) {
 	agentSocket := fs.String("agent", agent.SocketPath, "socket of the privileged agent")
 	_ = fs.Parse(reorder(fs, args))
 
-	d := wire(ctx, *demo, *nginxDir, *agentSocket)
+	d := wire(ctx, *demo, *nginxDir, *agentSocket, agentGrace)
 	auth := wireAuth(*dbPath)
 
 	// What was done is kept beside the users and sessions. Anything the last
@@ -277,7 +286,7 @@ func list(ctx context.Context, args []string) {
 	agentSocket := fs.String("agent", agent.SocketPath, "socket of the privileged agent")
 	_ = fs.Parse(reorder(fs, args))
 
-	d := wire(ctx, *demo, *nginxDir, *agentSocket)
+	d := wire(ctx, *demo, *nginxDir, *agentSocket, 0)
 
 	query := overviewQueries.NewOverviewQuery(
 		instanceServices.NewListInstances(d.instances),
@@ -334,7 +343,7 @@ func create(ctx context.Context, args []string) {
 		os.Exit(1)
 	}
 
-	d := wire(ctx, *demo, *nginxDir, *agentSocket)
+	d := wire(ctx, *demo, *nginxDir, *agentSocket, 0)
 	service := instanceServices.NewCreateInstance(id.NewULIDGenerator(), d.instances)
 
 	instance, err := service.Execute(ctx, instanceServices.CreateInstanceProps{
@@ -359,7 +368,7 @@ func destroy(ctx context.Context, args []string) {
 		os.Exit(1)
 	}
 
-	d := wire(ctx, *demo, *nginxDir, *agentSocket)
+	d := wire(ctx, *demo, *nginxDir, *agentSocket, 0)
 	if err := instanceServices.NewDestroyInstance(d.instances).Execute(ctx, fs.Arg(0)); err != nil {
 		fmt.Fprintln(os.Stderr, "[ERROR]", err)
 		os.Exit(1)
@@ -974,4 +983,24 @@ func portOf(addr string) int {
 		return 8080
 	}
 	return number
+}
+
+// agentGrace is how long the panel waits for the agent's socket at start.
+// systemd starts the two together and calls the agent started the moment its
+// process exists — before it has created the socket — so a panel that only
+// looked once could lose that race and quietly run without its privileged
+// half until restarted. That is how v0.27.0 came up on a server.
+const agentGrace = 20 * time.Second
+
+func awaitSocket(path string, grace time.Duration) bool {
+	deadline := time.Now().Add(grace)
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }
