@@ -329,7 +329,10 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+# notify: started means the socket exists, so croft.service, ordered after
+# this one, never starts before there is an agent to talk to.
+Type=notify
+NotifyAccess=main
 RuntimeDirectory=croft
 RuntimeDirectoryMode=0755
 ExecStart=$PREFIX/bin/croft agent --socket /run/croft/agent.sock --group croft

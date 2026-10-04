@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"time"
@@ -24,6 +23,7 @@ import (
 // domain's point of view nothing changed: it still talks to an interface that
 // happens to reach the operating system.
 type Client struct {
+	greeting
 	http         *http.Client
 	flavor       string
 	defaultImage string
@@ -33,39 +33,45 @@ type Client struct {
 // speaking different protocols produces errors like a bare 404, which tells
 // nobody anything.
 func Dial(socket, version string) (*Client, error) {
-	c := &Client{
-		http: &http.Client{
-			Timeout: 10 * time.Minute, // creating a container is not quick
-			Transport: &http.Transport{
-				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-					var d net.Dialer
-					return d.DialContext(ctx, "unix", socket)
-				},
-			},
-		},
-	}
-
-	var runtime RuntimeResponse
-	if err := c.call(context.Background(), http.MethodGet, "/runtime", nil, &runtime); err != nil {
+	c := newClient(socket)
+	c.version = version
+	if err := c.handshake(context.Background()); err != nil {
 		return nil, fmt.Errorf("reaching the agent on %s: %w", socket, err)
 	}
-	if runtime.Version != "" && runtime.Version != version {
-		return nil, fmt.Errorf(
-			"the agent is running %s and this half is %s.\n"+
-				"        Both are the same binary, so restart the one left behind:\n"+
-				"            sudo systemctl restart croft-agent croft",
-			runtime.Version, version)
-	}
-
-	c.flavor = runtime.Flavor
-	c.defaultImage = runtime.DefaultImage
 	return c, nil
 }
 
-func (c *Client) Flavor() string       { return c.flavor }
-func (c *Client) DefaultImage() string { return c.defaultImage }
+// Flavor and DefaultImage are what the agent said it runs. A client that has
+// not reached its agent yet asks now, briefly, and answers empty if it still
+// cannot.
+func (c *Client) Flavor() string {
+	c.greet()
+	return c.flavor
+}
 
+func (c *Client) DefaultImage() string {
+	c.greet()
+	return c.defaultImage
+}
+
+func (c *Client) greet() {
+	if c.lazy && !c.greeted {
+		_ = c.Reachable(context.Background())
+	}
+}
+
+// call is one request to the agent. A client that has not met its agent yet
+// meets it first, so a version mismatch is refused before anything is asked.
 func (c *Client) call(ctx context.Context, method, path string, body, into any) error {
+	if c.lazy {
+		if err := c.handshake(ctx); err != nil {
+			return err
+		}
+	}
+	return c.raw(ctx, method, path, body, into)
+}
+
+func (c *Client) raw(ctx context.Context, method, path string, body, into any) error {
 	var payload io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -86,7 +92,7 @@ func (c *Client) call(ctx context.Context, method, path string, body, into any) 
 
 	res, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return unreachable(err)
 	}
 	defer res.Body.Close()
 
@@ -289,6 +295,11 @@ func (c *Client) DeleteWithProgress(ctx context.Context, name string, report fun
 }
 
 func (c *Client) streamed(ctx context.Context, method, path string, body any, report func(int, string)) error {
+	if c.lazy {
+		if err := c.handshake(ctx); err != nil {
+			return err
+		}
+	}
 	var payload io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -308,7 +319,7 @@ func (c *Client) streamed(ctx context.Context, method, path string, body any, re
 
 	res, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return unreachable(err)
 	}
 	defer res.Body.Close()
 

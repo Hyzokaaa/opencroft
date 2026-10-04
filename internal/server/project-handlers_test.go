@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Hyzokaaa/opencroft/internal/agent"
@@ -102,5 +103,19 @@ func TestEveryProjectActionReachesTheAgent(t *testing.T) {
 	handler := api(Deps{Projects: &fakeProjector{}})
 	if listed := send(handler, http.MethodGet, "/api/hosts/local/projects", nil); listed.Code != http.StatusOK {
 		t.Errorf("listing answered %d", listed.Code)
+	}
+}
+
+// The agent not answering is said as that, whatever was asked: one 503 the
+// panel recognises, with the reason underneath for whoever wants it.
+func TestAnUnreachableAgentIsSaidAsOne(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	writeError(recorder, http.StatusBadRequest, fmt.Errorf("listing: %w", agent.ErrUnreachable))
+
+	var body map[string]string
+	_ = json.Unmarshal(recorder.Body.Bytes(), &body)
+	if recorder.Code != http.StatusServiceUnavailable || body["agent"] != "unreachable" ||
+		!strings.Contains(body["error"], "systemctl status croft-agent") {
+		t.Errorf("answered %d %v", recorder.Code, body)
 	}
 }

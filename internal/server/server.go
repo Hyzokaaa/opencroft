@@ -80,9 +80,23 @@ func api(deps Deps) *http.ServeMux {
 	mux.HandleFunc("GET /api/hosts/{hostId}/overview", func(w http.ResponseWriter, r *http.Request) {
 		response, err := deps.Overview.Execute(r.Context())
 		if err != nil {
+			// Where the server is stays known while the agent is down: it is
+			// read here, without it, and it is what somebody needs to go and
+			// look.
+			if errors.Is(err, agent.ErrUnreachable) {
+				writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+					"error": "The croft agent is not answering, so nothing can be read or changed until it is back. " +
+						"On the server: systemctl status croft-agent",
+					"agent":  "unreachable",
+					"detail": err.Error(),
+					"host":   overviewQueries.HostView{Addresses: hostAddresses()},
+				})
+				return
+			}
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
+		response.Host = &overviewQueries.HostView{Addresses: hostAddresses()}
 		writeJSON(w, http.StatusOK, response)
 	})
 
@@ -188,7 +202,20 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
+// writeError answers with what went wrong. The agent not answering at all is
+// said as that, whatever the request was: it is not about what was asked, and
+// the panel shows it as one thing — nothing can be read or changed until the
+// agent is back — rather than as whatever the attempt happened to produce.
 func writeError(w http.ResponseWriter, status int, err error) {
+	if errors.Is(err, agent.ErrUnreachable) {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "The croft agent is not answering, so nothing can be read or changed until it is back. " +
+				"On the server: systemctl status croft-agent",
+			"agent":  "unreachable",
+			"detail": err.Error(),
+		})
+		return
+	}
 	writeJSON(w, status, map[string]string{"error": err.Error()})
 }
 

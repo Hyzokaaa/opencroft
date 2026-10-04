@@ -126,11 +126,14 @@ Every command works without a terminal: pass flags and read --json.
 // deps wires concrete implementations. The CLI and the HTTP API share it, so
 // there is only ever one path into the domain.
 type deps struct {
-	dns          server.DNSConfig
-	expose       any
-	services     any
-	databases    any
-	projects     any
+	dns       server.DNSConfig
+	expose    any
+	services  any
+	databases any
+	projects  any
+	// runtimeFrom names the runtime when it can only be learned later, from
+	// an agent that was not answering yet when this process started.
+	runtimeFrom  func() string
 	instances    instanceRepositories.InstanceRepository
 	routes       routeRepositories.RouteRepository
 	certificates certificateRepositories.CertificateRepository
@@ -155,25 +158,27 @@ func wire(ctx context.Context, demo bool, nginxDir, socket string, grace time.Du
 
 	// Prefer the agent: it is the half that holds the privileges, and this
 	// process then needs none of them.
-	if socket != "" {
-		if awaitSocket(socket, grace) {
-			client, err := agent.Dial(socket, version)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "[ERROR]", err)
-				os.Exit(1)
-			}
-			return deps{
-				instances:    client,
-				routes:       client.Routing(),
-				certificates: client.Certificates(),
-				dns:          agentDNS{client: client},
-				expose:       client,
-				services:     client.Services(),
-				databases:    client.Databases(),
-				projects:     client.Projects(),
-				runtime:      client.Flavor(),
-				version:      version,
-			}
+	//
+	// Without root there is nothing else this process could do — running the
+	// runtime unprivileged only fails, with a permission error that says
+	// nothing about why. So it always talks to the agent, and tries again on
+	// every request: started before its agent, or left behind when the agent
+	// restarts, it recovers by itself the moment the agent answers. Until
+	// then every page says the agent is not answering, which is the truth.
+	if socket != "" && (os.Geteuid() != 0 || awaitSocket(socket, grace)) {
+		client := agent.Connect(socket, version)
+		return deps{
+			instances:    client,
+			routes:       client.Routing(),
+			certificates: client.Certificates(),
+			dns:          agentDNS{client: client},
+			expose:       client,
+			services:     client.Services(),
+			databases:    client.Databases(),
+			projects:     client.Projects(),
+			runtime:      client.Flavor(),
+			runtimeFrom:  client.Flavor,
+			version:      version,
 		}
 	}
 
@@ -184,13 +189,6 @@ func wire(ctx context.Context, demo bool, nginxDir, socket string, grace time.Du
 		os.Exit(1)
 	}
 
-	if os.Geteuid() != 0 {
-		// Without the agent and without root this process cannot run the
-		// runtime at all, and every page fails with a permission error that
-		// does not say why. Said once, plainly, where the logs are read.
-		fmt.Fprintln(os.Stderr, "[WARN] No agent on "+socket+": every page will fail.")
-		fmt.Fprintln(os.Stderr, "       Check it with:  systemctl status croft-agent")
-	}
 	if os.Geteuid() == 0 {
 		fmt.Fprintln(os.Stderr, "[WARN] No agent on "+socket+", so this process talks to the runtime itself,")
 		fmt.Fprintln(os.Stderr, "       as root. Start croft-agent to keep the half that serves HTTP unprivileged.")
@@ -236,7 +234,7 @@ func serve(ctx context.Context, args []string) {
 			d.runtime,
 			d.version,
 			d.demo,
-		),
+		).WithRuntime(d.runtimeFrom),
 		CreateInstance:  instanceServices.NewCreateInstance(id.NewULIDGenerator(), d.instances),
 		DestroyInstance: instanceServices.NewDestroyInstance(d.instances),
 		ReadOnly:        *readOnly,
@@ -752,6 +750,10 @@ func agentCommand(ctx context.Context, args []string) {
 	// Certificates outlive attention spans, and nothing else on this host
 	// will renew the ones croft issued.
 	go server.Renew(ctx)
+
+	if err := agent.NotifyReady(); err != nil {
+		fmt.Fprintln(os.Stderr, "[WARN] could not tell systemd the agent is ready:", err)
+	}
 
 	fmt.Printf("croft agent %s — runtime: %s\n", version, flavor)
 	fmt.Printf("Listening on %s, reachable by group %s\n", *socket, *group)

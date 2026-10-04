@@ -60,7 +60,19 @@ type PathView struct {
 	Strip  bool   `json:"strip"`
 }
 
+// HostView is the machine itself: where to reach it. A server can be moved to
+// another address, and the panel is where somebody looks for the new one.
+type HostView struct {
+	Addresses []HostAddress `json:"addresses"`
+}
+
+type HostAddress struct {
+	Address string `json:"address"`
+	Public  bool   `json:"public"`
+}
+
 type OverviewResponse struct {
+	Host         *HostView           `json:"host,omitempty"`
 	Runtime      string              `json:"runtime"`
 	Version      string              `json:"version"`
 	Demo         bool                `json:"demo"`
@@ -75,6 +87,7 @@ type OverviewQuery struct {
 	listRoutes       *routeServices.ListRoutes
 	listCertificates *certificateServices.ListCertificates
 	runtime          string
+	runtimeFrom      func() string
 	version          string
 	demo             bool
 }
@@ -97,6 +110,13 @@ func NewOverviewQuery(
 	}
 }
 
+// WithRuntime names the runtime from a source that may only know it later —
+// an agent that was not answering when the panel started.
+func (q *OverviewQuery) WithRuntime(from func() string) *OverviewQuery {
+	q.runtimeFrom = from
+	return q
+}
+
 func (q *OverviewQuery) Execute(ctx context.Context) (OverviewResponse, error) {
 	instances, err := q.listInstances.Execute(ctx)
 	if err != nil {
@@ -114,7 +134,7 @@ func (q *OverviewQuery) Execute(ctx context.Context) (OverviewResponse, error) {
 	}
 
 	response := OverviewResponse{
-		Runtime:      q.runtime,
+		Runtime:      q.currentRuntime(),
 		Version:      q.version,
 		Demo:         q.demo,
 		Instances:    make([]InstanceView, 0, len(instances)),
@@ -177,4 +197,13 @@ func (q *OverviewQuery) Execute(ctx context.Context) (OverviewResponse, error) {
 func answersOf(route *routeEntities.Route) bool {
 	answers, checked := route.Answers()
 	return !checked || answers
+}
+
+func (q *OverviewQuery) currentRuntime() string {
+	if q.runtimeFrom != nil {
+		if name := q.runtimeFrom(); name != "" {
+			return name
+		}
+	}
+	return q.runtime
 }
