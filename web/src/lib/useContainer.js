@@ -97,6 +97,50 @@ export function useDatabases(container) {
   return { data, error, unavailable, read: data !== null, reload: load }
 }
 
+// What runs inside the container as a database that croft has not written
+// down — the one an install script left beside the application. Finding it
+// means running a command in the container, so it is not read on a timer: once
+// when the page opens, again after any database dialog, and when asked.
+// A stopped container has nothing running to ask, so it is not asked: the
+// look happens when it is running, and again when it starts.
+export function useFoundDatabases(container, running = true) {
+  const [data, setData] = useState(null)
+  const [error, setError] = useState(null)
+  const [looking, setLooking] = useState(false)
+  const [lookedAt, setLookedAt] = useState(null)
+  const current = useRef(container)
+
+  const load = useCallback(async () => {
+    if (!container || !running) return
+    setLooking(true)
+    try {
+      const res = await fetch(`/api/hosts/${HOST}/instances/${container}/databases/found`)
+      const payload = await readJSON(res)
+      // An answer about the container left behind is not about this one.
+      if (current.current !== container) return
+      setData(payload ?? [])
+      setLookedAt(new Date())
+      setError(null)
+    } catch (e) {
+      if (current.current !== container) return
+      setError(humane(e))
+    } finally {
+      if (current.current === container) setLooking(false)
+    }
+  }, [container, running])
+
+  useEffect(() => {
+    current.current = container
+    setData(null)
+    setError(null)
+    setLookedAt(null)
+    setLooking(false)
+    load()
+  }, [container, load])
+
+  return { data, error, looking, lookedAt, read: data !== null, reload: load }
+}
+
 // Following logs is polling, and saying so is better than implying a stream we
 // do not have. journalctl is asked for the last N lines; the same lines coming
 // back twice is cheap and the difference is invisible.

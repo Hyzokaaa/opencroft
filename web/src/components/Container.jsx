@@ -6,9 +6,9 @@ import LogView from './LogView.jsx'
 import PlanDialog from './PlanDialog.jsx'
 import Actions from './Actions.jsx'
 import { routeActions } from './RouteTable.jsx'
-import { useServices, useDatabases } from '../lib/useContainer.js'
+import { useServices, useDatabases, useFoundDatabases } from '../lib/useContainer.js'
 import { href } from '../lib/useRoute.js'
-import { SEVERITY, VERBS, remediesFor } from '../lib/vocabulary.js'
+import { OWNERSHIP, SEVERITY, VERBS, remediesFor } from '../lib/vocabulary.js'
 import { readJSON } from '../lib/api.js'
 
 // What a container actually is, once something has been deployed into it.
@@ -44,6 +44,7 @@ export default function Container({
 }) {
   const { data, error, unavailable, fetchedAt, read, reload } = useServices(container.name)
   const databases = useDatabases(container.name)
+  const found = useFoundDatabases(container.name, container.status === 'running')
   const [offersRead, setOffersRead] = useState(0)
   const offers = useShareable(container.name, `${container.project}-${offersRead}`)
   const [logs, setLogs] = useState(null)
@@ -314,6 +315,8 @@ export default function Container({
         commandMode={commandMode}
         onAdd={() => setDialog({ kind: 'add' })}
         onRemove={(database) => setDialog({ kind: 'remove', database })}
+        found={found}
+        onAdopt={(candidate) => setDialog({ kind: 'adopt', found: candidate })}
         offers={offers}
         onConnect={(offer) => setDialog({ kind: 'connect', offer })}
       />
@@ -358,10 +361,14 @@ export default function Container({
       {dialog && (
         <PlanDialog
           request={databaseRequest(container, dialog)}
-          onClose={() => setDialog(null)}
+          onClose={() => {
+            setDialog(null)
+            found.reload()
+          }}
           onFinished={() => {
             setDialog(null)
             databases.reload()
+            found.reload()
             setOffersRead((n) => n + 1)
           }}
         />
@@ -375,6 +382,29 @@ export default function Container({
 // that did the same thing differently is how two screens start disagreeing.
 function databaseRequest(container, dialog) {
   const url = `/api/hosts/local/instances/${container.name}/databases`
+
+  if (dialog.kind === 'adopt') {
+    // Taking one on only writes notes on the container, so there is nothing
+    // to fill in and nothing to confirm: the plan is the whole question.
+    return {
+      title: `${VERBS.adopt} ${dialog.found.db} in ${container.name}`,
+      url: `${url}/adopt`,
+      method: 'POST',
+      defaults: { engine: dialog.found.engine, db: dialog.found.db },
+      verb: VERBS.adopt,
+    }
+  }
+
+  if (dialog.kind === 'remove' && dialog.database.adopted) {
+    // Croft did not make it, so letting it go forgets it and drops nothing:
+    // no typed name, no red.
+    return {
+      title: `${VERBS.release} ${dialog.database.name}`,
+      url: `${url}/${dialog.database.name}`,
+      method: 'DELETE',
+      verb: VERBS.release,
+    }
+  }
 
   if (dialog.kind === 'remove') {
     // One that lives elsewhere is let go of: the data stays where it is.
@@ -428,11 +458,16 @@ function databaseRequest(container, dialog) {
 // when checking it by hand — the same names the agent asks about.
 const ENGINE_UNIT = { postgres: 'postgresql', mysql: 'mariadb', redis: 'redis-server' }
 
-function Databases({ container, state, runtime, blockedId, commandMode, onAdd, onRemove, offers, onConnect }) {
+function Databases({ container, state, runtime, blockedId, commandMode, onAdd, onRemove, found, onAdopt, offers, onConnect }) {
   const databases = state.data?.databases ?? []
+  const candidates = found.data ?? []
+  const running = container.status === 'running'
   // The command for what is actually here, not for postgres whatever it is.
   const engines = [...new Set(databases.filter((d) => !d.location).map((d) => d.engine))]
   const units = engines.length ? engines.map((e) => ENGINE_UNIT[e] ?? e) : Object.values(ENGINE_UNIT)
+  // Names already written down here: a found one by the same name cannot be
+  // taken on beside it, and the row says so rather than the dialog.
+  const taken = new Set(databases.map((d) => d.name))
 
   return (
     <Card
@@ -459,26 +494,62 @@ function Databases({ container, state, runtime, blockedId, commandMode, onAdd, o
         ) : (
           <Reading what="what it stores" />
         )
-      ) : databases.length === 0 ? (
-        <div className="px-4 py-8 text-center">
-          <p className="text-sm text-muted">No database here.</p>
-          <p className="mt-1 text-xs text-muted">
-            One inside this container is captured by its snapshots — the application and its data
-            go back together.
-          </p>
-        </div>
+      ) : databases.length === 0 && candidates.length === 0 ? (
+        // "No database here" waits for the inside to have been looked at:
+        // before that, one an install script left running would be denied.
+        running && !found.read && !found.error ? (
+          <Reading what="what it stores" />
+        ) : (
+          <div className="px-4 py-8 text-center">
+            <p className="text-sm text-muted">
+              {found.read || !running ? 'No database here.' : 'Croft has added no database here.'}
+            </p>
+            <p className="mt-1 text-xs text-muted">
+              One inside this container is captured by its snapshots — the application and its data
+              go back together.
+            </p>
+          </div>
+        )
       ) : (
-        <ul className="divide-y divide-edge">
-          {databases.map((database) => (
-            <Database key={database.name} database={database} onRemove={() => onRemove(database)} />
-          ))}
-        </ul>
+        databases.length > 0 && (
+          <ul className="divide-y divide-edge">
+            {databases.map((database) => (
+              <Database key={database.name} database={database} onRemove={() => onRemove(database)} />
+            ))}
+          </ul>
+        )
       )}
 
       {state.read && state.error && (
         <p role="status" className="border-t border-edge px-4 py-2 text-[11px] text-caution">
           Could not read them again just now: {state.error} This is the last reading.
         </p>
+      )}
+
+      {/* What runs inside and croft has not written down, laid out the way
+          the Services card lays out the units it found: what they are, said
+          once, then each with the one thing to do about it. */}
+      {state.read && !state.unavailable && candidates.length > 0 && (
+        <div className={databases.length > 0 ? 'border-t border-edge' : ''}>
+          <p className="px-4 pt-3 pb-1 text-[11px] text-faint">
+            Running in this container, not created by croft. Adopting one only writes it down:
+            nothing is installed or restarted, and the application keeps using its own credentials.
+          </p>
+          <ul className="divide-y divide-edge">
+            {candidates.map((candidate) => (
+              <FoundDatabase
+                key={candidate.engine + '/' + candidate.db}
+                found={candidate}
+                taken={taken.has(candidate.db)}
+                onAdopt={() => onAdopt(candidate)}
+              />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {state.read && !state.unavailable && (
+        <Looked found={found} running={running} anything={candidates.length > 0} />
       )}
 
       {/* What the other containers of its project hold, offered rather than
@@ -506,6 +577,98 @@ function Databases({ container, state, runtime, blockedId, commandMode, onAdd, o
   )
 }
 
+// When the inside was last looked at, and a way to look again. Looking runs a
+// command in the container, so it is not repeated on its own — which is why
+// the time is said: a database installed since does not appear by waiting.
+function Looked({ found, running, anything }) {
+  if (!running) {
+    return (
+      <p className="border-t border-edge px-4 py-2 text-[11px] text-muted">
+        Start the container to look for databases already running inside it.
+      </p>
+    )
+  }
+
+  // Before the first answer the card itself says it is reading.
+  if (!found.read && !found.error) return null
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-edge px-4 py-2 text-[11px]">
+      <span role="status" className={found.error ? 'text-caution' : 'text-muted'}>
+        {found.looking
+          ? 'Looking inside for databases already running…'
+          : found.error
+            ? `Could not look for databases already running inside: ${found.error}${found.read ? ' This is the last look.' : ''}`
+            : `${anything ? 'Looked inside' : 'Nothing else found running inside'} at ${found.lookedAt.toLocaleTimeString()}; looked at again only when asked.`}
+      </span>
+      <button
+        onClick={found.looking ? undefined : found.reload}
+        aria-disabled={found.looking || undefined}
+        className={`${SECONDARY} ${found.looking ? 'cursor-wait opacity-60' : ''}`}
+      >
+        {found.error ? 'Try again' : 'Look again'}
+      </button>
+    </div>
+  )
+}
+
+// A database the engine reports and croft has not written down. Its name has
+// to be one croft can put in SQL unquoted — connecting another container to
+// it does exactly that — and when it is not, the row says so, instead of a
+// button that only fails once pressed.
+const IDENTIFIER = /^[a-z][a-z0-9_]{0,30}$/
+const IDENTIFIER_RULE = 'lowercase letters, digits and underscores, starting with a letter'
+
+function unadoptable(found, taken) {
+  if (!IDENTIFIER.test(found.db)) {
+    return `Cannot be adopted: croft only takes on names of ${IDENTIFIER_RULE}. It keeps working as it is.`
+  }
+  if (found.engine === 'postgres' && !IDENTIFIER.test(found.owner ?? '')) {
+    return found.owner
+      ? `Cannot be adopted: its owner, ${found.owner}, is not named with ${IDENTIFIER_RULE}. It keeps working as it is.`
+      : 'Cannot be adopted: its owner could not be read. It keeps working as it is.'
+  }
+  if (taken) {
+    return `Cannot be adopted: this container already has a database named ${found.db}.`
+  }
+  return null
+}
+
+function FoundDatabase({ found, taken, onAdopt }) {
+  const reason = unadoptable(found, taken)
+
+  return (
+    <li className="px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="break-all font-mono text-xs">
+              {found.db}
+              <span className="text-muted"> · {found.engine}</span>
+            </span>
+            <Chip
+              label={OWNERSHIP.unmanaged.label}
+              tone="border-yours/40 text-yours"
+              explain="Running in this container, and not created by croft. Until it is taken on, croft does not warn that a rollback takes it back, and cannot connect other containers of the project to it."
+            />
+          </div>
+          <p className="mt-0.5 break-all font-mono text-[11px] text-muted">
+            {found.owner ? `owned by ${found.owner} · ` : ''}on {found.port}
+          </p>
+        </div>
+
+        {reason ? (
+          <p className="max-w-xs text-[11px] text-muted sm:text-right">{reason}</p>
+        ) : (
+          <button onClick={onAdopt} aria-label={`${VERBS.adopt} ${found.db}…`} className={SECONDARY}>
+            {VERBS.adopt}&hellip;
+          </button>
+        )}
+      </div>
+    </li>
+  )
+}
+
 function Database({ database, onRemove }) {
   const away = Boolean(database.location)
   const running = database.state === 'active'
@@ -517,10 +680,19 @@ function Database({ database, onRemove }) {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-mono text-xs">
-            {database.name}
-            <span className="text-muted"> · {database.engine}</span>
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-xs">
+              {database.name}
+              <span className="text-muted"> · {database.engine}</span>
+            </span>
+            {database.adopted && (
+              <Chip
+                label="adopted"
+                tone="border-yours/40 text-yours"
+                explain={`Found running and taken on. Croft lists it, warns that restoring a snapshot takes it back too, and can connect other containers of the project to it; the database, its owner and the application's own credentials stay exactly as whoever set them up. Releasing it forgets it and never drops it.`}
+              />
+            )}
+          </div>
           <p className="mt-0.5 font-mono text-[11px] text-muted">
             {database.db} on {database.port}
             {away ? ` · in ${database.location}` : ''}
@@ -539,7 +711,7 @@ function Database({ database, onRemove }) {
             }
           />
           <button onClick={onRemove} className={SECONDARY}>
-            {away ? 'Disconnect' : 'Remove'}
+            {away ? 'Disconnect' : database.adopted ? VERBS.release : 'Remove'}&hellip;
           </button>
         </div>
       </div>
