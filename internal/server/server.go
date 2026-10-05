@@ -135,6 +135,7 @@ func api(deps Deps) *http.ServeMux {
 	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/services/inspect", deps.inspectService)
 	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/services/deploy", deps.deployService)
 	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/services/rollback", deps.rollbackService)
+	mux.HandleFunc("DELETE /api/hosts/{hostId}/instances/{name}/snapshots/{snapshot}", deps.removeSnapshot)
 	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/services/{service}/logs", deps.showServiceLogs)
 	mux.HandleFunc("DELETE /api/hosts/{hostId}/instances/{name}/services/{service}", deps.destroyService)
 	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/services/{service}/redeploy", deps.redeployService)

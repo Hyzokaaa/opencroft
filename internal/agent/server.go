@@ -138,6 +138,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /instances/{name}/services/{service}", s.destroyService)
 	mux.HandleFunc("POST /instances/{name}/services/rollback/plan", s.planRollback)
 	mux.HandleFunc("POST /instances/{name}/services/rollback", s.rollback)
+	mux.HandleFunc("GET /instances/{name}/snapshots/{snapshot}/destroy/plan", s.planRemoveSnapshot)
+	mux.HandleFunc("DELETE /instances/{name}/snapshots/{snapshot}", s.removeSnapshot)
 	for _, action := range PowerActions {
 		verb := string(action)
 		mux.HandleFunc("GET /instances/{name}/services/{service}/"+verb+"/plan",

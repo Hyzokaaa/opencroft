@@ -180,3 +180,17 @@ func (a *ServiceClient) Configure(ctx context.Context, container string, want Se
 	return a.c.streamed(ctx, http.MethodPut,
 		servicePath(container, "/"+url.PathEscape(want.Name)+"/properties"), want, report)
 }
+
+// ── Removing a snapshot ──────────────────────────────────────────────────────
+
+func (a *ServiceClient) SnapshotRemovalPlan(ctx context.Context, container, snapshot string) (plan.Plan, string, error) {
+	var response RollbackResponse
+	err := a.c.call(ctx, http.MethodGet,
+		"/instances/"+url.PathEscape(container)+"/snapshots/"+url.PathEscape(snapshot)+"/destroy/plan", nil, &response)
+	return response.Plan, response.Warning, err
+}
+
+func (a *ServiceClient) RemoveSnapshot(ctx context.Context, container, snapshot string, report func(int, string)) error {
+	return a.c.streamed(ctx, http.MethodDelete,
+		"/instances/"+url.PathEscape(container)+"/snapshots/"+url.PathEscape(snapshot), nil, report)
+}

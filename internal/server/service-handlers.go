@@ -694,3 +694,43 @@ func (d Deps) configureService(w http.ResponseWriter, r *http.Request) {
 		})
 	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": service})
 }
+
+// SnapshotRemover deletes a snapshot somebody chose to let go of.
+type SnapshotRemover interface {
+	SnapshotRemovalPlan(ctx context.Context, container, snapshot string) (plan.Plan, string, error)
+	RemoveSnapshot(ctx context.Context, container, snapshot string, report func(int, string)) error
+}
+
+func (d Deps) removeSnapshot(w http.ResponseWriter, r *http.Request) {
+	if !d.writable(w) {
+		return
+	}
+	remover, ok := d.Services.(SnapshotRemover)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, errors.New("this host cannot remove snapshots"))
+		return
+	}
+	name, snapshot := r.PathValue("name"), r.PathValue("snapshot")
+	p, warning, err := remover.SnapshotRemovalPlan(r.Context(), name, snapshot)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if wantsPlan(r) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"summary": fmt.Sprintf("Delete the snapshot %s of %s, for good: nothing else keeps a copy. %s", snapshot, name, warning),
+			"plan":    p,
+		})
+		return
+	}
+
+	started := d.Jobs.Start("snapshot-remove", name+"/"+snapshot, p,
+		func(ctx context.Context, report func(int, string)) error {
+			if d.Simulated {
+				return d.rehearse(p, report)
+			}
+			return remover.RemoveSnapshot(ctx, name, snapshot, report)
+		})
+	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": snapshot})
+}
