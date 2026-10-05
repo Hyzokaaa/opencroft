@@ -49,6 +49,7 @@ export default function Container({
   const offers = useShareable(container.name, `${container.project}-${offersRead}`)
   const [logs, setLogs] = useState(null)
   const [dialog, setDialog] = useState(null)
+  const [deleting, setDeleting] = useState(null)
 
   const services = data?.services ?? []
   const external = data?.external ?? []
@@ -332,6 +333,7 @@ export default function Container({
         onRetry={reload}
         runtime={runtime}
         onRollback={onRollback}
+        onDelete={setDeleting}
         databases={databases.data?.databases ?? []}
       />
 
@@ -358,6 +360,19 @@ export default function Container({
         />
       )}
 
+      {/* Left open once finished, so the result is read rather than guessed
+          from a row that vanished; the list behind it is read again either way. */}
+      {deleting && (
+        <PlanDialog
+          request={snapshotRemoval(container, deleting)}
+          onClose={() => {
+            setDeleting(null)
+            reload()
+          }}
+          onFinished={reload}
+        />
+      )}
+
       {dialog && (
         <PlanDialog
           request={databaseRequest(container, dialog)}
@@ -375,6 +390,27 @@ export default function Container({
       )}
     </>
   )
+}
+
+// snapshotRemoval asks for as much care as the snapshot is worth. Every
+// deletion is red, because none comes back. The container's name is typed —
+// the same word Restore asks for, short and already in view — only when this
+// is the last of something: the version that last worked, the only way back to
+// a removed service or a dropped database, or one a person took and may be
+// counting on. A routine deployment snapshot is a plan read and a click: croft
+// prunes those itself, so asking for more would teach people to type without
+// reading. The daemon's summary says which of these it is, in words.
+function snapshotRemoval(container, { snapshot, healthy }) {
+  const last =
+    healthy || !snapshot.ours || snapshot.kind === 'destroy' || snapshot.kind === 'db-destroy'
+  return {
+    title: `Delete ${snapshot.raw}`,
+    url: `/api/hosts/local/instances/${container.name}/snapshots/${encodeURIComponent(snapshot.raw)}`,
+    method: 'DELETE',
+    destructive: true,
+    ...(last ? { confirm: container.name } : {}),
+    verb: 'Delete snapshot',
+  }
 }
 
 // databaseRequest is the whole add-and-remove flow, because PlanDialog already
@@ -648,7 +684,7 @@ function FoundDatabase({ found, taken, onAdopt }) {
             </span>
             <Chip
               label={OWNERSHIP.unmanaged.label}
-              tone="border-yours/40 text-yours"
+              tone={OWNERSHIP.unmanaged.tone}
               explain="Running in this container, and not created by croft. Until it is taken on, croft does not warn that a rollback takes it back, and cannot connect other containers of the project to it."
             />
           </div>
@@ -926,8 +962,8 @@ function FoundSite({ site, onAdopt }) {
             <span className="font-mono text-sm">{site.domains.join(', ')}</span>
             <Chip label="site" tone="border-edge text-muted" />
             <Chip
-              label="found here"
-              tone="border-yours/40 text-yours"
+              label={OWNERSHIP.unmanaged.label}
+              tone={OWNERSHIP.unmanaged.tone}
               explain="Found in the web server's configuration inside this container. Croft did not publish it, so it cannot rebuild it until it is taken on."
             />
           </div>
@@ -953,8 +989,8 @@ function ExternalUnit({ unit, onLogs, onPower, onAdopt }) {
           <StateDot state={unit.state} />
           <span className="font-mono text-sm">{unit.name}</span>
           <Chip
-            label="found here"
-            tone="border-yours/40 text-yours"
+            label={OWNERSHIP.unmanaged.label}
+            tone={OWNERSHIP.unmanaged.tone}
             explain="Found on this container. Croft did not deploy it, so it has no snapshots and no redeploy — only what any process gets: logs, restart, stop and start."
           />
           {!running && unit.state && (
@@ -1014,12 +1050,16 @@ function StateDot({ state }) {
 // croft-<kind>-<service>-<YYYYMMDD>-<HHMMSS>. An earlier generation left the
 // service out; that is not guessed at, it is said.
 function describe(name) {
-  const match = /^croft-(deploy|destroy)-(?:(.+)-)?(\d{8})-(\d{6})$/.exec(name)
+  const match = /^croft-(deploy|destroy|db-destroy|provision)-(?:(.+)-)?(\d{8})-(\d{6})$/.exec(name)
   if (!match) {
     return { raw: name, ours: name.startsWith('croft-'), service: null, when: null }
   }
 
-  const [, kind, service, day, time] = match
+  const [, kind, subject, day, time] = match
+  // The database kinds name a database, not a service: read as a service they
+  // would be called gone the moment they were taken.
+  const database = kind === 'db-destroy' || kind === 'provision'
+
   const when = new Date(
     `${day.slice(0, 4)}-${day.slice(4, 6)}-${day.slice(6, 8)}T` +
       `${time.slice(0, 2)}:${time.slice(2, 4)}:${time.slice(4, 6)}Z`,
@@ -1029,7 +1069,8 @@ function describe(name) {
     raw: name,
     ours: true,
     kind,
-    service: service ?? null,
+    service: database ? null : subject ?? null,
+    database: database ? subject ?? null : null,
     when: isNaN(when.getTime()) ? null : when,
   }
 }
@@ -1076,7 +1117,7 @@ function DataWarning({ databases }) {
   )
 }
 
-function Snapshots({ snapshots, services, container, commandMode, read, error, unavailable, onRetry, runtime, onRollback, databases }) {
+function Snapshots({ snapshots, services, container, commandMode, read, error, unavailable, onRetry, runtime, onRollback, onDelete, databases }) {
   const healthy = new Set(services.map((s) => s.healthy).filter(Boolean))
   const alive = new Set(services.map((s) => s.name))
 
@@ -1097,6 +1138,7 @@ function Snapshots({ snapshots, services, container, commandMode, read, error, u
       healthy={healthy.has(snapshot.raw)}
       orphaned={Boolean(snapshot.service) && !alive.has(snapshot.service)}
       onRollback={() => onRollback(container, snapshot.raw)}
+      onDelete={() => onDelete({ snapshot, healthy: healthy.has(snapshot.raw) })}
     />
   )
 
@@ -1151,7 +1193,7 @@ function Snapshots({ snapshots, services, container, commandMode, read, error, u
   )
 }
 
-function Snapshot({ snapshot, healthy, orphaned, onRollback }) {
+function Snapshot({ snapshot, healthy, orphaned, onRollback, onDelete }) {
   const when = ago(snapshot.when)
 
   return (
@@ -1159,7 +1201,14 @@ function Snapshot({ snapshot, healthy, orphaned, onRollback }) {
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate text-xs">
-            {snapshot.service ?? (snapshot.ours ? 'an earlier version of croft' : 'taken by hand')}
+            {snapshot.service ??
+              (snapshot.kind === 'db-destroy'
+                ? `database ${snapshot.database}`
+                : snapshot.kind === 'provision'
+                  ? `before adding ${snapshot.database}`
+                  : snapshot.ours
+                    ? 'an earlier version of croft'
+                    : 'taken by hand')}
             {when && <span className="text-muted"> · {when}</span>}
           </span>
 
@@ -1170,11 +1219,13 @@ function Snapshot({ snapshot, healthy, orphaned, onRollback }) {
               explain="Croft did not take this, and will never remove it."
             />
           )}
-          {snapshot.kind === 'destroy' && (
+          {(snapshot.kind === 'destroy' || snapshot.kind === 'db-destroy') && (
             <Chip
               label="removed here"
               tone="border-caution/40 text-caution"
-              explain="Taken immediately before this service was removed. Nothing ever prunes it, because it is the only way back to something you chose to delete."
+              explain={`Taken immediately before this ${
+                snapshot.kind === 'destroy' ? 'service was removed' : 'database was dropped'
+              }. Nothing ever prunes it, because it is the only way back to something you chose to delete.`}
             />
           )}
           {/* Green says "running" here and nothing else; having worked once
@@ -1200,12 +1251,17 @@ function Snapshot({ snapshot, healthy, orphaned, onRollback }) {
         <p className="truncate font-mono text-[11px] text-muted">{snapshot.raw}</p>
       </div>
 
-      <button
-        onClick={onRollback}
-        className="shrink-0 rounded border border-edge px-2 py-0.5 text-xs text-muted transition hover:border-problem/50 hover:text-problem"
-      >
-        Restore&hellip;
-      </button>
+      {/* Restore first, delete last — the order every row's actions keep. On
+          a phone both fold into the row's menu. */}
+      <div className="shrink-0">
+        <Actions
+          label={`Actions for ${snapshot.raw}`}
+          actions={[
+            { label: 'Restore…', onClick: onRollback, danger: true },
+            { label: 'Delete…', onClick: onDelete, danger: true },
+          ]}
+        />
+      </div>
     </li>
   )
 }

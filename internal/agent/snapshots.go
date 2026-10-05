@@ -25,23 +25,23 @@ func snapshotCost(config map[string]string, services []string, name string) stri
 	said := []string{}
 	for _, service := range services {
 		if config[full(service, "healthy")] == name {
-			said = append(said, "it is the last version of "+service+" known to work, so going back to one stops being possible until the next deployment that passes its check")
+			said = append(said, "It is the last version of "+service+" known to work: without it there is none to go back to until a deployment passes its check again")
 		}
 	}
 	switch {
 	case strings.HasPrefix(name, deployEntities.DestroyKind):
-		said = append(said, "it was taken just before a service was removed, and it is the only way back to it")
+		said = append(said, "It was taken just before a service was removed, and it is the only way back to it")
 	case strings.HasPrefix(name, databaseEntities.FarewellKind):
-		said = append(said, "it was taken just before a database was dropped, and it is the only way back to that data")
+		said = append(said, "It was taken just before a database was dropped, and it is the only way back to that data")
 	case strings.HasPrefix(name, databaseEntities.ProvisionKind):
-		said = append(said, "it was taken before a database was added: the container as it was without it")
+		said = append(said, "It was taken before a database was added: the container as it was without it")
 	case !snapshot.Ours(name):
-		said = append(said, "croft did not take it — somebody did, by hand, and may be counting on it")
+		said = append(said, "Croft did not take it — somebody did, by hand, and may be counting on it")
 	}
 	if len(said) == 0 {
 		return "Nothing else depends on it."
 	}
-	return "Once it is gone " + strings.Join(said, "; ") + "."
+	return strings.Join(said, ". ") + "."
 }
 
 func (s *Server) snapshotRemoval(ctx context.Context, name, wanted string) (plan.Plan, string, error) {

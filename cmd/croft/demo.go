@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -65,13 +66,16 @@ type rehearsalHost struct {
 	mu        sync.Mutex
 	files     map[string]string
 	instances *runtime.MemoryInstanceRepository
+	// snapshots per container, by name: taken, listed, deleted and restored
+	// as the runtime would.
+	snapshots map[string][]string
 	// pause is how long each command pretends to take, so progress can be
 	// watched rather than only read.
 	pause time.Duration
 }
 
 func newRehearsalHost(instances *runtime.MemoryInstanceRepository, pause time.Duration) *rehearsalHost {
-	return &rehearsalHost{files: map[string]string{}, instances: instances, pause: pause}
+	return &rehearsalHost{files: map[string]string{}, instances: instances, pause: pause, snapshots: map[string][]string{}}
 }
 
 func (h *rehearsalHost) Run(ctx context.Context, name string, args ...string) (host.Output, error) {
@@ -114,6 +118,37 @@ func (h *rehearsalHost) Run(ctx context.Context, name string, args ...string) (h
 			return host.Output{Stdout: "lxd\n"}, nil
 		}
 		return host.Output{}, nil
+
+	// Snapshots: what lxc snapshot takes, lxc query lists, and lxc delete
+	// removes — so a deployment leaves one behind and deleting it shows.
+	case (name == "lxc" || name == "incus") && len(args) == 3 && args[0] == "snapshot":
+		h.mu.Lock()
+		h.snapshots[args[1]] = append(h.snapshots[args[1]], args[2])
+		h.mu.Unlock()
+
+	case (name == "lxc" || name == "incus") && len(args) == 2 && args[0] == "query" &&
+		strings.HasPrefix(args[1], "/1.0/instances/") && strings.HasSuffix(args[1], "/snapshots"):
+		container := strings.TrimSuffix(strings.TrimPrefix(args[1], "/1.0/instances/"), "/snapshots")
+		h.mu.Lock()
+		urls := []string{}
+		for _, snap := range h.snapshots[container] {
+			urls = append(urls, args[1]+"/"+snap)
+		}
+		h.mu.Unlock()
+		encoded, _ := json.Marshal(urls)
+		return host.Output{Stdout: string(encoded)}, nil
+
+	case (name == "lxc" || name == "incus") && len(args) == 2 && args[0] == "delete" && strings.Contains(args[1], "/"):
+		container, snap, _ := strings.Cut(args[1], "/")
+		h.mu.Lock()
+		kept := []string{}
+		for _, existing := range h.snapshots[container] {
+			if existing != snap {
+				kept = append(kept, existing)
+			}
+		}
+		h.snapshots[container] = kept
+		h.mu.Unlock()
 
 	case name == "rm" && len(args) > 0:
 		h.mu.Lock()
@@ -214,6 +249,16 @@ func seedDemo(ctx context.Context, instances *runtime.MemoryInstanceRepository,
 		"service.storefront.branch", "main", "service.storefront.path", "/srv/storefront", "service.storefront.commit", "4f2a9c1",
 		"service.storefront.runtime", "node", "service.storefront.build", "npm ci && npm run build",
 		"service.storefront.start", "npm run start", "service.storefront.port", "80")
+	// A few weeks of history: two deployments (the later one known to work),
+	// the database being added, and one somebody took by hand.
+	h.snapshots["shop-api"] = []string{
+		"croft-provision-shop-20260912-101500",
+		"croft-deploy-api-20260920-183000",
+		"croft-deploy-api-20261001-090000",
+		"before-upgrade",
+	}
+	h.snapshots["blog"] = []string{"croft-deploy-blog-20260925-120000"}
+
 	annotate("shop-api", "project", "shop",
 		"services", "api",
 		"service.api.repo", "https://github.com/example/shop-api.git",
@@ -221,6 +266,7 @@ func seedDemo(ctx context.Context, instances *runtime.MemoryInstanceRepository,
 		"service.api.runtime", "node", "service.api.install", "npm ci",
 		"service.api.start", "node dist/main.js", "service.api.port", "3000",
 		"service.api.health", "/health",
+		"service.api.healthy", "croft-deploy-api-20261001-090000",
 		"databases", "shop",
 		"database.shop.engine", "postgres", "database.shop.db", "shop",
 		"database.shop.user", "shop", "database.shop.port", "5432")
