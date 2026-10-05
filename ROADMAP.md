@@ -155,6 +155,7 @@ terceros —el caso de un MSP— hace falta saber quién puede tocar qué.
 - [x] Nombres internos (`contenedor.lxd`) mostrados y sugeridos al editar un `.env`
 - [x] Base de datos compartida entre contenedores de un mismo proyecto, con login propio por
       contenedor y acceso solo desde su IP
+- [x] Adoptar una base de datos que ya corría en un contenedor, sin tocarla
 - [ ] Entornos (dev/prod) dentro de un proyecto
 - [ ] Roles por organización y por proyecto
 - [ ] Invitaciones por correo

@@ -14,6 +14,11 @@ descargó.
 
 ## No publicado
 
+### v0.30.0 — 2026-10-05
+- docs: file v0.30.0 in the changelog
+- feat: offer the databases found running in a container, and release an adopted one without dropping it
+- feat: take on a database already running in a container, without touching it
+
 ### v0.29.0 — 2026-10-04
 - docs: file v0.29.0 in the changelog
 - feat: answer health with the agent's state, so a monitor learns when croft can do nothing
