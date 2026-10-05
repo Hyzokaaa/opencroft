@@ -13,6 +13,7 @@ import (
 
 	"github.com/Hyzokaaa/opencroft/internal/agent"
 	certificateEntities "github.com/Hyzokaaa/opencroft/internal/certificate/domain/entities"
+	databaseContainer "github.com/Hyzokaaa/opencroft/internal/database/infrastructure/container"
 	instanceEntities "github.com/Hyzokaaa/opencroft/internal/instance/domain/entities"
 	"github.com/Hyzokaaa/opencroft/internal/instance/domain/enums"
 	"github.com/Hyzokaaa/opencroft/internal/instance/infrastructure/runtime"
@@ -98,6 +99,15 @@ func (h *rehearsalHost) Run(ctx context.Context, name string, args ...string) (h
 			answers = append(answers, "active")
 		}
 		return host.Output{Stdout: strings.Join(answers, "\n")}, nil
+
+	// The blog has a database of its own that nobody told croft about —
+	// what an install script leaves — so taking one on can be tried.
+	case (name == "lxc" || name == "incus") && len(args) >= 6 && args[0] == "exec" &&
+		args[len(args)-1] == databaseContainer.Look:
+		if args[1] == "blog" {
+			return host.Output{Stdout: "postgres|blog|blog_app|5432\n"}, nil
+		}
+		return host.Output{}, nil
 
 	case (name == "lxc" || name == "incus") && len(args) >= 4 && args[0] == "network" && args[1] == "get":
 		if args[3] == "dns.domain" {

@@ -34,6 +34,8 @@ type DatabaseDTO struct {
 	User     string `json:"user"`
 	Port     int    `json:"port"`
 	Location string `json:"location,omitempty"`
+	// Adopted is a database croft found and took note of, not one it made.
+	Adopted bool `json:"adopted,omitempty"`
 
 	// State is read from the container, not remembered. The machine is the
 	// source of truth about whether the engine is running.
@@ -47,7 +49,7 @@ type DatabasesResponse struct {
 func toDatabaseDTO(d *databaseEntities.Database) DatabaseDTO {
 	return DatabaseDTO{
 		Name: d.Name, Engine: string(d.Engine), DB: d.DB, User: d.User,
-		Port: d.Port, Location: d.Location,
+		Port: d.Port, Location: d.Location, Adopted: d.Adopted,
 	}
 }
 
@@ -214,6 +216,11 @@ func (s *Server) destroyDatabasePlan(
 	}
 
 	planner := databaseContainer.NewPlanner(s.bin, container)
+
+	// An adopted one is released, never dropped: croft did not make it.
+	if database.Adopted {
+		return planner.Release(removal.Keys, removal.Remaining), releaseWarning(database), nil
+	}
 
 	return planner.Destroy(database, time.Now(), removal.Keys, removal.Remaining, services),
 		databaseServices.Consequences(database, services), nil

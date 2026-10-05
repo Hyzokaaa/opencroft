@@ -72,3 +72,21 @@ func (a *DatabaseClient) SharePlan(ctx context.Context, container string, want S
 func (a *DatabaseClient) Share(ctx context.Context, container string, want ShareDTO, report func(int, string)) error {
 	return a.c.streamed(ctx, http.MethodPost, databasePath(container, "/connect"), want, report)
 }
+
+// ── Taking on a database found in the container ──────────────────────────────
+
+func (a *DatabaseClient) Found(ctx context.Context, container string) ([]FoundDatabaseDTO, error) {
+	var out []FoundDatabaseDTO
+	err := a.c.call(ctx, http.MethodGet, databasePath(container, "/found"), nil, &out)
+	return out, err
+}
+
+func (a *DatabaseClient) AdoptPlan(ctx context.Context, container string, want AdoptDatabaseDTO) (plan.Plan, error) {
+	var response PlanResponse
+	err := a.c.call(ctx, http.MethodPost, databasePath(container, "/adopt/plan"), want, &response)
+	return response.Plan, err
+}
+
+func (a *DatabaseClient) Adopt(ctx context.Context, container string, want AdoptDatabaseDTO, report func(int, string)) error {
+	return a.c.streamed(ctx, http.MethodPost, databasePath(container, "/adopt"), want, report)
+}

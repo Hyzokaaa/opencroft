@@ -221,3 +221,76 @@ func (d Deps) connectDatabase(w http.ResponseWriter, r *http.Request) {
 		})
 	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": body.Name})
 }
+
+// DatabaseAdopter takes note of a database already running in a container.
+// Nothing in the container changes; croft only starts knowing it is there.
+type DatabaseAdopter interface {
+	Found(ctx context.Context, container string) ([]agent.FoundDatabaseDTO, error)
+	AdoptPlan(ctx context.Context, container string, want agent.AdoptDatabaseDTO) (plan.Plan, error)
+	Adopt(ctx context.Context, container string, want agent.AdoptDatabaseDTO, report func(int, string)) error
+}
+
+func (d Deps) databaseAdopter(w http.ResponseWriter) (DatabaseAdopter, bool) {
+	adopter, ok := d.Databases.(DatabaseAdopter)
+	if !ok || d.Databases == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("this host cannot take on databases"))
+		return nil, false
+	}
+	return adopter, true
+}
+
+func (d Deps) listFoundDatabases(w http.ResponseWriter, r *http.Request) {
+	adopter, ok := d.databaseAdopter(w)
+	if !ok {
+		return
+	}
+	found, err := adopter.Found(r.Context(), r.PathValue("name"))
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, found)
+}
+
+func (d Deps) adoptDatabase(w http.ResponseWriter, r *http.Request) {
+	if !d.writable(w) {
+		return
+	}
+	adopter, ok := d.databaseAdopter(w)
+	if !ok {
+		return
+	}
+	name := r.PathValue("name")
+	var body agent.AdoptDatabaseDTO
+	if err := readBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	p, err := adopter.AdoptPlan(r.Context(), name, body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if wantsPlan(r) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"summary": fmt.Sprintf(
+				"Take on %s, the %s database already running in %s. Only notes are written on the "+
+					"container: nothing is installed or restarted, and whatever uses it keeps reaching it "+
+					"as it does now. From then on croft lists it, warns that restoring a snapshot of %s "+
+					"takes it back too, and can connect other containers of the project to it. Letting "+
+					"it go later forgets it and never drops it.", body.DB, body.Engine, name, name),
+			"plan": p,
+		})
+		return
+	}
+
+	started := d.Jobs.Start("database-adopt", name+"/"+body.DB, p,
+		func(ctx context.Context, report func(int, string)) error {
+			if d.Simulated {
+				return d.rehearse(p, report)
+			}
+			return adopter.Adopt(ctx, name, body, report)
+		})
+	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": body.DB})
+}

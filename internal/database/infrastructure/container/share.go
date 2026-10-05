@@ -75,6 +75,9 @@ func (s Share) Plan(index, services []string) plan.Plan {
 	}
 
 	for _, a := range s.Connected().Annotations() {
+		if a[1] == "" {
+			continue
+		}
 		steps = append(steps, plan.Command("Record "+a[0]+" on "+s.Consumer,
 			s.Bin, "config", "set", s.Consumer, entities.KeyPrefix+d.Name+"."+a[0], a[1]))
 	}

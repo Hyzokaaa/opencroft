@@ -68,6 +68,11 @@ type Database struct {
 	// A name here means the data is somewhere else, and that rolling this
 	// container back will not roll the data back with it.
 	Location string
+
+	// Adopted is a database croft found running and took note of, rather than
+	// created. Its credentials are whoever made it's, kept wherever they were;
+	// letting it go forgets the note and never touches the data.
+	Adopted bool
 }
 
 type DatabaseProps struct {
@@ -77,6 +82,7 @@ type DatabaseProps struct {
 	User     string
 	Port     int
 	Location string
+	Adopted  bool
 }
 
 func NewDatabase(props DatabaseProps) *Database {
@@ -102,6 +108,7 @@ func NewDatabase(props DatabaseProps) *Database {
 		User:     user,
 		Port:     port,
 		Location: props.Location,
+		Adopted:  props.Adopted,
 	}
 }
 
@@ -144,5 +151,13 @@ func (d *Database) Annotations() [][2]string {
 		{"user", d.User},
 		{"port", strconv.Itoa(d.Port)},
 		{"location", d.Location},
+		{"adopted", adopted(d.Adopted)},
 	}
+}
+
+func adopted(yes bool) string {
+	if yes {
+		return "true"
+	}
+	return ""
 }

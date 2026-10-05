@@ -43,6 +43,7 @@ func FromConfig(config map[string]string, name string) *entities.Database {
 		User:     read("user"),
 		Port:     port,
 		Location: read("location"),
+		Adopted:  read("adopted") == "true",
 	})
 }
 
