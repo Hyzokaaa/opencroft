@@ -14,6 +14,9 @@ descargó.
 
 ## No publicado
 
+### v0.31.2 — 2026-10-06
+- fix: the panel, too, takes a hand-installed site to be served on port 80
+
 ### v0.31.1 — 2026-10-06
 - fix: give a site served by its container's web server a domain on port 80, and warn before a domain leads to a service that is only half of an app
 
