@@ -58,6 +58,9 @@ type AliasDTO struct {
 	Domain       string `json:"domain"`
 	SSL          bool   `json:"ssl"`
 	Certificates string `json:"certificates,omitempty"`
+	// Waiting is why a name is still served over http — its DNS does not
+	// point here yet — when croft knows.
+	Waiting string `json:"waiting,omitempty"`
 }
 
 type PathDTO struct {

@@ -177,6 +177,14 @@ func (s *Server) enableTLS(w http.ResponseWriter, r *http.Request) {
 	challenge := chooseChallenge()
 
 	s.stream(w, func(report func(int, string)) error {
+		if change.issue && challenge == certificateServices.ChallengeHTTP {
+			// The authority will fetch http://<domain>/… — ask it first, so a
+			// domain whose DNS is not here yet costs no attempt with it.
+			report(1, "Checking that "+domain+" reaches this server")
+			if err := s.reaches(ctx, domain); err != nil {
+				return errors.New(err.Error() + ". Nothing was asked of Let's Encrypt; try again once it does.")
+			}
+		}
 		if change.issue {
 			report(1, "Obtaining a certificate")
 

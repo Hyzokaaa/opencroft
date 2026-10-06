@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -56,5 +58,35 @@ func TestRemovingAnAliasRemovesItsCertificate(t *testing.T) {
 	shell := shellOfPlan(t, serve(server, http.MethodGet, "/routes/app.example.com/aliases/old.customer.com/remove/plan", nil).Body.Bytes())
 	if !strings.Contains(shell, "rm -rf /var/lib/croft/certificates/old.customer.com") {
 		t.Errorf("plan:\n%s", shell)
+	}
+}
+
+// A name whose DNS does not point here yet is not a failure: it is served
+// over http, croft says why, and nothing is asked of Let's Encrypt.
+func TestANameWaitingForItsDNSIsServedAndExplained(t *testing.T) {
+	server := aRouteWithHTTPS(t)
+	server.reachCheck = func(_ context.Context, domain string) error {
+		return errors.New(domain + " has no DNS record yet")
+	}
+
+	recorder := serve(server, http.MethodPost, "/routes/app.example.com/aliases/help.customer.com", nil)
+	body := recorder.Body.String()
+	if strings.Contains(body, `"failed":true`) || !strings.Contains(body, "Waiting for its DNS") {
+		t.Fatalf("answered:\n%s", body)
+	}
+
+	route, _, _ := server.owned(context.Background(), "app.example.com")
+	alias, ok := route.Alias("help.customer.com")
+	if !ok || alias.SSL {
+		t.Fatalf("not served over http meanwhile: %+v", route.Aliases)
+	}
+	var listed []RouteDTO
+	_ = json.Unmarshal(serve(server, http.MethodGet, "/routes", nil).Body.Bytes(), &listed)
+	for _, r := range listed {
+		for _, a := range r.Aliases {
+			if a.Domain == "help.customer.com" && !strings.Contains(a.Waiting, "no DNS record") {
+				t.Errorf("the reason does not reach the panel: %+v", a)
+			}
+		}
 	}
 }

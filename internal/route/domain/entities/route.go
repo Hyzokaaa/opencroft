@@ -36,6 +36,9 @@ type Alias struct {
 	// Certificates is where its certificate is read from: its own, in
 	// croft's directory, or a wildcard that already covers it.
 	Certificates string
+	// Waiting is why it is still served over http, when known. It is read,
+	// never written into the vhost.
+	Waiting string
 }
 
 // CertDir is where the alias's certificate lives.

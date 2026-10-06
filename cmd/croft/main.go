@@ -753,6 +753,7 @@ func agentCommand(ctx context.Context, args []string) {
 	// Certificates outlive attention spans, and nothing else on this host
 	// will renew the ones croft issued.
 	go server.Renew(ctx)
+	go server.RetryWaiting(ctx)
 
 	if err := agent.NotifyReady(); err != nil {
 		fmt.Fprintln(os.Stderr, "[WARN] could not tell systemd the agent is ready:", err)

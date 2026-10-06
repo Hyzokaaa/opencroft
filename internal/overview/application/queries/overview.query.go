@@ -56,8 +56,9 @@ type RouteView struct {
 }
 
 type AliasView struct {
-	Domain string `json:"domain"`
-	SSL    bool   `json:"ssl"`
+	Domain  string `json:"domain"`
+	SSL     bool   `json:"ssl"`
+	Waiting string `json:"waiting,omitempty"`
 }
 
 type PathView struct {
@@ -178,7 +179,7 @@ func (q *OverviewQuery) Execute(ctx context.Context) (OverviewResponse, error) {
 	for _, r := range routes {
 		aliases := make([]AliasView, len(r.Aliases))
 		for i, a := range r.Aliases {
-			aliases[i] = AliasView{Domain: a.Domain, SSL: a.SSL}
+			aliases[i] = AliasView{Domain: a.Domain, SSL: a.SSL, Waiting: a.Waiting}
 		}
 		paths := make([]PathView, len(r.Paths))
 		for i, p := range r.Paths {

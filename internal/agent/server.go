@@ -41,6 +41,11 @@ type Server struct {
 
 	projects *projectServices.Projects
 
+	// reach answers whether a domain reaches this server; nil asks the
+	// network. waiting holds why names are still served over http.
+	reachCheck reachFunc
+	waiting    waiting
+
 	dns internalDNS
 }
 
@@ -278,7 +283,7 @@ func (s *Server) listRoutes(w http.ResponseWriter, r *http.Request) {
 		out[i] = RouteDTO{
 			Domain: route.Domain, Target: route.Target, Port: route.Port,
 			SSL: route.SSL, State: string(route.State), File: route.File,
-			Certificates: route.Certificates, Paths: toRoutePathDTOs(route.Paths), Aliases: toAliasDTOs(route.Aliases),
+			Certificates: route.Certificates, Paths: toRoutePathDTOs(route.Paths), Aliases: s.withWaiting(toAliasDTOs(route.Aliases)),
 		}
 	}
 
@@ -484,7 +489,7 @@ func toAliasDTOs(aliases []routeEntities.Alias) []AliasDTO {
 func fromAliasDTOs(aliases []AliasDTO) []routeEntities.Alias {
 	out := make([]routeEntities.Alias, len(aliases))
 	for i, a := range aliases {
-		out[i] = routeEntities.Alias{Domain: a.Domain, SSL: a.SSL, Certificates: a.Certificates}
+		out[i] = routeEntities.Alias{Domain: a.Domain, SSL: a.SSL, Certificates: a.Certificates, Waiting: a.Waiting}
 	}
 	return out
 }

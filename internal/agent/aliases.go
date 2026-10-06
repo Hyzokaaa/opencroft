@@ -7,8 +7,6 @@ import (
 	"path"
 	"strings"
 
-	certificateServices "github.com/Hyzokaaa/opencroft/internal/certificate/domain/services"
-	"github.com/Hyzokaaa/opencroft/internal/certificate/infrastructure/acme"
 	routeEntities "github.com/Hyzokaaa/opencroft/internal/route/domain/entities"
 	routeEnums "github.com/Hyzokaaa/opencroft/internal/route/domain/enums"
 	"github.com/Hyzokaaa/opencroft/internal/shared/host"
@@ -93,9 +91,12 @@ func (s *Server) aliasPlan(change aliasChange) plan.Plan {
 	if change.issue {
 		// Served over http first: that is how the authority reaches it.
 		steps = append(steps, s.routes.WritePlan(change.route.WithAlias(routeEntities.Alias{Domain: change.alias.Domain})).Steps...)
-		steps = append(steps, plan.Command(
-			"Obtain a certificate for "+change.alias.Domain+" from Let's Encrypt, proved over http — its DNS has to point here",
-			"croft", "cert", "issue", change.alias.Domain, "--http"))
+		steps = append(steps,
+			plan.Command("Check that "+change.alias.Domain+" reaches this server before asking Let's Encrypt — if its DNS "+
+				"does not point here yet, it waits, served over http, and croft checks again every few minutes",
+				"curl", "-fsS", "http://"+change.alias.Domain+"/.well-known/acme-challenge/croft-check"),
+			plan.Command("Obtain a certificate for "+change.alias.Domain+" from Let's Encrypt, proved over http",
+				"croft", "cert", "issue", change.alias.Domain, "--http"))
 		change.alias.SSL = true
 	}
 	return plan.New(append(steps, s.routes.WritePlan(change.route.WithAlias(change.alias)).Steps...)...)
@@ -128,30 +129,30 @@ func (s *Server) addAlias(w http.ResponseWriter, r *http.Request) {
 	alias := change.alias.Domain
 
 	s.stream(w, func(report func(int, string)) error {
-		step := 1
-		if change.issue {
-			report(step, "Serving "+alias+" over http")
-			if err := s.routes.Write(ctx, change.route.WithAlias(routeEntities.Alias{Domain: alias})); err != nil {
-				return err
-			}
-			step += 3
-
-			report(step, "Obtaining a certificate for "+alias)
-			issuer := certificateServices.NewIssueCertificate(acme.NewIssuer())
-			if _, err := issuer.Execute(ctx, certificateServices.IssueRequest{
-				Domain: alias, Challenge: certificateServices.ChallengeHTTP,
-			}, func(text string) { report(step, text) }); err != nil {
-				return errors.New(alias + " answers over http, but its certificate could not be issued: " + err.Error() +
-					" — once its DNS points to this server, add it again to retry")
-			}
-			step++
-			change.alias.SSL = true
+		if !change.issue {
+			// One line for the whole write, because the repository walks
+			// the plan itself and puts the file back if nginx refuses it.
+			report(1, "Serving "+alias+" and reloading nginx")
+			return s.routes.Write(ctx, change.route.WithAlias(change.alias))
 		}
 
-		// One line for the whole write, because the repository walks the
-		// plan itself and puts the file back if nginx refuses it.
-		report(step, "Serving "+alias+" over https and reloading nginx")
-		return s.routes.Write(ctx, change.route.WithAlias(change.alias))
+		report(1, "Serving "+alias+" over http")
+		if err := s.routes.Write(ctx, change.route.WithAlias(routeEntities.Alias{Domain: alias})); err != nil {
+			return err
+		}
+		report(4, "Checking that "+alias+" reaches this server")
+		err := s.certifyAlias(ctx, change.route.Domain, alias, func(text string) { report(5, text) })
+		if isWaiting(err) {
+			// Not a failure: the customer has not pointed their DNS here
+			// yet. It is served over http meanwhile, and croft keeps looking.
+			report(4, "Waiting for its DNS: "+err.Error()+". croft checks again every 5 minutes and turns on https by itself.")
+			return nil
+		}
+		if err != nil {
+			return errors.New(alias + " answers over http, but its certificate could not be issued: " + err.Error())
+		}
+		report(6, "Serving "+alias+" over https and reloading nginx")
+		return nil
 	})
 }
 
