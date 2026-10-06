@@ -14,6 +14,11 @@ descargó.
 
 ## No publicado
 
+### v0.31.0 — 2026-10-06
+- docs: file v0.31.0 in the changelog
+- feat: a Delete action on each snapshot, asking for the container's name where it is the only way back
+- feat: delete a snapshot by hand, told first what it was the only way back to
+
 ### v0.30.0 — 2026-10-05
 - docs: file v0.30.0 in the changelog
 - feat: offer the databases found running in a container, and release an adopted one without dropping it
