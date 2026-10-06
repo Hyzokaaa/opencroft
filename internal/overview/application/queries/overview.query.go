@@ -48,9 +48,16 @@ type RouteView struct {
 	// Certificates is the directory the vhost reads its certificate from.
 	Certificates string     `json:"certificates"`
 	Paths        []PathView `json:"paths"`
-	State        string     `json:"state"`
-	File         string     `json:"file"`
-	Answers      bool       `json:"answers"`
+	// Aliases are more names the route answers on, each with its own https.
+	Aliases []AliasView `json:"aliases"`
+	State   string      `json:"state"`
+	File    string      `json:"file"`
+	Answers bool        `json:"answers"`
+}
+
+type AliasView struct {
+	Domain string `json:"domain"`
+	SSL    bool   `json:"ssl"`
 }
 
 type PathView struct {
@@ -169,13 +176,17 @@ func (q *OverviewQuery) Execute(ctx context.Context) (OverviewResponse, error) {
 	}
 
 	for _, r := range routes {
+		aliases := make([]AliasView, len(r.Aliases))
+		for i, a := range r.Aliases {
+			aliases[i] = AliasView{Domain: a.Domain, SSL: a.SSL}
+		}
 		paths := make([]PathView, len(r.Paths))
 		for i, p := range r.Paths {
 			paths[i] = PathView{Prefix: p.Prefix, Target: p.Target, Port: p.Port, Strip: p.Strip}
 		}
 		response.Routes = append(response.Routes, RouteView{
 			Domain: r.Domain, Target: r.Target, Port: r.Port,
-			SSL: r.SSL, Certificates: r.Certificates, Paths: paths, State: string(r.State), File: r.File,
+			SSL: r.SSL, Certificates: r.Certificates, Paths: paths, Aliases: aliases, State: string(r.State), File: r.File,
 			Answers: answersOf(r),
 		})
 	}

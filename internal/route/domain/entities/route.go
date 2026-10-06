@@ -14,13 +14,36 @@ type Route struct {
 	// Paths send a prefix of the domain elsewhere: /api/ to a backend while
 	// the rest goes to the web. The longest prefix that matches wins, which is
 	// how nginx itself decides.
-	Paths   []PathRoute
+	Paths []PathRoute
+	// Aliases are more names for the same thing: a customer's own domain
+	// answering exactly as this one does, paths and websockets included.
+	// Each has a certificate of its own, since nobody can vouch for another
+	// party's domain in one certificate they do not control.
+	Aliases []Alias
 	State   enums.ManagedState
 	File    string
 	Content string
 
 	// nil when nobody checked whether anything is listening.
 	answers *bool
+}
+
+// Alias is one more name a route answers on. Until its certificate exists it
+// is served over http, so that the authority can reach it to issue one.
+type Alias struct {
+	Domain string
+	SSL    bool
+	// Certificates is where its certificate is read from: its own, in
+	// croft's directory, or a wildcard that already covers it.
+	Certificates string
+}
+
+// CertDir is where the alias's certificate lives.
+func (a Alias) CertDir() string {
+	if a.Certificates != "" {
+		return a.Certificates
+	}
+	return "/var/lib/croft/certificates/" + a.Domain
 }
 
 // PathRoute is one prefix of a domain, served from somewhere of its own.
@@ -40,6 +63,7 @@ type RouteProps struct {
 	SSL          bool
 	Certificates string
 	Paths        []PathRoute
+	Aliases      []Alias
 	State        enums.ManagedState
 	File         string
 	Content      string
@@ -53,6 +77,7 @@ func NewRoute(props RouteProps) *Route {
 		SSL:          props.SSL,
 		Certificates: props.Certificates,
 		Paths:        props.Paths,
+		Aliases:      props.Aliases,
 		State:        props.State,
 		File:         props.File,
 		Content:      props.Content,
@@ -83,6 +108,41 @@ func (r *Route) WithoutPath(prefix string) *Route {
 		}
 	}
 	return &next
+}
+
+// WithAlias is the route answering on one more name, or with that name's
+// certificate changed.
+func (r *Route) WithAlias(a Alias) *Route {
+	next := *r
+	next.Aliases = []Alias{}
+	for _, existing := range r.Aliases {
+		if existing.Domain != a.Domain {
+			next.Aliases = append(next.Aliases, existing)
+		}
+	}
+	next.Aliases = append(next.Aliases, a)
+	return &next
+}
+
+// WithoutAlias is the route no longer answering on that name.
+func (r *Route) WithoutAlias(domain string) *Route {
+	next := *r
+	next.Aliases = []Alias{}
+	for _, existing := range r.Aliases {
+		if existing.Domain != domain {
+			next.Aliases = append(next.Aliases, existing)
+		}
+	}
+	return &next
+}
+
+func (r *Route) Alias(domain string) (Alias, bool) {
+	for _, a := range r.Aliases {
+		if a.Domain == domain {
+			return a, true
+		}
+	}
+	return Alias{}, false
 }
 
 func (r *Route) Path(prefix string) (PathRoute, bool) {

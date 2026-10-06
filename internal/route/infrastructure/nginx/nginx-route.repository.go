@@ -90,11 +90,34 @@ func (r *NginxRouteRepository) FindAll(ctx context.Context) ([]*entities.Route, 
 		}
 	}
 
+	// A file croft wrote is one route, named after the file; any other name
+	// in it is an alias of that route rather than a domain of its own.
 	routes := make([]*entities.Route, 0, len(order))
 	for _, domain := range order {
-		routes = append(routes, merged[domain])
+		route := merged[domain]
+		if primary := r.primaryOf(route.File); primary != "" && primary != domain {
+			if owner, ok := merged[primary]; ok && owner.File == route.File {
+				owner.Aliases = append(owner.Aliases, entities.Alias{
+					Domain: domain, SSL: route.SSL, Certificates: route.Certificates,
+				})
+				continue
+			}
+		}
+		routes = append(routes, route)
+	}
+	for _, route := range routes {
+		sort.Slice(route.Aliases, func(a, b int) bool { return route.Aliases[a].Domain < route.Aliases[b].Domain })
 	}
 	return routes, nil
+}
+
+// primaryOf is the domain a file in croft's own directory is named after, or
+// nothing for a file somewhere else.
+func (r *NginxRouteRepository) primaryOf(file string) string {
+	if !strings.HasPrefix(filepath.ToSlash(file), filepath.ToSlash(r.confDir)+"/") {
+		return ""
+	}
+	return strings.TrimSuffix(filepath.Base(filepath.ToSlash(file)), ".conf")
 }
 
 // stateOfFile decides how much authority we have over the file a block came
@@ -158,14 +181,29 @@ func (r *NginxRouteRepository) Write(ctx context.Context, route *entities.Route)
 // reload, by anybody, for any reason, fails and takes every site with it. The
 // blast radius belongs to whoever wrote the bad file, not to the next person
 // who restarts nginx.
+//
+// A file that was there before is put back as it was, not removed: rewriting
+// a domain that nginx then rejected used to delete the domain altogether.
 func (r *NginxRouteRepository) walk(ctx context.Context, p plan.Plan) error {
-	written := []string{}
+	type previous struct {
+		path    string
+		content []byte
+		existed bool
+	}
+	written := []previous{}
 
 	for _, step := range p.Steps {
+		before := previous{path: step.File}
+		if step.IsFile() {
+			if content, err := r.host.ReadFile(ctx, step.File); err == nil {
+				before.content, before.existed = content, true
+			}
+		}
+
 		err := host.RunStep(ctx, r.host, step)
 		if err == nil {
 			if step.IsFile() {
-				written = append(written, step.File)
+				written = append(written, before)
 			}
 			continue
 		}
@@ -174,11 +212,15 @@ func (r *NginxRouteRepository) walk(ctx context.Context, p plan.Plan) error {
 			continue
 		}
 
-		for _, path := range written {
-			_ = r.host.RemoveFile(ctx, path)
+		for _, w := range written {
+			if w.existed {
+				_ = r.host.WriteFile(ctx, w.path, w.content, 0o644)
+			} else {
+				_ = r.host.RemoveFile(ctx, w.path)
+			}
 		}
 		if len(written) > 0 {
-			return fmt.Errorf("%w (the file was removed again, so nginx is unchanged)", err)
+			return fmt.Errorf("%w (the file was put back as it was, so nginx is unchanged)", err)
 		}
 		return err
 	}
@@ -218,18 +260,41 @@ const acmeChallenge = `    location /.well-known/acme-challenge/ {
     }
 `
 
+// render writes a route and its aliases. Names with a certificate redirect
+// http to https and are served there, each with its own certificate; names
+// without one — a domain without https, or an alias whose certificate is
+// still to be issued — are served over http, which is also how the authority
+// reaches them to issue one.
 func render(route *entities.Route) string {
-	if !route.SSL {
-		return fmt.Sprintf(`server {
+	secure, plain := []string{}, []string{}
+	if route.SSL {
+		secure = append(secure, route.Domain)
+	} else {
+		plain = append(plain, route.Domain)
+	}
+	for _, a := range route.Aliases {
+		if a.SSL {
+			secure = append(secure, a.Domain)
+		} else {
+			plain = append(plain, a.Domain)
+		}
+	}
+
+	out := ""
+	if len(plain) > 0 {
+		out += fmt.Sprintf(`server {
     listen 80;
     server_name %s;
 
 %s
 %s}
-`, route.Domain, acmeChallenge, locations(route))
+`, strings.Join(plain, " "), acmeChallenge, locations(route))
 	}
-
-	return fmt.Sprintf(`server {
+	if len(secure) > 0 {
+		if out != "" {
+			out += "\n"
+		}
+		out += fmt.Sprintf(`server {
     listen 80;
     server_name %s;
 
@@ -240,7 +305,21 @@ func render(route *entities.Route) string {
         return 301 https://$host$request_uri;
     }
 }
+`, strings.Join(secure, " "), acmeChallenge)
+	}
+	if route.SSL {
+		out += secureServer(route.Domain, route.CertDir(), route)
+	}
+	for _, a := range route.Aliases {
+		if a.SSL {
+			out += secureServer(a.Domain, a.CertDir(), route)
+		}
+	}
+	return out
+}
 
+func secureServer(name, certificates string, route *entities.Route) string {
+	return fmt.Sprintf(`
 server {
     listen 443 ssl;
     server_name %s;
@@ -249,7 +328,7 @@ server {
     ssl_certificate_key %s/privkey.pem;
 
 %s}
-`, route.Domain, acmeChallenge, route.Domain, route.CertDir(), route.CertDir(), locations(route))
+`, name, certificates, certificates, locations(route))
 }
 
 // locations is the whole domain first, then each path of its own. nginx takes

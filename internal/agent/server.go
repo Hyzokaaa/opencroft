@@ -123,6 +123,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /routes/{domain}/takeover", s.takeOverDomain)
 	mux.HandleFunc("GET /routes/{domain}/tls/plan", s.planTLS)
 	mux.HandleFunc("POST /routes/{domain}/tls", s.enableTLS)
+	mux.HandleFunc("GET /routes/{domain}/aliases/{alias}/plan", s.planAddAlias)
+	mux.HandleFunc("POST /routes/{domain}/aliases/{alias}", s.addAlias)
+	mux.HandleFunc("GET /routes/{domain}/aliases/{alias}/remove/plan", s.planRemoveAlias)
+	mux.HandleFunc("DELETE /routes/{domain}/aliases/{alias}", s.removeAlias)
 	mux.HandleFunc("GET /certificates/wildcard/plan", s.planWildcard)
 	mux.HandleFunc("POST /certificates/wildcard", s.issueWildcard)
 	mux.HandleFunc("POST /expose/plan", s.planExpose)
@@ -274,7 +278,7 @@ func (s *Server) listRoutes(w http.ResponseWriter, r *http.Request) {
 		out[i] = RouteDTO{
 			Domain: route.Domain, Target: route.Target, Port: route.Port,
 			SSL: route.SSL, State: string(route.State), File: route.File,
-			Certificates: route.Certificates, Paths: toRoutePathDTOs(route.Paths),
+			Certificates: route.Certificates, Paths: toRoutePathDTOs(route.Paths), Aliases: toAliasDTOs(route.Aliases),
 		}
 	}
 
@@ -452,10 +456,37 @@ func (s *Server) acceptRoute(r *http.Request) (*routeEntities.Route, error) {
 		paths = append(paths, routeEntities.PathRoute{Prefix: p.Prefix, Target: p.Target, Port: p.Port, Strip: p.Strip})
 	}
 
+	aliases := make([]routeEntities.Alias, 0, len(dto.Aliases))
+	for _, a := range dto.Aliases {
+		if !domainPattern.MatchString(a.Domain) {
+			return nil, errors.New(a.Domain + " is not a domain name")
+		}
+		if a.Certificates != "" && !certificatesPattern.MatchString(a.Certificates) {
+			return nil, errors.New("a certificate is read from croft's own directory or certbot's, nowhere else")
+		}
+		aliases = append(aliases, routeEntities.Alias{Domain: a.Domain, SSL: a.SSL, Certificates: a.Certificates})
+	}
+
 	return routeEntities.NewRoute(routeEntities.RouteProps{
 		Domain: dto.Domain, Target: dto.Target, Port: dto.Port, SSL: dto.SSL,
-		Certificates: dto.Certificates, Paths: paths,
+		Certificates: dto.Certificates, Paths: paths, Aliases: aliases,
 	}), nil
+}
+
+func toAliasDTOs(aliases []routeEntities.Alias) []AliasDTO {
+	out := make([]AliasDTO, len(aliases))
+	for i, a := range aliases {
+		out[i] = AliasDTO{Domain: a.Domain, SSL: a.SSL, Certificates: a.Certificates}
+	}
+	return out
+}
+
+func fromAliasDTOs(aliases []AliasDTO) []routeEntities.Alias {
+	out := make([]routeEntities.Alias, len(aliases))
+	for i, a := range aliases {
+		out[i] = routeEntities.Alias{Domain: a.Domain, SSL: a.SSL, Certificates: a.Certificates}
+	}
+	return out
 }
 
 func toRoutePathDTOs(paths []routeEntities.PathRoute) []PathDTO {

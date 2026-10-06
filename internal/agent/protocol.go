@@ -45,12 +45,19 @@ type RouteDTO struct {
 	SSL    bool   `json:"ssl"`
 	// Certificates is where the certificate is read from when it is not
 	// croft's own — certbot's, for a domain taken over from a vhost it set up.
-	Certificates string    `json:"certificates,omitempty"`
-	Paths        []PathDTO `json:"paths,omitempty"`
-	State        string    `json:"state"`
-	File         string    `json:"file"`
+	Certificates string     `json:"certificates,omitempty"`
+	Paths        []PathDTO  `json:"paths,omitempty"`
+	Aliases      []AliasDTO `json:"aliases,omitempty"`
+	State        string     `json:"state"`
+	File         string     `json:"file"`
 	// Answers is false when nothing accepts a connection at Target:Port.
 	Answers bool `json:"answers"`
+}
+
+type AliasDTO struct {
+	Domain       string `json:"domain"`
+	SSL          bool   `json:"ssl"`
+	Certificates string `json:"certificates,omitempty"`
 }
 
 type PathDTO struct {

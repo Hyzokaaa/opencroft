@@ -86,6 +86,7 @@ func (s *EditRoute) Prepare(ctx context.Context, props EditRouteProps) (*entitie
 		SSL:          existing.SSL,
 		Certificates: existing.Certificates,
 		Paths:        existing.Paths,
+		Aliases:      existing.Aliases,
 		State:        enums.StateManaged,
 	})
 

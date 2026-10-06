@@ -80,6 +80,7 @@ func (s *Server) tlsChangeFor(ctx context.Context, domain string) (tlsChange, er
 		SSL:          true,
 		Certificates: wildcard,
 		Paths:        existing.Paths,
+		Aliases:      existing.Aliases,
 		State:        routeEnums.StateManaged,
 	})}
 

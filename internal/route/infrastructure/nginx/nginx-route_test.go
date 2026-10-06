@@ -2,6 +2,7 @@ package nginx
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -118,5 +119,63 @@ func TestARouteReadsBackAsItWasWritten(t *testing.T) {
 	}
 	if read.State != "managed" {
 		t.Errorf("croft's own file reads as %s", read.State)
+	}
+}
+
+// A route with aliases is one file and reads back as one route: each https
+// name with its own certificate, a name still waiting for one over http, and
+// every name answering with the same paths.
+func TestAliasesAreOneRouteWithACertificateEach(t *testing.T) {
+	written := entities.NewRoute(entities.RouteProps{
+		Domain: "app.example.com", Target: "10.0.0.200", Port: 80, SSL: true,
+		Certificates: "/var/lib/croft/certificates/_.example.com",
+		Paths:        []entities.PathRoute{{Prefix: "/api/", Target: "10.0.0.200", Port: 3000, Strip: true}},
+		Aliases: []entities.Alias{
+			{Domain: "help.customer.com", SSL: true},
+			{Domain: "support.other.org"},
+		},
+	})
+	body := render(written)
+	if strings.Count(body, "listen 443 ssl;") != 2 || strings.Count(body, "location /api/ {") != 3 ||
+		!strings.Contains(body, "ssl_certificate /var/lib/croft/certificates/help.customer.com/fullchain.pem;") {
+		t.Errorf("rendered:\n%s", body)
+	}
+
+	fake := host.NewFake()
+	repository := NewNginxRouteRepository(fake, "/etc/nginx/croft.d")
+	file := "/etc/nginx/croft.d/app.example.com.conf"
+	fake.Files[file] = marked(written)
+	fake.Responses["nginx -T"] = "# configuration file " + file + ":\n" + marked(written)
+
+	all, err := repository.FindAll(context.Background())
+	if err != nil || len(all) != 1 {
+		t.Fatalf("read %d routes: %v", len(all), err)
+	}
+	read := all[0]
+	if read.Domain != "app.example.com" || len(read.Aliases) != 2 {
+		t.Fatalf("read back as %+v", read)
+	}
+	if a := read.Aliases[0]; a.Domain != "help.customer.com" || !a.SSL || a.CertDir() != "/var/lib/croft/certificates/help.customer.com" {
+		t.Errorf("the https alias: %+v", a)
+	}
+	if a := read.Aliases[1]; a.Domain != "support.other.org" || a.SSL {
+		t.Errorf("the alias without a certificate: %+v", a)
+	}
+}
+
+// A rewrite nginx rejects puts the previous file back — it used to remove the
+// file, and with it the domain.
+func TestARejectedRewriteKeepsTheDomain(t *testing.T) {
+	fake := host.NewFake()
+	repository := NewNginxRouteRepository(fake, "/etc/nginx/croft.d")
+	file := "/etc/nginx/croft.d/app.example.com.conf"
+	fake.Files[file] = "the file that was there"
+	fake.Failures["nginx -t"] = errors.New("invalid")
+
+	_ = repository.Write(context.Background(), entities.NewRoute(entities.RouteProps{
+		Domain: "app.example.com", Target: "10.0.0.200", Port: 80,
+	}))
+	if fake.Files[file] != "the file that was there" {
+		t.Errorf("after a rejected rewrite the file is %q", fake.Files[file])
 	}
 }

@@ -209,7 +209,7 @@ func (c *Client) Routes(ctx context.Context) ([]*routeEntities.Route, error) {
 		}
 		out = append(out, routeEntities.NewRoute(routeEntities.RouteProps{
 			Domain: dto.Domain, Target: dto.Target, Port: dto.Port, SSL: dto.SSL,
-			Certificates: dto.Certificates, Paths: paths,
+			Certificates: dto.Certificates, Paths: paths, Aliases: fromAliasDTOs(dto.Aliases),
 			State: routeEnums.ManagedState(dto.State), File: dto.File,
 		}))
 	}
@@ -281,6 +281,7 @@ func toRouteDTO(route *routeEntities.Route) RouteDTO {
 		Domain: route.Domain, Target: route.Target, Port: route.Port,
 		SSL: route.SSL, State: string(route.State), File: route.File,
 		Certificates: route.Certificates, Paths: toRoutePathDTOs(route.Paths),
+		Aliases: toAliasDTOs(route.Aliases),
 	}
 }
 
@@ -463,4 +464,30 @@ func (c *Client) Annotations(ctx context.Context, name string) (map[string]strin
 	var out map[string]string
 	err := c.call(ctx, http.MethodGet, "/instances/"+url.PathEscape(name)+"/annotations", nil, &out)
 	return out, err
+}
+
+// ── More names for a route ───────────────────────────────────────────────────
+
+func (r *RouteClient) AliasPlan(ctx context.Context, domain, alias string) (plan.Plan, error) {
+	var response PlanResponse
+	err := r.client.call(ctx, http.MethodGet,
+		"/routes/"+url.PathEscape(domain)+"/aliases/"+url.PathEscape(alias)+"/plan", nil, &response)
+	return response.Plan, err
+}
+
+func (r *RouteClient) AddAlias(ctx context.Context, domain, alias string, report func(int, string)) error {
+	return r.client.streamed(ctx, http.MethodPost,
+		"/routes/"+url.PathEscape(domain)+"/aliases/"+url.PathEscape(alias), nil, report)
+}
+
+func (r *RouteClient) AliasRemovalPlan(ctx context.Context, domain, alias string) (plan.Plan, error) {
+	var response PlanResponse
+	err := r.client.call(ctx, http.MethodGet,
+		"/routes/"+url.PathEscape(domain)+"/aliases/"+url.PathEscape(alias)+"/remove/plan", nil, &response)
+	return response.Plan, err
+}
+
+func (r *RouteClient) RemoveAlias(ctx context.Context, domain, alias string, report func(int, string)) error {
+	return r.client.streamed(ctx, http.MethodDelete,
+		"/routes/"+url.PathEscape(domain)+"/aliases/"+url.PathEscape(alias), nil, report)
 }

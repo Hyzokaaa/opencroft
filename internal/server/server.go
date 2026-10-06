@@ -129,6 +129,8 @@ func api(deps Deps) *http.ServeMux {
 	mux.HandleFunc("POST /api/hosts/{hostId}/certificates/wildcard", deps.issueWildcard)
 	mux.HandleFunc("POST /api/hosts/{hostId}/routes/{domain}/takeover", deps.takeOver)
 	mux.HandleFunc("PUT /api/hosts/{hostId}/routes/{domain}/paths", deps.setPath)
+	mux.HandleFunc("POST /api/hosts/{hostId}/routes/{domain}/aliases", deps.addAlias)
+	mux.HandleFunc("DELETE /api/hosts/{hostId}/routes/{domain}/aliases", deps.removeAlias)
 	mux.HandleFunc("DELETE /api/hosts/{hostId}/routes/{domain}/paths", deps.removePath)
 
 	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/services", deps.listServices)
