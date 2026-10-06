@@ -48,12 +48,15 @@ export function routesOf(containers, routes) {
   return routes.filter((r) => addresses.has(r.target) || (r.paths ?? []).some((p) => addresses.has(p.target)))
 }
 
-// domainsOf is every domain, or prefix of one, reaching these containers,
-// with the container it reaches — which is where a click on it goes.
+// domainsOf is every domain, other name of one, or prefix of one, reaching
+// these containers, with the container it reaches — which is where a click on
+// it goes.
 function domainsOf(containers, routes) {
   const byAddress = new Map(containers.filter((c) => c.address).map((c) => [c.address, c.name]))
   return routes.flatMap((r) => [
     ...(byAddress.has(r.target) ? [{ key: r.domain, label: r.domain, ssl: r.ssl, container: byAddress.get(r.target) }] : []),
+    ...(byAddress.has(r.target) ? (r.aliases ?? []) : [])
+      .map((a) => ({ key: a.domain, label: a.domain, ssl: a.ssl, container: byAddress.get(r.target) })),
     ...(r.paths ?? [])
       .filter((p) => byAddress.has(p.target))
       .map((p) => ({ key: r.domain + p.prefix, label: r.domain + p.prefix, ssl: r.ssl, container: byAddress.get(p.target) })),

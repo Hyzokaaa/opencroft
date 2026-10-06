@@ -5,7 +5,7 @@ import Gated from './Gated.jsx'
 import LogView from './LogView.jsx'
 import PlanDialog from './PlanDialog.jsx'
 import Actions from './Actions.jsx'
-import { routeActions } from './RouteTable.jsx'
+import { routeActions, aliasActions, AliasState } from './RouteTable.jsx'
 import { useServices, useDatabases, useFoundDatabases } from '../lib/useContainer.js'
 import { href } from '../lib/useRoute.js'
 import { OWNERSHIP, SEVERITY, VERBS, remediesFor } from '../lib/vocabulary.js'
@@ -55,12 +55,15 @@ export default function Container({
   const external = data?.external ?? []
   const sites = data?.sites ?? []
   const snapshots = data?.snapshots ?? []
-  // What reaches this container: whole domains, and prefixes of domains that
-  // send one path here while the rest goes elsewhere.
+  // What reaches this container: whole domains, the other names they answer
+  // at, and prefixes of domains that send one path here while the rest goes
+  // elsewhere.
   // Each keeps its route, so the same actions the Domains list offers are
   // offered here: this is where a person lands when something is wrong.
   const domains = routes.flatMap((r) => [
     ...(r.target === container.address ? [{ key: r.domain, domain: r.domain, ssl: r.ssl, port: r.port, route: r }] : []),
+    ...(r.target === container.address ? (r.aliases ?? []) : [])
+      .map((a) => ({ key: a.domain, domain: a.domain, ssl: a.ssl, port: r.port, route: r, alias: a })),
     ...(r.paths ?? [])
       .filter((p) => p.target === container.address)
       .map((p) => ({ key: r.domain + p.prefix, domain: r.domain + p.prefix, ssl: r.ssl, port: p.port, route: r, prefix: p.prefix })),
@@ -208,8 +211,18 @@ export default function Container({
                   <span className="text-muted">{d.ssl ? 'https://' : 'http://'}</span>
                   {d.domain}
                   <span className="text-muted"> &rarr; :{d.port}</span>
+                  {d.alias && (
+                    <span className="mt-0.5 block font-sans text-faint">
+                      another name for {d.route.domain}
+                      {d.route.ssl && !d.alias.ssl && <> &middot; <AliasState route={d.route} alias={d.alias} /></>}
+                    </span>
+                  )}
                 </span>
-                {d.prefix ? (
+                {d.alias ? (
+                  d.route.state === 'managed' && (
+                    <Actions label={`Actions for ${d.domain}`} actions={aliasActions(d.route, d.alias, routeHandlers)} />
+                  )
+                ) : d.prefix ? (
                   d.route.state === 'managed' && (
                     <Actions
                       label={`Actions for ${d.domain}`}

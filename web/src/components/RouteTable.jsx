@@ -3,7 +3,7 @@ import Actions from './Actions.jsx'
 import { OWNERSHIP, VERBS } from '../lib/vocabulary.js'
 import { href } from '../lib/useRoute.js'
 
-export default function RouteTable({ routes, instances, certificates = [], problems, highlighted, onHover, onRemoveDomain, onEnableTLS, onEditDomain, onAddPath, onRemovePath, onTakeOver, empty }) {
+export default function RouteTable({ routes, instances, certificates = [], problems, highlighted, onHover, onRemoveDomain, onEnableTLS, onEditDomain, onAddPath, onRemovePath, onTakeOver, onAddAlias, onRetryAlias, onRemoveAlias, empty }) {
   if (!routes.length) {
     return <p className="px-4 py-8 text-center text-sm text-muted">{empty ?? 'No domains routed yet.'}</p>
   }
@@ -57,6 +57,32 @@ export default function RouteTable({ routes, instances, certificates = [], probl
                       <Chip label={ownership.label} tone={ownership.tone} explain={ownership.explain} />
                     )}
                   </div>
+                  {/* Other names answering exactly like it — a customer's own
+                      domain — under the one they stand in for. */}
+                  {(r.aliases ?? []).map((a) => (
+                    <div key={a.domain} className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 pl-5 text-xs">
+                      <span className="text-faint">also</span>
+                      <span className="flex items-center gap-1.5">
+                        {a.ssl && <Lock />}
+                        <span className="font-mono">{a.domain}</span>
+                      </span>
+                      <AliasState route={r} alias={a} />
+                      {r.state === 'managed' && (
+                        <span className="flex gap-1">
+                          {aliasActions(r, a, { onRetryAlias, onRemoveAlias }).filter(Boolean).map((act) => (
+                            <button
+                              key={act.label}
+                              onClick={(e) => { e.stopPropagation(); act.onClick() }}
+                              aria-label={act.name}
+                              className={`min-h-6 rounded px-1.5 text-faint transition ${act.danger ? 'hover:text-problem' : 'hover:text-ink'}`}
+                            >
+                              {act.label}
+                            </button>
+                          ))}
+                        </span>
+                      )}
+                    </div>
+                  ))}
                   {/* A prefix served from somewhere of its own, under the domain
                       it belongs to — that is where a person looks for /api/. */}
                   {(r.paths ?? []).map((p) => (
@@ -98,7 +124,7 @@ export default function RouteTable({ routes, instances, certificates = [], probl
                 <td className="px-4 py-2.5 text-right">
                   <Actions
                     label={`Actions for ${r.domain}`}
-                    actions={routeActions(r, { onRemoveDomain, onEnableTLS, onEditDomain, onAddPath, onTakeOver })}
+                    actions={routeActions(r, { onRemoveDomain, onEnableTLS, onEditDomain, onAddPath, onTakeOver, onAddAlias })}
                   />
                 </td>
               </tr>
@@ -112,7 +138,7 @@ export default function RouteTable({ routes, instances, certificates = [], probl
 
 // routeActions is what can be done to a domain, wherever it is listed — here
 // and on the page of the container it serves — so the two never disagree.
-export function routeActions(r, { onRemoveDomain, onEnableTLS, onEditDomain, onAddPath, onTakeOver }) {
+export function routeActions(r, { onRemoveDomain, onEnableTLS, onEditDomain, onAddPath, onTakeOver, onAddAlias }) {
   // A vhost croft did not write is not croft's to edit or remove. What is on
   // offer is taking it over — explicitly, with a plan, the original moved
   // aside rather than lost.
@@ -122,6 +148,8 @@ export function routeActions(r, { onRemoveDomain, onEnableTLS, onEditDomain, onA
   return [
     { label: 'Edit', onClick: () => onEditDomain?.(r) },
     r.state === 'managed' && { label: 'Add path', onClick: () => onAddPath?.(r) },
+    // Another name for this same domain — not Add domain, which is a new one.
+    r.state === 'managed' && { label: 'Add name', onClick: () => onAddAlias?.(r) },
     !r.ssl && { label: 'Enable https', onClick: () => onEnableTLS?.(r) },
     // On https already, but renewed by certbot: two programs owning one
     // domain is how renewal breaks quietly when the DNS moves.
@@ -129,6 +157,24 @@ export function routeActions(r, { onRemoveDomain, onEnableTLS, onEditDomain, onA
       { label: 'Issue with croft', onClick: () => onEnableTLS?.(r) },
     { label: 'Remove…', onClick: () => onRemoveDomain?.(r.domain), danger: true },
   ]
+}
+
+// aliasActions is what can be done to one other name of a domain, here and on
+// the container's page. Retrying https is adding it again: the certificate it
+// could not get then is asked for once more.
+export function aliasActions(r, a, { onRetryAlias, onRemoveAlias }) {
+  return [
+    r.ssl && !a.ssl && { label: 'Retry https…', name: `Retry https for ${a.domain}`, onClick: () => onRetryAlias?.(r, a.domain) },
+    { label: 'Remove…', name: `Remove ${a.domain}`, onClick: () => onRemoveAlias?.(r, a.domain), danger: true },
+  ]
+}
+
+// AliasState says how an other name is served. On an https domain, one still
+// on http is waiting for a certificate — nearly always for its DNS to point
+// here — and says so in words, not only by the missing lock.
+export function AliasState({ route, alias }) {
+  if (alias.ssl || !route.ssl) return null
+  return <span className="text-caution">http only — waiting for its certificate</span>
 }
 
 // The certificate a domain is served with, and how long it has: the deadline

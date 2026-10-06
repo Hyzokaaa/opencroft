@@ -52,6 +52,9 @@ export default function App() {
 // The shape a project name has, said in the form rather than by the daemon.
 const PROJECT_NAME = { pattern: '^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$', invalid: 'Lowercase letters, digits and dashes, starting and ending with a letter or digit.' }
 const CONTAINER_NAME = { pattern: '^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$', invalid: 'Letters, digits and dashes, starting with a letter or digit.' }
+// A host name, labels of letters, digits and dashes: what is pasted from a
+// browser — https://, a path — is said to be wrong where it was typed.
+const DOMAIN_PATTERN = '^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z][A-Za-z0-9-]{0,61}[A-Za-z0-9]$'
 
 function Dashboard({ onSignOut, onSessionLost }) {
   const { data, error, agentDown, agentDetail, host, fetchedAt, loading, unauthorized, reload } = useOverview()
@@ -265,6 +268,54 @@ function Dashboard({ onSignOut, onSessionLost }) {
       title: `Serve ${route.domain}${prefix} like the rest of it`,
       url: `/api/hosts/local/routes/${route.domain}/paths?prefix=${encodeURIComponent(prefix)}`,
       method: 'DELETE',
+    })
+  }
+
+  // Another name answering exactly like the domain — same container, same
+  // paths — the way a customer of a SaaS points support.their.com at it. Not
+  // a new domain: that is Add domain, with a container of its own to pick.
+  // On an https domain it gets a certificate of its own, and until one can be
+  // issued it answers over http; Retry https asks for it again.
+  function addAlias(route) {
+    const publicAddress = (host?.addresses ?? []).find((a) => a.public)?.address
+    const pointing = publicAddress
+      ? `Its DNS has to point at this server (${publicAddress}) first — DNS is not ours to change.`
+      : 'Its DNS has to point at this server first — DNS is not ours to change.'
+    setDialog({
+      title: `Another name for ${route.domain}`,
+      url: `/api/hosts/local/routes/${route.domain}/aliases`,
+      method: 'POST',
+      defaults: { alias: '' },
+      fields: [
+        { name: 'alias', label: 'Domain', placeholder: 'support.customer.com', autoFocus: true,
+          pattern: DOMAIN_PATTERN,
+          invalid: 'A domain like support.customer.com — without https:// or a path.',
+          hint: `Answers exactly like ${route.domain}: same container, same paths. ${pointing}` +
+            (route.ssl ? ' It gets its own certificate; until that can be issued it answers over http.' : '') },
+      ],
+    })
+  }
+
+  // The certificate an alias could not get when it was added, asked for again:
+  // the same request as adding it, which keeps what is there.
+  function retryAlias(route, alias) {
+    setDialog({
+      title: `Serve ${alias} over https`,
+      url: `/api/hosts/local/routes/${route.domain}/aliases`,
+      method: 'POST',
+      defaults: { alias },
+    })
+  }
+
+  // Nothing is lost but the name: visitors at it stop reaching the app, which
+  // for a customer's own domain is the whole of their support desk.
+  function removeAlias(route, alias) {
+    setDialog({
+      title: `Stop answering at ${alias}`,
+      url: `/api/hosts/local/routes/${route.domain}/aliases?alias=${encodeURIComponent(alias)}`,
+      method: 'DELETE',
+      destructive: true,
+      verb: `Stop answering at ${alias}`,
     })
   }
 
@@ -485,7 +536,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
   // A subject named in a finding: a container opens its page, a domain the
   // page of the container serving it.
   function focusSubject(subject) {
-    const route = data?.routes.find((r) => r.domain === subject)
+    const route = data?.routes.find((r) => r.domain === subject || (r.aliases ?? []).some((a) => a.domain === subject))
     const served = route && data.instances.find((i) => i.address === route.target)
     const name = served?.name ?? data?.instances.find((i) => i.name === subject)?.name
     location.hash = name ? href('containers', name) : href('domains')
@@ -522,6 +573,9 @@ function Dashboard({ onSignOut, onSessionLost }) {
     onEditDomain: editDomain,
     onAddPath: addPath,
     onRemovePath: removePath,
+    onAddAlias: addAlias,
+    onRetryAlias: retryAlias,
+    onRemoveAlias: removeAlias,
     onTakeOver: takeOver,
   }
 
