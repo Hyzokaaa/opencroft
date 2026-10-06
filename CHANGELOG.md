@@ -14,6 +14,9 @@ descargó.
 
 ## No publicado
 
+### v0.31.1 — 2026-10-06
+- fix: give a site served by its container's web server a domain on port 80, and warn before a domain leads to a service that is only half of an app
+
 ### v0.31.0 — 2026-10-06
 - feat: a page for each service with its domains, and every category a list whose rows open what they name
 - feat: give a domain to a service rather than to a vhost, keep a route's other names when its own is removed, and mark the last event of a job
