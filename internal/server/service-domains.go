@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	routeEntities "github.com/Hyzokaaa/opencroft/internal/route/domain/entities"
 	routeEnums "github.com/Hyzokaaa/opencroft/internal/route/domain/enums"
@@ -40,8 +41,25 @@ func entryRoute(routes []*routeEntities.Route, address string, port int) *routeE
 	return found
 }
 
+// mountedAt is the first path of a managed route that leads to address:port,
+// as "domain/prefix/", or "" when none does.
+func mountedAt(routes []*routeEntities.Route, address string, port int) string {
+	for _, route := range routes {
+		if route.State != routeEnums.StateManaged {
+			continue
+		}
+		for _, p := range route.Paths {
+			if p.Target == address && p.Port == port {
+				return route.Domain + p.Prefix
+			}
+		}
+	}
+	return ""
+}
+
 // servicePort is where the service listens: its own port, or — for a site
-// served by the container's web server — the container's.
+// served by the container's web server — the container's, and that web
+// server's port 80 when the container was set up by hand and has none.
 func (d Deps) servicePort(ctx context.Context, container, service string) (string, int, error) {
 	instance, err := d.Instances.FindByName(ctx, container)
 	if err != nil {
@@ -65,6 +83,9 @@ func (d Deps) servicePort(ctx context.Context, container, service string) (strin
 		port := s.Port
 		if port == 0 {
 			port = instance.Port
+		}
+		if port == 0 && s.Adopted != nil && s.Adopted.Site != "" {
+			port = 80
 		}
 		if port == 0 {
 			return "", 0, fmt.Errorf("%s listens on no port croft knows of, so a domain has nowhere to lead", service)
@@ -101,7 +122,7 @@ func (d Deps) addServiceDomain(w http.ResponseWriter, r *http.Request) {
 		d.joinRoute(w, r, entry, service, container, body.Domain)
 		return
 	}
-	d.newServiceRoute(w, r, address, port, service, container, body.Domain)
+	d.newServiceRoute(w, r, address, port, service, container, body.Domain, mountedAt(routes, address, port))
 }
 
 // joinRoute adds the name to the route the service's domains already share.
@@ -136,7 +157,7 @@ func (d Deps) joinRoute(w http.ResponseWriter, r *http.Request, entry *routeEnti
 
 // newServiceRoute is the service's first domain: a route of its own, and https
 // right after, once the name is seen to reach this server.
-func (d Deps) newServiceRoute(w http.ResponseWriter, r *http.Request, address string, port int, service, container, domain string) {
+func (d Deps) newServiceRoute(w http.ResponseWriter, r *http.Request, address string, port int, service, container, domain, mount string) {
 	// AddRoute is told the container by name; it reads the address itself.
 	route, p, err := d.AddRoute.Prepare(r.Context(), routeServices.AddRouteProps{
 		Domain: domain, Target: container, Port: port,
@@ -158,6 +179,14 @@ func (d Deps) newServiceRoute(w http.ResponseWriter, r *http.Request, address st
 		summary := fmt.Sprintf("Make %s reach %s in %s, on port %d.", route.Domain, service, container, port)
 		if secure {
 			summary += " It is served over http first, then over https once croft sees it reach this server."
+		}
+		// A service reached only as a path of another domain — an API behind
+		// /api/ — is half of an app. A domain of its own leads to it alone,
+		// which is right for an API and wrong for a customer's copy of the app.
+		if mount != "" {
+			summary += fmt.Sprintf(" Careful: %s is reached today as %s, behind what %s serves at its root. "+
+				"This domain would lead to %s alone. To give the whole app another domain, add it to the "+
+				"service at that root instead.", service, mount, strings.SplitN(mount, "/", 2)[0], service)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"summary": summary, "plan": full})
 		return
