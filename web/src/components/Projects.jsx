@@ -5,6 +5,7 @@ import Activity from './Activity.jsx'
 import InstanceTable, { StatusDot } from './InstanceTable.jsx'
 import RouteTable from './RouteTable.jsx'
 import { href } from '../lib/useRoute.js'
+import { allNames } from '../lib/domains.js'
 import { readJSON, humane, isAgentDown } from '../lib/api.js'
 
 // A project is the containers that belong together — a web, the backend and
@@ -285,8 +286,8 @@ export default function ProjectPage({ name, data, projects, problems, commandMod
         <InstanceTable {...tableProps} instances={containers} empty="No containers in this project yet." />
       </Card>
 
-      <Card title="Domains" count={routes.length}>
-        <RouteTable {...tableProps} routes={routes} empty="No domain reaches this project yet. Add one from a container." />
+      <Card title="Domains" count={allNames(routes).length}>
+        <RouteTable {...tableProps} routes={routes} empty="No domain reaches this project yet. A domain is given to a service, on its page." />
       </Card>
 
       <Card title="Databases">

@@ -89,7 +89,9 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
       source.onmessage = (message) => {
         const event = JSON.parse(message.data)
         setEvents((current) => [...current, event])
-        if (event.failed) setError(event.text)
+        // The last event sums the job up as "Stopped: why"; the status line
+        // below says "Stopped:" itself, so only the why is kept.
+        if (event.failed) setError(event.text.replace(/^Stopped: /, ''))
       }
       source.addEventListener('end', () => {
         source.close()
@@ -514,9 +516,16 @@ export function Progress({ steps, events, error, done }) {
   const current = events.reduce((furthest, e) => Math.max(furthest, e.step ?? 0), 0)
   const entries = group(events)
 
+  // A failure is reported once, by the job, not by the step it happened in —
+  // so the step that was running when it stopped is the one that failed, and
+  // it gets the cross a tick would otherwise have lied about.
+  if (error && entries.length && !entries.some((e) => e.failed)) {
+    entries[entries.length - 1].failed = true
+  }
+
   // While a step is still running it has not been got through, so counting it
-  // would put the bar ahead of the work.
-  const through = done || error ? current : Math.max(0, current - 1)
+  // would put the bar ahead of the work — and neither is one that failed.
+  const through = done && !error ? current : Math.max(0, current - 1)
 
   return (
     <div>
@@ -589,10 +598,16 @@ export function Progress({ steps, events, error, done }) {
 // group folds repeated reports for the same step into one entry. A step that
 // narrates while it works is still one step, and repeating its command once
 // per message suggests it ran that many times.
+//
+// The job's last event sums it up — "Done.", or "Stopped: why" — and is said
+// once, by the status line under the list, not again as a step of its own.
+// Jobs recorded before that event was marked end with a failed event at step
+// 0 instead, and are read the same way.
 function group(events) {
   const entries = []
 
   for (const event of events) {
+    if (event.end || (event.step === 0 && event.failed)) continue
     const last = entries[entries.length - 1]
 
     if (last && event.step > 0 && last.step === event.step) {

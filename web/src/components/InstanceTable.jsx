@@ -85,10 +85,12 @@ export default function InstanceTable({ instances, problems, highlighted, onHove
                   {i.domain ? (
                     <>
                       {i.domain}
-                      {/* One container commonly answers on several names. */}
+                      {/* One container commonly answers on several names.
+                          Which ones is said in words, not in a title only a
+                          mouse can reach. */}
                       {i.domains?.length > 1 && (
-                        <span className="text-faint" title={i.domains.join('\n')}>
-                          {' '}+{i.domains.length - 1}
+                        <span className="mt-0.5 block break-all text-[11px] text-faint">
+                          +{i.domains.length - 1}: {i.domains.filter((d) => d !== i.domain).join(', ')}
                         </span>
                       )}
                     </>

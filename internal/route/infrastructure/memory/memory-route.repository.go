@@ -67,6 +67,13 @@ func (r *MemoryRouteRepository) Write(_ context.Context, route *entities.Route) 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// What croft writes is croft's, as the nginx repository reads it back
+	// from the file's marker.
+	if route.State == "" {
+		written := *route
+		written.State = enums.StateManaged
+		route = &written
+	}
 	r.routes[route.Domain] = route
 	return nil
 }

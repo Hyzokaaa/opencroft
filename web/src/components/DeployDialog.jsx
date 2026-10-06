@@ -112,7 +112,11 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
           defaults: body(service),
           verb: deployed ? 'Redeploy' : 'Deploy',
           // Running and reachable by nothing is half done.
-          next: !container.domains?.length && onAddDomain ? { label: 'Add a domain…', onClick: onAddDomain } : null,
+          // The domain is given to the service just deployed, not to the
+          // container.
+          next: !container.domains?.length && onAddDomain
+            ? { label: 'Add a domain…', onClick: () => onAddDomain({ name: service.name }) }
+            : null,
         }}
         onClose={onClose}
         dirty={dirty}

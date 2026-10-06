@@ -137,8 +137,9 @@ func (d Deps) joinRoute(w http.ResponseWriter, r *http.Request, entry *routeEnti
 // newServiceRoute is the service's first domain: a route of its own, and https
 // right after, once the name is seen to reach this server.
 func (d Deps) newServiceRoute(w http.ResponseWriter, r *http.Request, address string, port int, service, container, domain string) {
+	// AddRoute is told the container by name; it reads the address itself.
 	route, p, err := d.AddRoute.Prepare(r.Context(), routeServices.AddRouteProps{
-		Domain: domain, Target: address, Port: port,
+		Domain: domain, Target: container, Port: port,
 	})
 	if err != nil {
 		writeError(w, routeStatusFor(err), err)

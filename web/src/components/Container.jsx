@@ -1,14 +1,16 @@
 import { useEffect, useId, useState } from 'react'
 import Card from './Card.jsx'
 import Chip from './Chip.jsx'
+import Chevron from './Chevron.jsx'
 import Gated from './Gated.jsx'
 import LogView from './LogView.jsx'
 import PlanDialog from './PlanDialog.jsx'
 import Actions from './Actions.jsx'
-import { routeActions, aliasActions, AliasState } from './RouteTable.jsx'
+import DomainList from './DomainList.jsx'
 import { useServices, useDatabases, useFoundDatabases } from '../lib/useContainer.js'
-import { href } from '../lib/useRoute.js'
+import { href, serviceHref } from '../lib/useRoute.js'
 import { OWNERSHIP, SEVERITY, VERBS, remediesFor } from '../lib/vocabulary.js'
+import { byService, reachingContainer } from '../lib/domains.js'
 import { readJSON } from '../lib/api.js'
 
 // What a container actually is, once something has been deployed into it.
@@ -20,16 +22,17 @@ import { readJSON } from '../lib/api.js'
 // The order follows that question: what reaches it, what it runs, and how to
 // undo it. Domains are identity and stay short; snapshots are a cellar and
 // grow without limit, so they go last.
+//
+// Each service has a page of its own, where everything done to it is done —
+// its domains included. Here it is a row that says how it is and leads there.
 export default function Container({
   container,
   routes,
+  certificates = [],
+  publicAddress,
   commandMode,
   onDeploy,
   onRollback,
-  onDestroy,
-  onPowerService,
-  onRedeploy,
-  onEnvironment,
   onPowerUnit,
   onAdopt,
   onAddDomain,
@@ -37,6 +40,7 @@ export default function Container({
   onPower,
   onDestroyContainer,
   routeHandlers,
+  onAddAlias,
   findings = [],
   instances = [],
   onRemedy,
@@ -57,17 +61,10 @@ export default function Container({
   const snapshots = data?.snapshots ?? []
   // What reaches this container: whole domains, the other names they answer
   // at, and prefixes of domains that send one path here while the rest goes
-  // elsewhere.
-  // Each keeps its route, so the same actions the Domains list offers are
-  // offered here: this is where a person lands when something is wrong.
-  const domains = routes.flatMap((r) => [
-    ...(r.target === container.address ? [{ key: r.domain, domain: r.domain, ssl: r.ssl, port: r.port, route: r }] : []),
-    ...(r.target === container.address ? (r.aliases ?? []) : [])
-      .map((a) => ({ key: a.domain, domain: a.domain, ssl: a.ssl, port: r.port, route: r, alias: a })),
-    ...(r.paths ?? [])
-      .filter((p) => p.target === container.address)
-      .map((p) => ({ key: r.domain + p.prefix, domain: r.domain + p.prefix, ssl: r.ssl, port: p.port, route: r, prefix: p.prefix })),
-  ])
+  // elsewhere. Each keeps its route, so the same actions the Domains list
+  // offers are offered here: this is where a person lands when something is
+  // wrong.
+  const domains = reachingContainer(routes, container.address)
   const running = container.status === 'running'
   // What the home page says is wrong with this container, said here too.
   const mine = new Set([container.name, ...domains.filter((d) => !d.prefix).map((d) => d.domain)])
@@ -94,14 +91,12 @@ export default function Container({
 
         {/* A stopped container can be started and nothing else here: what
             comes next is starting it, so that is the button that stands out,
-            and the two that need it running say so. */}
+            and the one that needs it running says so. A domain is given to a
+            service, on its page — not to the container. */}
         {running ? (
           <div className="flex flex-wrap items-center justify-end gap-2">
             <button onClick={() => onPower(container, true)} className={HEADER_SECONDARY}>
               Stop
-            </button>
-            <button onClick={() => onAddDomain(container)} className={HEADER_SECONDARY}>
-              Add domain
             </button>
             <Gated reason={deployBlocked} onClick={() => onDeploy(container)} className={HEADER_PRIMARY}>
               Deploy a service
@@ -112,9 +107,6 @@ export default function Container({
             <span id={blockedId} className="text-xs text-muted">
               Start it first: deploying and adding need it running.
             </span>
-            <Gated reasonId={blockedId} className={HEADER_SECONDARY}>
-              Add domain
-            </Gated>
             <Gated reasonId={blockedId} className={HEADER_SECONDARY}>
               Deploy a service
             </Gated>
@@ -151,28 +143,7 @@ export default function Container({
         </button>
       </p>
 
-      {problems.map((f) => {
-        const tone = SEVERITY[f.severity] ?? SEVERITY.warning
-        const remedies = remediesFor(f, { instances, routes }).filter((r) => r.act !== 'open')
-        return (
-          <div key={f.kind + f.subject} className="flex flex-wrap items-center gap-3 rounded-lg border border-edge bg-panel px-4 py-2.5 text-xs">
-            <span className={`h-4 w-[3px] rounded ${tone.accent}`} aria-hidden="true" />
-            <span className="min-w-0 flex-1">
-              <span className="sr-only">{tone.label}: </span>
-              <span className="font-mono">{f.subject}</span> <span className="text-muted">&mdash; {f.message}</span>
-            </span>
-            {remedies.map((r) => (
-              <button
-                key={r.act}
-                onClick={() => onRemedy(r)}
-                className="rounded border border-edge-strong bg-raised px-2 py-0.5 text-xs transition hover:border-ink/30"
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
-        )
-      })}
+      <Problems problems={problems} instances={instances} routes={routes} onRemedy={onRemedy} />
 
       {/* Before anything was read, a failure is said in each card, with a way
           to try again. After, the last reading stays and this says how old
@@ -192,50 +163,32 @@ export default function Container({
         commandMode={commandMode}
         commands={['nginx -T | grep server_name']}
         action={
-          <Gated
-            reasonId={running ? undefined : blockedId}
-            onClick={() => onAddDomain(container)}
-            className="text-xs text-muted transition hover:text-ink"
-          >
-            Add
-          </Gated>
+          // With a service croft deployed, a domain is given to it on its
+          // page. With none, there is nothing to give it to but the
+          // container's own port, and this is the only way in.
+          read && services.length === 0 && (
+            <Gated
+              reasonId={running ? undefined : blockedId}
+              onClick={() => onAddDomain(container)}
+              className="text-xs text-muted transition hover:text-ink"
+            >
+              Add domain
+            </Gated>
+          )
         }
       >
-        {domains.length === 0 ? (
-          <p className="px-4 py-5 text-center text-xs text-muted">Nothing points here yet.</p>
-        ) : (
-          <ul className="divide-y divide-edge">
-            {domains.map((d) => (
-              <li key={d.key} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
-                <span className="font-mono text-xs">
-                  <span className="text-muted">{d.ssl ? 'https://' : 'http://'}</span>
-                  {d.domain}
-                  <span className="text-muted"> &rarr; :{d.port}</span>
-                  {d.alias && (
-                    <span className="mt-0.5 block font-sans text-faint">
-                      another name for {d.route.domain}
-                      {d.route.ssl && !d.alias.ssl && <> &middot; <AliasState route={d.route} alias={d.alias} /></>}
-                    </span>
-                  )}
-                </span>
-                {d.alias ? (
-                  d.route.state === 'managed' && (
-                    <Actions label={`Actions for ${d.domain}`} actions={aliasActions(d.route, d.alias, routeHandlers)} />
-                  )
-                ) : d.prefix ? (
-                  d.route.state === 'managed' && (
-                    <Actions
-                      label={`Actions for ${d.domain}`}
-                      actions={[{ label: 'Stop sending it here', onClick: () => routeHandlers.onRemovePath(d.route, d.prefix) }]}
-                    />
-                  )
-                ) : (
-                  <Actions label={`Actions for ${d.domain}`} actions={routeActions(d.route, routeHandlers)} />
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+        <ContainerDomains
+          container={container}
+          domains={domains}
+          services={services}
+          found={external.length > 0 || sites.length > 0}
+          read={read}
+          routes={routes}
+          certificates={certificates}
+          publicAddress={publicAddress}
+          routeHandlers={routeHandlers}
+          onAddAlias={onAddAlias}
+        />
       </Card>
 
       <Card
@@ -259,16 +212,7 @@ export default function Container({
             {services.length > 0 && (
               <ul className="divide-y divide-edge">
                 {services.map((service) => (
-                  <Service
-                    key={service.name}
-                    service={service}
-                    onLogs={() => setLogs({ name: service.name, kind: 'service' })}
-                    onDeploy={() => onDeploy(container, service)}
-                    onRedeploy={() => onRedeploy(container, service)}
-                    onEnvironment={() => onEnvironment(container, service)}
-                    onDestroy={() => onDestroy(container, service)}
-                    onPower={(action) => onPowerService(container, service, action)}
-                  />
+                  <Service key={service.name} service={service} container={container} />
                 ))}
               </ul>
             )}
@@ -413,7 +357,7 @@ export default function Container({
 // counting on. A routine deployment snapshot is a plan read and a click: croft
 // prunes those itself, so asking for more would teach people to type without
 // reading. The daemon's summary says which of these it is, in words.
-function snapshotRemoval(container, { snapshot, healthy }) {
+export function snapshotRemoval(container, { snapshot, healthy }) {
   const last =
     healthy || !snapshot.ours || snapshot.kind === 'destroy' || snapshot.kind === 'db-destroy'
   return {
@@ -778,7 +722,7 @@ function Database({ database, onRemove }) {
 
 // A skeleton of invented rows would suggest we know how many there are. We do
 // not know anything yet, and saying so is the whole point.
-function Reading({ what }) {
+export function Reading({ what }) {
   return (
     <p role="status" className="px-4 py-8 text-center text-xs text-muted">
       Reading {what}&hellip;
@@ -788,7 +732,7 @@ function Reading({ what }) {
 
 // Something failed before anything was read. Saying "Reading…" for ever was
 // the old answer; this one says what failed and offers the obvious next move.
-function Failed({ what, error, onRetry, stopped }) {
+export function Failed({ what, error, onRetry, stopped }) {
   return (
     <div role="alert" className="px-4 py-8 text-center">
       <p className="text-sm text-problem">Could not read {what}.</p>
@@ -806,7 +750,7 @@ function Failed({ what, error, onRetry, stopped }) {
 // A host whose croft runs without its privileged side cannot look inside a
 // container at all. That is how the host is set up, not a failure: no retry,
 // and a word on why — so it is not mistaken for something broken here.
-function Unavailable({ what, reason }) {
+export function Unavailable({ what, reason }) {
   return (
     <div className="px-4 py-8 text-center">
       <p className="text-sm text-muted">This host cannot read {what}.</p>
@@ -836,95 +780,53 @@ function Empty({ onDeploy, blockedId }) {
   )
 }
 
-const HEADER_PRIMARY =
+export const HEADER_PRIMARY =
   'rounded border border-edge-strong bg-raised px-2.5 py-1 text-xs transition hover:border-ink/30'
-const HEADER_SECONDARY =
+export const HEADER_SECONDARY =
   'rounded border border-edge px-2.5 py-1 text-xs text-muted transition hover:border-edge-strong hover:text-ink'
-const PRIMARY =
+export const PRIMARY =
   'rounded border border-edge-strong bg-raised px-2 py-0.5 text-xs transition hover:border-ink/30'
-const SECONDARY =
+export const SECONDARY =
   'rounded border border-edge px-2 py-0.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink'
 
 // State comes from the machine, not from what we recorded. A service croft
 // deployed and that then died must look dead here — and in more than one
 // colour, because colour alone reaches nobody who cannot see it.
-function Service({ service, onLogs, onDeploy, onRedeploy, onEnvironment, onDestroy, onPower }) {
+//
+// The row says how it is and leads to its page, where everything done to it
+// is done: a list of rows each carrying eight verbs read as a wall, and the
+// verb wanted was nearly always the one about the service just looked at.
+function Service({ service, container }) {
   const running = service.state === 'active'
   const site = service.adopted?.site
-  // An adopted unit that reads no environment file has none to edit.
-  const environment = !service.adopted || site || service.adopted.envFile
-
-  // Every verb the row has, in the order they are reached for. A site is
-  // files the web server reads: there is no process of its own to read a
-  // journal of, restart or stop. Croft did not put an adopted service there,
-  // so it only lets go of it — and the button says which of the two it does.
-  const all = [
-    !site && { key: 'logs', label: 'Logs', onClick: onLogs },
-    { key: 'redeploy', label: 'Redeploy', onClick: onRedeploy },
-    !site && running && { key: 'restart', label: 'Restart', onClick: () => onPower('restart') },
-    !site && running && { key: 'stop', label: 'Stop', onClick: () => onPower('stop') },
-    !site && !running && { key: 'start', label: 'Start', onClick: () => onPower('start') },
-    environment && { key: 'environment', label: 'Environment…', onClick: onEnvironment },
-    { key: 'properties', label: 'Properties…', onClick: onDeploy },
-    service.adopted
-      ? { key: 'release', label: 'Release…', onClick: onDestroy }
-      : { key: 'remove', label: 'Remove…', onClick: onDestroy, danger: true },
-  ].filter(Boolean)
-  const visible = !site && !running ? ['logs', 'start'] : service.pending ? ['redeploy'] : site ? [] : ['logs']
-  const next = all
-    .filter((a) => visible.includes(a.key))
-    .map((a) => ({ ...a, primary: (a.key === 'logs' && !running) || (a.key === 'redeploy' && service.pending) }))
-  const rest = all.filter((a) => !visible.includes(a.key))
+  const to = serviceHref(container.name, service.name)
 
   return (
-    <li className={`relative px-4 py-3 ${running ? '' : 'bg-problem/[0.04]'}`}>
+    <li
+      // The name is the link; the row is a larger target for a mouse.
+      onClick={() => (location.hash = to)}
+      className={`relative cursor-pointer px-4 py-3 transition-colors hover:bg-white/[0.03] ${running ? '' : 'bg-problem/[0.04]'}`}
+    >
       {!running && <span className="absolute left-0 top-0 h-full w-[2px] bg-problem" />}
 
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <StateDot state={service.state} />
-            <span className="font-mono text-sm font-medium">{service.name}</span>
-            {service.runtime && <Chip label={service.runtime} tone="border-edge text-muted" />}
+            <a
+              href={to}
+              onClick={(e) => e.stopPropagation()}
+              className="font-mono text-sm font-medium underline-offset-4 hover:underline"
+            >
+              {service.name}
+            </a>
             {site && <Chip label="site" tone="border-edge text-muted" />}
-            {service.adopted && (
-              <Chip
-                label="adopted"
-                tone="border-yours/40 text-yours"
-                explain={
-                  site
-                    ? `Found being served and taken on. Croft fetches, builds and publishes it to ${site}; the web server's configuration${
-                        service.adopted.envFile ? ` and ${service.adopted.envFile}` : ''
-                      } stay exactly as whoever wrote them.`
-                    : `Found running and taken on. Croft fetches, builds and restarts it; the unit ${service.adopted.unit}${
-                        service.adopted.envFile ? ` and ${service.adopted.envFile}` : ''
-                      } stay exactly as whoever wrote them.`
-                }
-              />
-            )}
-
-            {service.pending && (
-              <Chip
-                label="changes not deployed"
-                tone="border-yours/40 text-yours"
-                explain="Saved in Properties, not running yet. Redeploy to apply them."
-              />
-            )}
-
+            {service.adopted && <Chip label="adopted" tone="border-yours/40 text-yours" />}
+            {service.pending && <Chip label="changes not deployed" tone="border-yours/40 text-yours" />}
             {!running && service.state && (
               <span className="rounded border border-problem/40 px-1.5 py-px text-[11px] text-problem">
                 {service.state}
               </span>
-            )}
-
-            {/* The fact belongs on the row; the reason belongs one click away,
-                where every other explanation on this panel already lives. */}
-            {!service.healthy && (
-              <Chip
-                label="no known-good version"
-                tone="border-caution/40 text-caution"
-                explain="Nothing is recorded as having worked for this service, so there is no point to go back to. Set a readiness check and deploy again to get one."
-              />
             )}
           </div>
 
@@ -932,31 +834,124 @@ function Service({ service, onLogs, onDeploy, onRedeploy, onEnvironment, onDestr
             {service.repo}
             {service.branch ? ` @ ${service.branch}` : ''}
             {service.commit ? ` · ${service.commit.slice(0, 7)}` : ''}
-          </p>
-
-          <p className="pl-[18px] font-mono text-[11px] text-muted">
-            {service.path}
-            {site ? ` → ${site}` : service.adopted ? ` · ${service.adopted.unit}` : ''}
             {service.port ? ` · :${service.port}` : ''}
-            {service.health?.path ? ` · ready on ${service.health.path}` : ''}
           </p>
         </div>
 
-        {/* The move the situation calls for stands on its own; the rest wait
-            in the row's actions, removing last. When something is down the
-            useful move is to look before writing — then to start it. With
-            saved changes waiting, it is to deploy them. */}
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-          {next.map((a) => (
-            <button key={a.key} onClick={a.onClick} className={a.primary ? PRIMARY : SECONDARY}>
-              {a.label}
-            </button>
-          ))}
-          <Actions label={`More for ${service.name}`} actions={rest} />
-        </div>
+        <span className="text-faint" aria-hidden="true">
+          <Chevron />
+        </span>
       </div>
     </li>
   )
+}
+
+// The domains of a container, under the service each one reaches — which is
+// where a domain is given, looked after and taken away. What reaches a port
+// no service croft deployed listens on is set apart and said, port and all:
+// that is the domain a visitor gets an error page from, or one serving
+// something croft only found.
+function ContainerDomains({ container, domains, services, found, read, certificates, publicAddress, routes, routeHandlers, onAddAlias }) {
+  if (domains.length === 0) {
+    return (
+      <p className="px-4 py-5 text-center text-xs text-muted">
+        Nothing points here yet.
+        {read && services.length > 0 && ' A domain is given to a service, on its page.'}
+      </p>
+    )
+  }
+
+  // Until what runs inside is read, which service each one reaches is not
+  // known: they are listed as they are, with the port they lead to.
+  if (!read) {
+    return (
+      <DomainList names={domains} certificates={certificates} handlers={routeHandlers} publicAddress={publicAddress} ports />
+    )
+  }
+
+  const { groups, stray } = byService(container, services, routes)
+  const reached = groups.filter((g) => g.names.length > 0)
+  const unreached = groups.filter((g) => g.names.length === 0 && g.port)
+  const strayPorts = [...new Set(stray.map((d) => d.port))]
+
+  return (
+    <>
+      {reached.map((g) => (
+        <div key={g.service.name} className="border-b border-edge last:border-0">
+          <p className="px-4 pt-2.5 text-[11px] text-faint">
+            To{' '}
+            <a href={serviceHref(container.name, g.service.name)} className="font-mono text-ink underline-offset-4 hover:underline">
+              {g.service.name}
+            </a>
+            <span className="font-mono"> on :{g.port}</span>
+          </p>
+          <DomainList names={g.names} certificates={certificates} handlers={routeHandlers} publicAddress={publicAddress} />
+        </div>
+      ))}
+
+      {stray.length > 0 && (
+        <div className="border-b border-edge last:border-0">
+          <p className={`px-4 pt-2.5 text-[11px] ${services.length > 0 ? 'text-caution' : 'text-faint'}`}>
+            {strayPorts.length === 1 ? 'Reaches ' : 'Reach '}
+            <span className="font-mono">{strayPorts.map((p) => `:${p}`).join(', ')}</span>
+            , where no service croft deployed listens.
+            {found && ' Something croft found on this container may be what answers there.'}
+          </p>
+          {/* Nothing here to give a domain to, so a name is added to the
+              route itself. */}
+          <DomainList
+            names={stray}
+            certificates={certificates}
+            handlers={{ ...routeHandlers, onAddAlias }}
+            publicAddress={publicAddress}
+            ports
+          />
+        </div>
+      )}
+
+      {unreached.length > 0 && (
+        <p className="px-4 py-2.5 text-[11px] text-faint">
+          No domain reaches{' '}
+          {unreached.map((g, i) => (
+            <span key={g.service.name}>
+              {i > 0 && ', '}
+              <a href={serviceHref(container.name, g.service.name)} className="font-mono text-muted underline-offset-4 hover:text-ink hover:underline">
+                {g.service.name}
+              </a>
+            </span>
+          ))}
+          {' '}yet. A domain is given to a service on its page.
+        </p>
+      )}
+    </>
+  )
+}
+
+// What the home page says is wrong with something, said again on its own
+// page, with the same remedies.
+export function Problems({ problems, instances, routes, onRemedy }) {
+  return problems.map((f) => {
+    const tone = SEVERITY[f.severity] ?? SEVERITY.warning
+    const remedies = remediesFor(f, { instances, routes }).filter((r) => r.act !== 'open')
+    return (
+      <div key={f.kind + f.subject} className="flex flex-wrap items-center gap-3 rounded-lg border border-edge bg-panel px-4 py-2.5 text-xs">
+        <span className={`h-4 w-[3px] rounded ${tone.accent}`} aria-hidden="true" />
+        <span className="min-w-0 flex-1">
+          <span className="sr-only">{tone.label}: </span>
+          <span className="font-mono">{f.subject}</span> <span className="text-muted">&mdash; {f.message}</span>
+        </span>
+        {remedies.map((r) => (
+          <button
+            key={r.act}
+            onClick={() => onRemedy(r)}
+            className="rounded border border-edge-strong bg-raised px-2 py-0.5 text-xs transition hover:border-ink/30"
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+    )
+  })
 }
 
 // A unit croft found rather than deployed. No repo, no branch, no health
@@ -1043,7 +1038,7 @@ function ExternalUnit({ unit, onLogs, onPower, onAdopt }) {
 // Three shapes, not three colours: filled, hollow, ringed. Plus the word
 // itself for anyone reading with their ears — a title attribute reaches
 // neither a screen reader reliably nor a touch screen at all.
-function StateDot({ state }) {
+export function StateDot({ state }) {
   const label = state === 'active' ? 'running' : state || 'unknown'
 
   const shape =
@@ -1130,7 +1125,9 @@ function DataWarning({ databases }) {
   )
 }
 
-function Snapshots({ snapshots, services, container, commandMode, read, error, unavailable, onRetry, runtime, onRollback, onDelete, databases }) {
+// only, when given, is one service: its own snapshots, the ones taken when it
+// was deployed. They are still of the whole container, and the card says so.
+export function Snapshots({ snapshots, services, container, commandMode, read, error, unavailable, onRetry, runtime, onRollback, onDelete, databases, only }) {
   const healthy = new Set(services.map((s) => s.healthy).filter(Boolean))
   const alive = new Set(services.map((s) => s.name))
 
@@ -1139,6 +1136,7 @@ function Snapshots({ snapshots, services, container, commandMode, read, error, u
   // silently, and the panel would lie about which one is newest.
   const rows = snapshots
     .map(describe)
+    .filter((s) => !only || s.service === only)
     .sort((a, b) => (b.when?.getTime() ?? 0) - (a.when?.getTime() ?? 0))
 
   const worked = rows.filter((s) => healthy.has(s.raw))
@@ -1157,8 +1155,8 @@ function Snapshots({ snapshots, services, container, commandMode, read, error, u
 
   return (
     <Card
-      title="Snapshots"
-      count={read ? snapshots.length : undefined}
+      title={only ? `Snapshots of ${only}` : 'Snapshots'}
+      count={read ? rows.length : undefined}
       commandMode={commandMode}
       commands={[`${runtime} info ${container.name}`]}
     >
@@ -1170,7 +1168,7 @@ function Snapshots({ snapshots, services, container, commandMode, read, error, u
         ) : (
           <Reading what="what there is to go back to" />
         )
-      ) : snapshots.length === 0 ? (
+      ) : rows.length === 0 ? (
         <p className="px-4 py-6 text-center text-xs text-muted">
           None yet. One is taken before every deployment.
         </p>
@@ -1201,6 +1199,12 @@ function Snapshots({ snapshots, services, container, commandMode, read, error, u
       <p className="border-t border-edge px-4 py-2.5 text-[11px] text-muted">
         Snapshots are of the whole container, so restoring one reaches everything in it — and
         everything written since.
+        {only && (
+          <>
+            {' '}Every snapshot of {container.name} is on{' '}
+            <a href={href('containers', container.name)} className="underline underline-offset-4 hover:text-ink">its page</a>.
+          </>
+        )}
       </p>
     </Card>
   )

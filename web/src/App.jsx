@@ -16,9 +16,11 @@ import EnvDialog from './components/EnvDialog.jsx'
 import { AgentDownScreen, AgentBanner, AGENT_BLOCKED } from './components/AgentDown.jsx'
 import Activity, { useJobs } from './components/Activity.jsx'
 import Container from './components/Container.jsx'
+import ServicePage from './components/ServicePage.jsx'
 import ProjectPage, { ProjectCards, useProjects } from './components/Projects.jsx'
 import { useOverview, useCommandMode, useAuth } from './lib/useOverview.js'
-import { useRoute, href } from './lib/useRoute.js'
+import { useRoute, href, serviceHref } from './lib/useRoute.js'
+import { allNames, publicAddress as publicAddressOf } from './lib/domains.js'
 import { VERBS } from './lib/vocabulary.js'
 import { readJSON } from './lib/api.js'
 
@@ -178,7 +180,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
   // chosen. Either way the domain is put on https next, which is nearly
   // always what comes after.
   function addDomain(container, domain = '') {
-    const publicAddress = (host?.addresses ?? []).find((a) => a.public)?.address
+    const publicAddress = publicAddressOf(host)
     const chosen = container ?? data.instances.find((i) => i.address) ?? data.instances[0]
     setDialog({
       title: container ? `Serve a domain from ${container.name}` : 'Serve a domain',
@@ -197,9 +199,32 @@ function Dashboard({ onSignOut, onSessionLost }) {
         { name: "port", label: "Port inside the container", type: "number" },
       ],
       next: (values) => ({
-        label: 'Enable https…',
+        label: 'Serve over https…',
         onClick: () => enableTLS({ domain: values.domain, ssl: false }),
       }),
+    })
+  }
+
+  // A domain given to a service, which is how a person thinks of it: "the
+  // support desk answers at help.customer.com". Which vhost it joins is the
+  // daemon's call — the one already reaching the service, paths and all, or
+  // a new one served over https in the same go — and the plan says which.
+  function addServiceDomain(container, service) {
+    const publicAddress = publicAddressOf(host)
+    setDialog({
+      title: `Add a domain to ${service.name}`,
+      url: `/api/hosts/local/instances/${container.name}/services/${service.name}/domains`,
+      method: 'POST',
+      defaults: { domain: '' },
+      verb: 'Add domain',
+      fields: [
+        { name: 'domain', label: 'Domain', placeholder: 'help.customer.com', autoFocus: true,
+          pattern: DOMAIN_PATTERN,
+          invalid: 'A domain like help.customer.com — without https:// or a path.',
+          hint: publicAddress
+            ? `Its DNS needs an A record pointing at this server (${publicAddress}). DNS is not ours to change; until it points here, croft serves the name over http and checks again every 5 minutes.`
+            : 'Its DNS needs an A record pointing at this server. DNS is not ours to change; until it points here, croft serves the name over http and checks again every 5 minutes.' },
+      ],
     })
   }
 
@@ -277,7 +302,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
   // On an https domain it gets a certificate of its own, and until one can be
   // issued it answers over http; Retry https asks for it again.
   function addAlias(route) {
-    const publicAddress = (host?.addresses ?? []).find((a) => a.public)?.address
+    const publicAddress = publicAddressOf(host)
     const pointing = publicAddress
       ? `Its DNS has to point at this server (${publicAddress}) first — DNS is not ours to change.`
       : 'Its DNS has to point at this server first — DNS is not ours to change.'
@@ -297,13 +322,16 @@ function Dashboard({ onSignOut, onSessionLost }) {
   }
 
   // The certificate an alias could not get when it was added, asked for again:
-  // the same request as adding it, which keeps what is there.
+  // the same request as adding it, which keeps what is there. Waiting for its
+  // DNS, it is croft checking now rather than in five minutes.
   function retryAlias(route, alias) {
+    const waiting = (route.aliases ?? []).find((a) => a.domain === alias)?.waiting
     setDialog({
-      title: `Serve ${alias} over https`,
+      title: waiting ? `Check ${alias} now` : `Serve ${alias} over https`,
       url: `/api/hosts/local/routes/${route.domain}/aliases`,
       method: 'POST',
       defaults: { alias },
+      verb: waiting ? 'Check now' : 'Serve over https',
     })
   }
 
@@ -573,7 +601,6 @@ function Dashboard({ onSignOut, onSessionLost }) {
     onEditDomain: editDomain,
     onAddPath: addPath,
     onRemovePath: removePath,
-    onAddAlias: addAlias,
     onRetryAlias: retryAlias,
     onRemoveAlias: removeAlias,
     onTakeOver: takeOver,
@@ -600,7 +627,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
 
   // An address the panel no longer has, or a project with no name, is home.
   const KNOWN = ["home", "projects", "containers", "domains", "activity", "settings"]
-  const { name, tab, query } = route
+  const { name, tab, query, service: serviceName } = route
   const section = !KNOWN.includes(route.section) || (route.section === "projects" && !name) ? "home" : route.section
   const openedContainer = section === 'containers' && name ? data.instances.find((i) => i.name === name) : null
 
@@ -612,9 +639,12 @@ function Dashboard({ onSignOut, onSessionLost }) {
       case 'containers': {
         if (!name) return [{ label: 'Containers' }]
         const project = openedContainer?.project
-        return project
-          ? [{ label: 'Home', href: href('home') }, { label: project, href: href('projects', project), mono: true }, { label: name, mono: true }]
-          : [{ label: 'Containers', href: href('containers') }, { label: name, mono: true }]
+        const above = project
+          ? [{ label: 'Home', href: href('home') }, { label: project, href: href('projects', project), mono: true }]
+          : [{ label: 'Containers', href: href('containers') }]
+        return serviceName
+          ? [...above, { label: name, href: href('containers', name), mono: true }, { label: serviceName, mono: true, href: serviceHref(name, serviceName) }]
+          : [...above, { label: name, mono: true }]
       }
       case 'domains':
         return tab === 'certificates'
@@ -632,6 +662,8 @@ function Dashboard({ onSignOut, onSessionLost }) {
       (!query.project || i.project === query.project),
   )
   const routesListed = data.routes.filter((r) => !query.tls || r.ssl)
+  // The Domains page lists names, one per row, so it counts them too.
+  const namesListed = allNames(routesListed).length
   const filtered = query.status || query.project || query.tls
 
   return (
@@ -706,21 +738,46 @@ function Dashboard({ onSignOut, onSessionLost }) {
 
       {/* One container, on its own. The list answers what exists; this
           answers what it is doing and whether it is working. */}
-      {section === 'containers' && name && (
+      {/* One service, on its own: what reaches it and everything done to
+          it. Its container's page lists it and leads here. */}
+      {section === 'containers' && name && serviceName && openedContainer && (
+        <ServicePage
+          key={`${name}/${serviceName}`}
+          container={openedContainer}
+          name={serviceName}
+          routes={data.routes}
+          certificates={data.certificates ?? []}
+          instances={data.instances}
+          findings={data.findings}
+          publicAddress={publicAddressOf(host)}
+          commandMode={commandMode}
+          runtime={runtimeBin}
+          onDeploy={(container, service) => setDeploying({ container, service })}
+          onRedeploy={redeploy}
+          onPowerService={powerService}
+          onEnvironment={(container, service) => setEnvironment({ container, service })}
+          onDestroy={destroyService}
+          onRollback={rollback}
+          onAddDomain={addServiceDomain}
+          onPower={powerContainer}
+          routeHandlers={routeHandlers}
+          onRemedy={remedy}
+        />
+      )}
+
+      {section === 'containers' && name && !(serviceName && openedContainer) && (
         openedContainer ? (
           <Container
             container={openedContainer}
             routes={data.routes}
+            certificates={data.certificates ?? []}
+            publicAddress={publicAddressOf(host)}
             instances={data.instances}
             findings={data.findings}
             commandMode={commandMode}
             runtime={runtimeBin}
             onDeploy={(container, service) => setDeploying({ container, service })}
             onRollback={rollback}
-            onDestroy={destroyService}
-            onPowerService={powerService}
-            onRedeploy={redeploy}
-            onEnvironment={(container, service) => setEnvironment({ container, service })}
             onPowerUnit={powerUnit}
             onAdopt={(container, subject) => setAdopting({ container, subject })}
             onAddDomain={addDomain}
@@ -728,6 +785,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
             onPower={powerContainer}
             onDestroyContainer={destroyContainer}
             routeHandlers={routeHandlers}
+            onAddAlias={addAlias}
             onRemedy={remedy}
           />
         ) : (
@@ -764,7 +822,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
       {section === 'domains' && (
         <>
           <nav aria-label="Domains" className="flex gap-1.5 md:hidden">
-            <Tab on={tab !== 'certificates'} to={href('domains')}>Domains ({data.routes.length})</Tab>
+            <Tab on={tab !== 'certificates'} to={href('domains')}>Domains ({allNames(data.routes).length})</Tab>
             <Tab on={tab === 'certificates'} to={href('domains', 'certificates')}>
               Certificates ({data.certificates?.length ?? 0})
             </Tab>
@@ -773,7 +831,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
           {tab !== 'certificates' ? (
             <Card
               title={query.tls ? 'Domains · with TLS' : 'Domains'}
-              count={routesListed.length}
+              count={namesListed}
               commandMode={commandMode}
               commands={routeCommands}
               action={
@@ -832,7 +890,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
           peers={data.instances}
           onClose={() => { setDeploying(null); reload() }}
           onFinished={reload}
-          onAddDomain={() => { setDeploying(null); addDomain(deploying.container) }}
+          onAddDomain={(service) => { setDeploying(null); addServiceDomain(deploying.container, service) }}
         />
       )}
 

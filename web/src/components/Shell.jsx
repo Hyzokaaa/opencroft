@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { href } from '../lib/useRoute.js'
+import { allNames } from '../lib/domains.js'
 import Command from './Command.jsx'
 import CopyButton from './CopyButton.jsx'
 import { primaryAddress } from './AgentDown.jsx'
@@ -12,7 +13,7 @@ const SECTIONS = [
   { id: 'home', label: 'Home' },
   { id: 'containers', label: 'Containers', count: (d) => d?.instances.length },
   {
-    id: 'domains', label: 'Domains', count: (d) => d?.routes.length,
+    id: 'domains', label: 'Domains', count: (d) => (d ? allNames(d.routes).length : undefined),
     // Certificates hang off Domains: the one thing on the panel with a
     // deadline, a click away from anywhere and able to say so before it runs.
     children: [{ id: 'certificates', label: 'Certificates', to: () => href('domains', 'certificates') }],

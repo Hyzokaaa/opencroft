@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from 'react'
 //   #/projects/:name         one project
 //   #/containers?status=…    every container, optionally filtered
 //   #/containers/:name       one container
+//   #/containers/:name/services/:service   one service in it
 //   #/domains                domains
 //   #/domains/certificates   certificates
 //   #/activity, #/settings
@@ -18,9 +19,10 @@ export function parse(hash) {
 
   const [section = 'home', name = null] = parts
   if (section === 'domains') {
-    return { section, tab: name === 'certificates' ? 'certificates' : 'domains', name: null, query }
+    return { section, tab: name === 'certificates' ? 'certificates' : 'domains', name: null, service: null, query }
   }
-  return { section, name, tab: null, query }
+  const service = section === 'containers' && parts[2] === 'services' ? parts[3] ?? null : null
+  return { section, name, service, tab: null, query }
 }
 
 export function href(section, name, query) {
@@ -28,6 +30,12 @@ export function href(section, name, query) {
   if (name) out += '/' + encodeURIComponent(name)
   const search = new URLSearchParams(Object.entries(query ?? {}).filter(([, v]) => v)).toString()
   return search ? `${out}?${search}` : out
+}
+
+// serviceHref is the page of one service: under its container, because a
+// service is only ever somewhere.
+export function serviceHref(container, service) {
+  return `${href('containers', container)}/services/${encodeURIComponent(service)}`
 }
 
 export function useRoute() {
