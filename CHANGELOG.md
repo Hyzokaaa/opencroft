@@ -15,7 +15,11 @@ descargó.
 ## No publicado
 
 ### v0.31.0 — 2026-10-06
-- docs: file v0.31.0 in the changelog
+- feat: a page for each service with its domains, and every category a list whose rows open what they name
+- feat: give a domain to a service rather than to a vhost, keep a route's other names when its own is removed, and mark the last event of a job
+- feat: check a domain reaches this server before asking for its certificate, and wait for its DNS instead of failing
+- feat: list, add, retry and remove a domain's extra names from the panel
+- feat: give a domain more names, each with its own certificate, and put a vhost back as it was when nginx refuses its rewrite
 - feat: a Delete action on each snapshot, asking for the container's name where it is the only way back
 - feat: delete a snapshot by hand, told first what it was the only way back to
 
