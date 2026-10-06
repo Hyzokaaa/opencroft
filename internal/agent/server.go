@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	routeEnums "github.com/Hyzokaaa/opencroft/internal/route/domain/enums"
 	routeRepositories "github.com/Hyzokaaa/opencroft/internal/route/domain/repositories"
 	"github.com/Hyzokaaa/opencroft/internal/shared/host"
+	"github.com/Hyzokaaa/opencroft/internal/shared/plan"
 )
 
 type Server struct {
@@ -530,7 +532,28 @@ func (s *Server) planRemoveRoute(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("that is not a domain name"))
 		return
 	}
-	writeJSON(w, http.StatusOK, PlanResponse{Plan: s.routes.RemovePlan(domain)})
+	p, err := s.removal(r.Context(), domain)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, PlanResponse{Plan: p})
+}
+
+// removal takes a domain away. A route with other names keeps serving them:
+// the first becomes the file's own name, so that removing one name never
+// takes a customer's domain with it.
+func (s *Server) removal(ctx context.Context, domain string) (plan.Plan, error) {
+	existing, err := s.routes.FindByDomain(ctx, domain)
+	if err != nil {
+		return plan.Plan{}, err
+	}
+	if existing != nil && existing.State == routeEnums.StateManaged {
+		if promoted, ok := existing.Promoted(); ok {
+			return plan.New(append(s.routes.WritePlan(promoted).Steps, s.routes.RemovePlan(domain).Steps...)...), nil
+		}
+	}
+	return s.routes.RemovePlan(domain), nil
 }
 
 // removeRoute refuses to delete a file it did not write. Somebody else's vhost
@@ -558,6 +581,14 @@ func (s *Server) removeRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if promoted, ok := existing.Promoted(); ok && existing.State == routeEnums.StateManaged {
+		// Written first: for a moment both files answer for the names, which
+		// nginx accepts with a warning — never a moment where none does.
+		if err := s.routes.Write(r.Context(), promoted); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
 	if err := s.routes.Remove(r.Context(), domain); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return

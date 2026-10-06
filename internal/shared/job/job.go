@@ -44,6 +44,9 @@ type Event struct {
 	Text    string    `json:"text"`
 	Command string    `json:"command,omitempty"`
 	Failed  bool      `json:"failed,omitempty"`
+	// End marks the last event, which sums the job up rather than being a
+	// step of it — so the panel does not list it as one.
+	End bool `json:"end,omitempty"`
 }
 
 // Snapshot is the serialisable view. Job itself holds a mutex, so it must
@@ -188,6 +191,7 @@ func (r *Runner) Start(kind, subject string, p plan.Plan, work func(ctx context.
 			Total:  len(p.Steps),
 			Text:   finalText(err),
 			Failed: err != nil,
+			End:    true,
 		})
 		r.record(j)
 		j.closeListeners()

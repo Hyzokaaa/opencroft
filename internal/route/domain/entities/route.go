@@ -139,6 +139,30 @@ func (r *Route) WithoutAlias(domain string) *Route {
 	return &next
 }
 
+// Promoted is the route its first other name becomes when its own domain is
+// removed: everything else stays — target, paths, the remaining names. On
+// https, a name that already has its certificate is the one promoted.
+func (r *Route) Promoted() (*Route, bool) {
+	if len(r.Aliases) == 0 {
+		return nil, false
+	}
+	chosen := r.Aliases[0]
+	for _, a := range r.Aliases {
+		if a.SSL == r.SSL {
+			chosen = a
+			break
+		}
+	}
+	next := r.WithoutAlias(chosen.Domain)
+	next.Domain = chosen.Domain
+	next.SSL = r.SSL && chosen.SSL
+	next.Certificates = ""
+	if next.SSL {
+		next.Certificates = chosen.CertDir()
+	}
+	return next, true
+}
+
 func (r *Route) Alias(domain string) (Alias, bool) {
 	for _, a := range r.Aliases {
 		if a.Domain == domain {

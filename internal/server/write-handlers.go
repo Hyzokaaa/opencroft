@@ -327,6 +327,10 @@ func (d Deps) removeRoute(w http.ResponseWriter, r *http.Request) {
 		if existing.State == routeEnums.StateAdopted {
 			summary = fmt.Sprintf("Stop serving %s — you edited this file by hand. The container stays.", domain)
 		}
+		if names := len(existing.Aliases); names > 0 && existing.State == routeEnums.StateManaged {
+			summary = fmt.Sprintf("Stop serving %s. The %d other domain(s) set up with it keep answering as they do now, "+
+				"paths included. The container stays.", domain, names)
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"summary": summary, "plan": p})
 		return
 	}

@@ -90,3 +90,22 @@ func TestANameWaitingForItsDNSIsServedAndExplained(t *testing.T) {
 		}
 	}
 }
+
+// Removing a domain never takes the names set up with it: the first of them
+// becomes the route's own, with its certificate, paths and other names.
+func TestRemovingADomainKeepsItsOtherNames(t *testing.T) {
+	server := aRouteWithHTTPS(t)
+	if r := serve(server, http.MethodDelete, "/routes/app.example.com", nil); r.Code != http.StatusNoContent {
+		t.Fatalf("removed with %d %s", r.Code, r.Body.String())
+	}
+
+	ctx := context.Background()
+	if gone, _ := server.routes.FindByDomain(ctx, "app.example.com"); gone != nil {
+		t.Errorf("app.example.com is still served: %+v", gone)
+	}
+	promoted, _ := server.routes.FindByDomain(ctx, "old.customer.com")
+	if promoted == nil || !promoted.SSL || promoted.Target != "10.146.38.200" ||
+		promoted.CertDir() != "/var/lib/croft/certificates/old.customer.com" || len(promoted.Aliases) != 0 {
+		t.Errorf("old.customer.com became %+v", promoted)
+	}
+}
