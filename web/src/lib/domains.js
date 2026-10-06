@@ -22,10 +22,11 @@ export function allNames(routes) {
 }
 
 // portOf is where a service listens: its own port, or — for a site the
-// container's web server serves — the container's. The daemon decides the
-// same way when a domain is given to a service.
+// container's web server serves — the container's, and that web server's 80
+// when the container was set up by hand and croft never recorded one. The
+// daemon decides the same way when a domain is given to a service.
 export function portOf(service, container) {
-  return service.port || container.port || 0
+  return service.port || container.port || (service.adopted?.site ? 80 : 0)
 }
 
 // reaching is every name and every path that leads to address:port — a
