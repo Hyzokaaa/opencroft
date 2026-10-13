@@ -14,6 +14,9 @@ descargó.
 
 ## No publicado
 
+### v0.31.3 — 2026-10-13
+- fix: fetch a service from the repository it records, not whatever origin the checkout kept, and point origin there
+
 ### v0.31.2 — 2026-10-06
 - fix: the panel, too, takes a hand-installed site to be served on port 80
 
