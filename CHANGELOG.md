@@ -14,6 +14,9 @@ descargó.
 
 ## No publicado
 
+### v0.31.4 — 2026-10-13
+- fix: point an adopted checkout's origin at the repository croft deploys from, too
+
 ### v0.31.3 — 2026-10-13
 - fix: fetch a service from the repository it records, not whatever origin the checkout kept, and point origin there
 
