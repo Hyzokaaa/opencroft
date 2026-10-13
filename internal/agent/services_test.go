@@ -414,7 +414,7 @@ func TestARedeployIsWhatTheContainerRecords(t *testing.T) {
 		body += step.Shell() + "\n"
 	}
 
-	for _, wanted := range []string{"origin dev", "reset --hard FETCH_HEAD", "node dist/main", "npm ci"} {
+	for _, wanted := range []string{"app.git dev", "reset --hard FETCH_HEAD", "node dist/main", "npm ci"} {
 		if !strings.Contains(body, wanted) {
 			t.Errorf("the redeploy lacks %q:\n%s", wanted, body)
 		}

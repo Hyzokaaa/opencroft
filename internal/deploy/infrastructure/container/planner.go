@@ -5,6 +5,7 @@ package container
 import (
 	"encoding/base64"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -164,6 +165,8 @@ func (p *Planner) fetch(service *entities.Service) plan.Step {
 		target, at = service.Source.Commit, service.Source.Commit
 	}
 
+	repo := shellWord(service.Source.Repo)
+
 	// An adopted checkout was there before croft, and is fetched as it is:
 	// never cloned again, never made shallow, and fetched from the recorded
 	// repository rather than whatever origin says. It usually belongs to the
@@ -174,19 +177,48 @@ func (p *Planner) fetch(service *entities.Service) plan.Step {
 		git := "git -c safe.directory=" + service.Path + " -C " + service.Path
 		return p.exec("Fetch "+service.Source.Repo+" at "+at+" into the existing checkout",
 			fmt.Sprintf("%s fetch %s %s && %s reset --hard %s",
-				git, service.Source.Repo, branch, git, target))
+				git, repo, branch, git, target))
+	}
+
+	// The repository is the one the service records, not the one the checkout
+	// was cloned from: a service moved to another host keeps its checkout, and
+	// fetching origin would go on deploying the old one. origin is pointed
+	// there too, so whoever runs git in the container sees what croft deploys.
+	git := "git -C " + service.Path
+	reset := fmt.Sprintf("%s reset --hard %s", git, target)
+	if service.Source.Commit != "" {
+		// A commit pinned from another repository, or one older than the
+		// history kept, is not there to go back to; git would only say it
+		// cannot parse it.
+		missing := fmt.Sprintf("%s is not among the last %d commits of %s at %s, so croft cannot go back to it: "+
+			"deploy the branch as it is, or restore a snapshot from before.", target, Depth, branch, service.Source.Repo)
+		reset = fmt.Sprintf("{ %s cat-file -e %s 2>/dev/null || { echo %s >&2; exit 1; }; } && %s",
+			git, shellWord(target+"^{commit}"), shellWord(missing), reset)
 	}
 
 	command := fmt.Sprintf(
 		"if [ -d %s/.git ]; then "+
-			"git -C %s fetch --depth %d origin %s && git -C %s reset --hard %s; "+
+			"%s remote set-url origin %s && %s fetch --depth %d %s %s && %s; "+
 			"else git clone --depth %d --branch %s %s %s; fi",
 		service.Path,
-		service.Path, Depth, branch, service.Path, target,
-		Depth, branch, service.Source.Repo, service.Path)
+		git, repo, git, Depth, repo, branch, reset,
+		Depth, branch, repo, service.Path)
 
-	return p.exec("Fetch "+service.Source.Repo+" at "+at, command)
+	return p.exec("Fetch "+service.Source.Repo+" at "+at+", and point the checkout's origin at it", command)
 }
+
+// shellWord is s as one word of a shell command: as it is when nothing in it
+// means anything to the shell, single-quoted otherwise. A repository's URL is
+// checked before it gets here, but the check lets through characters — ; & $ ( —
+// a shell would act on.
+func shellWord(s string) string {
+	if safeWord.MatchString(s) {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'''`) + "'"
+}
+
+var safeWord = regexp.MustCompile(`^[A-Za-z0-9._~:/@%+=,-]+$`)
 
 // publish puts a site's new build where the web server reads it.
 //

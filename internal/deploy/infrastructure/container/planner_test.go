@@ -106,6 +106,81 @@ func TestAPinnedCommitIsWhatGetsCheckedOut(t *testing.T) {
 	}
 }
 
+func fetchStep(t *testing.T, service *entities.Service) plan.Step {
+	t.Helper()
+	for _, step := range deploy(t, service).Steps {
+		if strings.HasPrefix(step.Describe, "Fetch") {
+			return step
+		}
+	}
+	t.Fatal("no fetch step")
+	return plan.Step{}
+}
+
+// A service moved to another repository keeps its checkout, whose origin is
+// still the old one. Fetching origin would deploy the old code under a plan
+// that names the new.
+func TestAnExistingCheckoutIsFetchedFromTheRecordedRepository(t *testing.T) {
+	service := nodeService()
+	service.Source.Repo = "https://gitlab.example.com/core/backend.git"
+	step := fetchStep(t, service)
+	body := step.Argv[len(step.Argv)-1]
+
+	if strings.Contains(body, "origin main") || strings.Contains(body, "fetch --depth 10 origin") {
+		t.Errorf("the checkout is fetched from origin: %s", body)
+	}
+	for _, wanted := range []string{
+		"remote set-url origin https://gitlab.example.com/core/backend.git",
+		"fetch --depth 10 https://gitlab.example.com/core/backend.git main",
+		"reset --hard FETCH_HEAD",
+		"git clone --depth 10 --branch main https://gitlab.example.com/core/backend.git",
+	} {
+		if !strings.Contains(body, wanted) {
+			t.Errorf("the fetch lacks %q: %s", wanted, body)
+		}
+	}
+	if !strings.Contains(step.Describe, "https://gitlab.example.com/core/backend.git") ||
+		!strings.Contains(step.Describe, "origin") {
+		t.Errorf("the step does not say what it does: %q", step.Describe)
+	}
+}
+
+// Going back to a commit fetches from the same repository, and a commit that
+// is not there is said in words a person can act on.
+func TestAPinnedCommitComesFromTheRecordedRepository(t *testing.T) {
+	service := nodeService()
+	service.Source.Commit = "abc1234"
+	step := fetchStep(t, service)
+	body := step.Argv[len(step.Argv)-1]
+
+	for _, wanted := range []string{
+		"fetch --depth 10 https://github.com/user/app.git main",
+		"reset --hard abc1234",
+		"cat-file -e 'abc1234^{commit}'",
+		"abc1234 is not among the last 10 commits of main at https://github.com/user/app.git",
+	} {
+		if !strings.Contains(body, wanted) {
+			t.Errorf("the fetch lacks %q: %s", wanted, body)
+		}
+	}
+}
+
+// The URL is checked before it gets here, but the check lets through
+// characters a shell acts on.
+func TestARepositoryIsOneWordOfTheCommand(t *testing.T) {
+	service := nodeService()
+	service.Source.Repo = "https://example.com/a;reboot"
+	step := fetchStep(t, service)
+	body := step.Argv[len(step.Argv)-1]
+
+	if strings.Contains(body, " https://example.com/a;reboot") {
+		t.Errorf("the URL reaches the shell unquoted: %s", body)
+	}
+	if !strings.Contains(body, "'https://example.com/a;reboot'") {
+		t.Errorf("the URL is not quoted: %s", body)
+	}
+}
+
 func TestTheStepsHappenInAnOrderThatCanWork(t *testing.T) {
 	service := withEnv(withHealth(nodeService()))
 	lines := strings.Split(text(deploy(t, service)), "\n")
@@ -544,7 +619,7 @@ func TestAnAdoptedCheckoutIsFetchedAsItIs(t *testing.T) {
 		}
 	}
 
-	for _, forbidden := range []string{"clone", "--depth"} {
+	for _, forbidden := range []string{"clone", "--depth", "set-url"} {
 		if strings.Contains(fetch, forbidden) {
 			t.Errorf("the fetch uses %q: %s", forbidden, fetch)
 		}
