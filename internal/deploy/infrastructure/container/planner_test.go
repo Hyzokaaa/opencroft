@@ -619,13 +619,14 @@ func TestAnAdoptedCheckoutIsFetchedAsItIs(t *testing.T) {
 		}
 	}
 
-	for _, forbidden := range []string{"clone", "--depth", "set-url"} {
+	for _, forbidden := range []string{"clone", "--depth"} {
 		if strings.Contains(fetch, forbidden) {
 			t.Errorf("the fetch uses %q: %s", forbidden, fetch)
 		}
 	}
 	for _, wanted := range []string{
 		"safe.directory=/opt/open-helpdesk/backend",
+		"remote set-url origin https://github.com/user/app.git",
 		"fetch https://github.com/user/app.git dev",
 		"reset --hard FETCH_HEAD",
 	} {

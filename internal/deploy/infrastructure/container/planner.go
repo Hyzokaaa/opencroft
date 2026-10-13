@@ -167,33 +167,41 @@ func (p *Planner) fetch(service *entities.Service) plan.Step {
 
 	repo := shellWord(service.Source.Repo)
 
-	// An adopted checkout was there before croft, and is fetched as it is:
-	// never cloned again, never made shallow, and fetched from the recorded
-	// repository rather than whatever origin says. It usually belongs to the
-	// user the unit runs as, and git refuses to touch a repository owned by
-	// someone else unless told this one is expected — told here, for this
-	// command only, rather than in anybody's configuration.
-	if service.Adopted != nil {
-		git := "git -c safe.directory=" + service.Path + " -C " + service.Path
-		return p.exec("Fetch "+service.Source.Repo+" at "+at+" into the existing checkout",
-			fmt.Sprintf("%s fetch %s %s && %s reset --hard %s",
-				git, repo, branch, git, target))
-	}
-
 	// The repository is the one the service records, not the one the checkout
 	// was cloned from: a service moved to another host keeps its checkout, and
 	// fetching origin would go on deploying the old one. origin is pointed
-	// there too, so whoever runs git in the container sees what croft deploys.
+	// there too, so whoever runs git in the container — or a script of theirs
+	// that pulls — sees what croft deploys.
 	git := "git -C " + service.Path
+	if service.Adopted != nil {
+		// An adopted checkout usually belongs to the user the unit runs as,
+		// and git refuses to touch a repository owned by someone else unless
+		// told this one is expected — told here, for this command only,
+		// rather than in anybody's configuration. It is given back to them
+		// after the build.
+		git = "git -c safe.directory=" + service.Path + " -C " + service.Path
+	}
 	reset := fmt.Sprintf("%s reset --hard %s", git, target)
 	if service.Source.Commit != "" {
 		// A commit pinned from another repository, or one older than the
 		// history kept, is not there to go back to; git would only say it
 		// cannot parse it.
-		missing := fmt.Sprintf("%s is not among the last %d commits of %s at %s, so croft cannot go back to it: "+
-			"deploy the branch as it is, or restore a snapshot from before.", target, Depth, branch, service.Source.Repo)
+		kept := fmt.Sprintf("among the last %d commits of", Depth)
+		if service.Adopted != nil {
+			kept = "in the history of"
+		}
+		missing := fmt.Sprintf("%s is not %s %s at %s, so croft cannot go back to it: "+
+			"deploy the branch as it is, or restore a snapshot from before.", target, kept, branch, service.Source.Repo)
 		reset = fmt.Sprintf("{ %s cat-file -e %s 2>/dev/null || { echo %s >&2; exit 1; }; } && %s",
 			git, shellWord(target+"^{commit}"), shellWord(missing), reset)
+	}
+
+	// An adopted checkout was there before croft, and is fetched as it is:
+	// never cloned again, never made shallow.
+	if service.Adopted != nil {
+		return p.exec("Fetch "+service.Source.Repo+" at "+at+" into the existing checkout, and point its origin at it",
+			fmt.Sprintf("%s remote set-url origin %s && %s fetch %s %s && %s",
+				git, repo, git, repo, branch, reset))
 	}
 
 	command := fmt.Sprintf(
