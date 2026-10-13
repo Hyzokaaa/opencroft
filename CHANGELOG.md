@@ -14,6 +14,9 @@ descargó.
 
 ## No publicado
 
+### v0.32.0 — 2026-10-13
+- feat: give a container the certificates a repository's server leaves out, fetched as a browser would and checked to lead to a trusted root, so git can fetch from it
+
 ### v0.31.4 — 2026-10-13
 - fix: point an adopted checkout's origin at the repository croft deploys from, too
 
