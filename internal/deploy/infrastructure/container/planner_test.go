@@ -181,6 +181,45 @@ func TestARepositoryIsOneWordOfTheCommand(t *testing.T) {
 	}
 }
 
+// A server that leaves out the intermediates of its certificate works in a
+// browser and fails in git. What it leaves out is trusted before anything is
+// fetched, in a step that names it — and only when something is missing.
+func TestWhatTheServerLeavesOutIsTrustedBeforeTheFetch(t *testing.T) {
+	if strings.Contains(text(deploy(t, nodeService())), "update-ca-certificates") {
+		t.Error("a server that sends its whole chain still gets certificates trusted")
+	}
+
+	steps := planner().Deploy(Deployment{Service: nodeService(), At: time.Unix(0, 0), Missing: &Missing{
+		Host: "gitlab.example.com", Root: "ISRG Root X2",
+		Certificates: []Certificate{{Name: "YE2", PEM: []byte("ye2")}, {Name: "Root YE", PEM: []byte("root")}},
+	}}).Steps
+	trusted, fetched := -1, -1
+	for i, step := range steps {
+		if strings.HasPrefix(step.Describe, "Trust") {
+			trusted = i
+		}
+		if strings.HasPrefix(step.Describe, "Fetch") {
+			fetched = i
+		}
+	}
+	if trusted < 0 || fetched < 0 || trusted > fetched {
+		t.Fatalf("trusted at %d, fetched at %d", trusted, fetched)
+	}
+
+	step := steps[trusted]
+	for _, name := range []string{"YE2 and Root YE", "gitlab.example.com", "ISRG Root X2"} {
+		if !strings.Contains(step.Describe, name) {
+			t.Errorf("the step does not name %s: %q", name, step.Describe)
+		}
+	}
+	command := step.Argv[len(step.Argv)-1]
+	for _, wanted := range []string{TrustedDir + "/root-ye.crt", TrustedDir + "/ye2.crt", "update-ca-certificates"} {
+		if !strings.Contains(command, wanted) {
+			t.Errorf("the step lacks %q", wanted)
+		}
+	}
+}
+
 func TestTheStepsHappenInAnOrderThatCanWork(t *testing.T) {
 	service := withEnv(withHealth(nodeService()))
 	lines := strings.Split(text(deploy(t, service)), "\n")
@@ -319,7 +358,7 @@ func TestTheEnvironmentFileIsStable(t *testing.T) {
 }
 
 func TestNoEnvironmentMeansNoStepAtAll(t *testing.T) {
-	if strings.Contains(text(deploy(t, nodeService())), "base64 -d") {
+	if strings.Contains(text(deploy(t, nodeService())), "base64 -d > /srv/backend/.env") {
 		t.Error("an empty environment file would be written for no reason")
 	}
 }

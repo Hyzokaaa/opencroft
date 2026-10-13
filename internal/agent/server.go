@@ -48,6 +48,10 @@ type Server struct {
 	reachCheck reachFunc
 	waiting    waiting
 
+	// missingCheck answers which certificates a repository's server leaves
+	// out; nil asks the network.
+	missingCheck missingFunc
+
 	dns internalDNS
 }
 

@@ -57,6 +57,23 @@ type Deployment struct {
 	At       time.Time
 	Existing []string
 	Healthy  string
+
+	// Missing is what the repository's server leaves out of its
+	// certificate, found while the plan was made; nil when nothing is.
+	Missing *Missing
+}
+
+// Missing is the certificates a server leaves out, for its name, and the
+// trusted root they lead to.
+type Missing struct {
+	Host, Root   string
+	Certificates []Certificate
+}
+
+// Certificate is one of them, as PEM.
+type Certificate struct {
+	Name string
+	PEM  []byte
 }
 
 // exec wraps a shell command so it runs inside the container. `sh -lc` gives
@@ -77,6 +94,25 @@ func (p *Planner) bounded(describe, command string) plan.Step {
 		"timeout", strconv.Itoa(Patience), "sh", "-lc", command)
 }
 
+// Checkout is the opening of a deployment, up to the code being there: what
+// looking at a repository needs too, so the two cannot drift.
+func (p *Planner) Checkout(d Deployment) []plan.Step {
+	service := d.Service
+
+	packages := append([]string{"git", "curl", "ca-certificates"}, service.Packages...)
+	steps := []plan.Step{
+		plan.Command("Take a snapshot to come back to",
+			p.bin, "snapshot", p.container, entities.SnapshotName(service.Name, d.At)),
+		p.exec("Install "+strings.Join(packages, ", "),
+			"apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "+
+				strings.Join(packages, " ")),
+	}
+	if d.Missing != nil && len(d.Missing.Certificates) > 0 {
+		steps = append(steps, p.trust(d.Missing))
+	}
+	return append(steps, p.fetch(service))
+}
+
 // Deploy is the whole thing, in the order it has to happen.
 //
 // The snapshot is first and is not optional. A deployment that breaks the
@@ -85,19 +121,7 @@ func (p *Planner) bounded(describe, command string) plan.Step {
 // the one advantage a system container has over an image.
 func (p *Planner) Deploy(d Deployment) plan.Plan {
 	service := d.Service
-
-	steps := []plan.Step{
-		plan.Command("Take a snapshot to come back to",
-			p.bin, "snapshot", p.container, entities.SnapshotName(service.Name, d.At)),
-	}
-
-	packages := append([]string{"git", "curl"}, service.Packages...)
-	steps = append(steps,
-		p.exec("Install "+strings.Join(packages, ", "),
-			"apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "+
-				strings.Join(packages, " ")))
-
-	steps = append(steps, p.fetch(service))
+	steps := p.Checkout(d)
 
 	// An adopted service's environment is the unit's own file, and croft
 	// never writes it — whatever a request carries.
@@ -213,6 +237,43 @@ func (p *Planner) fetch(service *entities.Service) plan.Step {
 		Depth, branch, repo, service.Path)
 
 	return p.exec("Fetch "+service.Source.Repo+" at "+at+", and point the checkout's origin at it", command)
+}
+
+// trust gives the container the certificates the repository's server leaves
+// out, so git can verify it the way a browser does. They were fetched from
+// where its certificate says and checked, for its name, to lead to a root the
+// host trusts; written apart from anything else, they are easy to find and to
+// remove. Writing one that is already there changes nothing.
+func (p *Planner) trust(missing *Missing) plan.Step {
+	names := []string{}
+	commands := []string{"mkdir -p " + TrustedDir}
+	for _, cert := range missing.Certificates {
+		names = append(names, cert.Name)
+		commands = append(commands, "printf %s '"+base64.StdEncoding.EncodeToString(cert.PEM)+
+			"' | base64 -d > "+TrustedDir+"/"+fileName(cert.Name)+".crt")
+	}
+	commands = append(commands, "update-ca-certificates >/dev/null")
+
+	return p.exec(fmt.Sprintf("Trust %s, which %s leaves out of its certificate and git cannot fetch by itself "+
+		"(fetched from where the certificate says, and checked to lead to %s)",
+		strings.Join(names, " and "), missing.Host, missing.Root), strings.Join(commands, " && "))
+}
+
+// TrustedDir is where those certificates are written.
+const TrustedDir = "/usr/local/share/ca-certificates/croft"
+
+// fileName is a certificate's name as a file: "Root YE" is root-ye.
+func fileName(name string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '.', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	return b.String()
 }
 
 // shellWord is s as one word of a shell command: as it is when nothing in it

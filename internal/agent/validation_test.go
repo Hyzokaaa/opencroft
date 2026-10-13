@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Hyzokaaa/opencroft/internal/certificate/infrastructure/pem"
+	"github.com/Hyzokaaa/opencroft/internal/deploy/infrastructure/container"
 	"github.com/Hyzokaaa/opencroft/internal/instance/infrastructure/runtime"
 	routeMemory "github.com/Hyzokaaa/opencroft/internal/route/infrastructure/memory"
 	"github.com/Hyzokaaa/opencroft/internal/shared/host"
@@ -18,7 +20,7 @@ import (
 // Everything below is a field that must never reach a command line.
 func testServer() (*Server, *host.Fake) {
 	fake := host.NewFake()
-	return NewServer(
+	server := NewServer(
 		runtime.NewDemoInstanceRepository(),
 		routeMemory.NewMemoryRouteRepository(),
 		pem.NewDemoCertificateRepository(),
@@ -26,7 +28,10 @@ func testServer() (*Server, *host.Fake) {
 		"lxd",
 		"test",
 		"lxc",
-	), fake
+	)
+	// Tests ask no server on the network for its certificates.
+	server.missingCheck = func(context.Context, string) (*container.Missing, error) { return nil, nil }
+	return server, fake
 }
 
 func post(t *testing.T, path string, body any) *httptest.ResponseRecorder {

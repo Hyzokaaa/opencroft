@@ -416,11 +416,15 @@ func (s *Server) planner(ctx context.Context, name string) (*container.Planner, 
 }
 
 func (s *Server) deployment(ctx context.Context, name string, service *deployEntities.Service) container.Deployment {
+	// A server that cannot be asked, or whose certificate leads nowhere
+	// trusted, gets no step: the fetch tries, and says what went wrong.
+	missing, _ := s.missing(ctx, service.Source.Repo)
 	return container.Deployment{
 		Service:  service,
 		At:       time.Now(),
 		Existing: s.snapshots(ctx, name),
 		Healthy:  s.get(ctx, name, full(service.Name, "healthy")),
+		Missing:  missing,
 	}
 }
 
@@ -563,8 +567,7 @@ func (s *Server) inspectPlan(ctx context.Context, name string, service *deployEn
 	bare.Install, bare.Build, bare.Env = nil, nil, nil
 	bare.Health = deployEntities.Health{}
 
-	full := planner.Deploy(s.deployment(ctx, name, &bare)).Steps
-	return plan.New(full[:3]...), nil
+	return plan.New(planner.Checkout(s.deployment(ctx, name, &bare))...), nil
 }
 
 func (s *Server) planInspect(w http.ResponseWriter, r *http.Request) {

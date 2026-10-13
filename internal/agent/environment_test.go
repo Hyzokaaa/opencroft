@@ -111,7 +111,8 @@ func TestDeployingAnExistingServiceLeavesItsEnvironmentAlone(t *testing.T) {
 	var response PlanResponse
 	_ = json.Unmarshal(serve(server, http.MethodPost, "/instances/helpdesk/services/deploy/plan", request).Body.Bytes(), &response)
 	for _, step := range response.Plan.Steps {
-		if written.MatchString(step.Shell()) {
+		// The certificates croft trusts are written the same way, and are not it.
+		if written.MatchString(step.Shell()) && !strings.HasPrefix(step.Describe, "Trust") {
 			t.Errorf("a deployment of an existing service writes its environment: %s", step.Describe)
 		}
 	}
