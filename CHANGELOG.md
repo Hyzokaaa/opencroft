@@ -14,6 +14,10 @@ descargó.
 
 ## No publicado
 
+### v0.34.0 — 2026-10-14
+- feat: deploy a service again whenever its branch moves, told by the repository's webhook or found by asking it every few minutes
+- feat: a service page in sections — overview, configuration in cards, domains, environment, automatic deployments, deployments and logs — each with its own address
+
 ### v0.33.0 — 2026-10-14
 - fix: clear old snapshots before taking a new one, so failed deployments and repeated looks at a repository do not pile up copies of the container
 - feat: a service's configuration on its own page, editable in place, with changes kept when a deployment fails instead of a properties dialog
