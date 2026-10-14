@@ -14,6 +14,10 @@ descargó.
 
 ## No publicado
 
+### v0.33.0 — 2026-10-14
+- fix: clear old snapshots before taking a new one, so failed deployments and repeated looks at a repository do not pile up copies of the container
+- feat: a service's configuration on its own page, editable in place, with changes kept when a deployment fails instead of a properties dialog
+
 ### v0.32.0 — 2026-10-13
 - feat: give a container the certificates a repository's server leaves out, fetched as a browser would and checked to lead to a trusted root, so git can fetch from it
 
