@@ -43,6 +43,16 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 
 CREATE INDEX IF NOT EXISTS jobs_started ON jobs (started);
+
+-- A service deployed again whenever its branch moves: the secret its webhook
+-- carries, and the commit that failed so it is not tried again.
+CREATE TABLE IF NOT EXISTS autodeploy (
+    container TEXT NOT NULL,
+    service   TEXT NOT NULL,
+    secret    TEXT NOT NULL,
+    failed    TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (container, service)
+);
 `
 
 type Store struct {

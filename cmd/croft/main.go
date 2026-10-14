@@ -24,6 +24,7 @@ import (
 	"github.com/Hyzokaaa/opencroft/internal/auth/infrastructure/crypto"
 	authHttp "github.com/Hyzokaaa/opencroft/internal/auth/infrastructure/http"
 	"github.com/Hyzokaaa/opencroft/internal/auth/infrastructure/sqlite"
+	"github.com/Hyzokaaa/opencroft/internal/autodeploy"
 	certificateRepositories "github.com/Hyzokaaa/opencroft/internal/certificate/domain/repositories"
 	certificateServices "github.com/Hyzokaaa/opencroft/internal/certificate/domain/services"
 	"github.com/Hyzokaaa/opencroft/internal/certificate/infrastructure/acme"
@@ -228,7 +229,14 @@ func serve(ctx context.Context, args []string) {
 	}
 	jobs := job.NewRunner(id.NewULIDGenerator().Create, journal)
 
-	handler := server.Handler(server.Deps{
+	var autoDeploys *server.AutoDeploys
+	if d.demo {
+		autoDeploys = server.NewAutoDeploys(autodeploy.NewMemory())
+	} else {
+		autoDeploys = server.NewAutoDeploys(sqlite.NewAutoDeployRepository(auth.store))
+	}
+
+	deps := server.Deps{
 		Overview: overviewQueries.NewOverviewQuery(
 			instanceServices.NewListInstances(d.instances),
 			routeServices.NewListRoutes(d.routes),
@@ -256,7 +264,12 @@ func serve(ctx context.Context, args []string) {
 		PanelPort:       portOf(*addr),
 		AgentCheck:      d.agentCheck,
 		Simulated:       d.demo,
-	})
+		AutoDeploys:     autoDeploys,
+	}
+	handler := server.Handler(deps)
+	// A service whose branch moved is deployed again, also when no webhook
+	// said so.
+	go deps.WatchBranches(ctx)
 
 	total, err := auth.users.Count(ctx)
 	if err != nil {

@@ -55,6 +55,8 @@ type Deps struct {
 	// has no agent to ask (demo, or root running the runtime itself).
 	AgentCheck func(ctx context.Context) error
 	Simulated  bool
+	// AutoDeploys is which services deploy themselves; nil, none can.
+	AutoDeploys *AutoDeploys
 
 	// Auth guards every data endpoint. It is required: a nil here would
 	// serve the host to anyone who can reach the port.
@@ -143,6 +145,10 @@ func api(deps Deps) *http.ServeMux {
 	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/services/{service}/redeploy", deps.redeployService)
 	mux.HandleFunc("PUT /api/hosts/{hostId}/instances/{name}/services/{service}/properties", deps.configureService)
 	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/services/{service}/domains", deps.addServiceDomain)
+	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/services/{service}/autodeploy", deps.showAutoDeploy)
+	mux.HandleFunc("PUT /api/hosts/{hostId}/instances/{name}/services/{service}/autodeploy", deps.changeAutoDeploy)
+	// Outside /api/: a repository calls it, with a secret instead of a session.
+	mux.HandleFunc("POST /hooks/deploy/{name}/{service}", deps.hook)
 	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/services/{service}/env", deps.showEnvironment)
 	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/services/{service}/env", deps.changeEnvironment)
 	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/units/{unit}/logs", deps.showUnitLogs)

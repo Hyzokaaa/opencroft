@@ -171,6 +171,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /instances/{name}/services/{service}/env", s.changeEnvironment)
 	mux.HandleFunc("GET /instances/{name}/services/{service}/redeploy/plan", s.planRedeploy)
 	mux.HandleFunc("POST /instances/{name}/services/{service}/redeploy", s.redeploy)
+	mux.HandleFunc("GET /instances/{name}/services/{service}/tip", s.tip)
 	mux.HandleFunc("PUT /instances/{name}/services/{service}/properties/plan", s.planConfigure)
 	mux.HandleFunc("PUT /instances/{name}/services/{service}/properties", s.configure)
 	mux.HandleFunc("GET /instances/{name}/units/{unit}/logs", s.unitLogs)
