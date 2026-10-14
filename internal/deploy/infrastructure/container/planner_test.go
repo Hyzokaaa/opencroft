@@ -451,25 +451,61 @@ func TestPruningOnlyTouchesOurOwnSnapshots(t *testing.T) {
 	}
 }
 
-// A deployment that fails must leave every point of return it started with.
-func TestNothingIsPrunedBeforeTheDeploymentHasWorked(t *testing.T) {
+// Snapshots that pile up are a whole copy of the container each. However
+// often a deployment fails, what is left is the last few, the known good one,
+// and the one it took — and the newest are never the ones removed.
+func TestFailedDeploymentsDoNotPileUpSnapshots(t *testing.T) {
 	existing := []string{}
 	for i := 1; i <= 6; i++ {
 		existing = append(existing, entities.SnapshotName("backend", when(i)))
 	}
+	healthy := existing[0]
 
 	steps := planner().Deploy(Deployment{
-		Service: withHealth(nodeService()), At: time.Unix(0, 0), Existing: existing,
+		Service: withHealth(nodeService()), At: time.Unix(0, 0), Existing: existing, Healthy: healthy,
 	}).Steps
 
-	checked := false
+	removed, taken := map[string]bool{}, -1
 	for i, step := range steps {
-		if strings.Contains(step.Describe, "answers") {
-			checked = true
+		if len(step.Argv) > 2 && step.Argv[1] == "delete" {
+			if taken >= 0 {
+				t.Errorf("step %d removes a snapshot after the new one was taken", i+1)
+			}
+			removed[strings.TrimPrefix(step.Argv[2], "helpdesk/")] = true
 		}
-		if len(step.Argv) > 1 && step.Argv[1] == "delete" && !checked {
-			t.Fatalf("step %d removes a snapshot before the deployment was known to work", i+1)
+		if len(step.Argv) > 1 && step.Argv[1] == "snapshot" {
+			taken = i
 		}
+	}
+
+	if len(existing)-len(removed) != Keep+1 {
+		t.Errorf("%d of %d are removed, leaving more than the last %d and the known good one",
+			len(removed), len(existing), Keep)
+	}
+	if removed[healthy] {
+		t.Error("the known good snapshot is removed")
+	}
+	for _, newest := range existing[len(existing)-Keep:] {
+		if removed[newest] {
+			t.Errorf("%s, one of the newest, is removed", newest)
+		}
+	}
+}
+
+// Looking at a repository takes a snapshot too, and clears the same way.
+func TestLookingAtARepositoryDoesNotPileUpSnapshots(t *testing.T) {
+	existing := []string{}
+	for i := 1; i <= 6; i++ {
+		existing = append(existing, entities.SnapshotName("backend", when(i)))
+	}
+	removed := 0
+	for _, step := range planner().Checkout(Deployment{Service: nodeService(), At: time.Unix(0, 0), Existing: existing}) {
+		if len(step.Argv) > 2 && step.Argv[1] == "delete" {
+			removed++
+		}
+	}
+	if removed != len(existing)-Keep {
+		t.Errorf("looking removes %d of %d", removed, len(existing))
 	}
 }
 

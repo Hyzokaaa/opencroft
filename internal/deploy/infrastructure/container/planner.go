@@ -100,13 +100,19 @@ func (p *Planner) Checkout(d Deployment) []plan.Step {
 	service := d.Service
 
 	packages := append([]string{"git", "curl", "ca-certificates"}, service.Packages...)
-	steps := []plan.Step{
-		plan.Command("Take a snapshot to come back to",
-			p.bin, "snapshot", p.container, entities.SnapshotName(service.Name, d.At)),
+
+	// Old snapshots go before the new one is taken, not once the deployment
+	// has worked: a deployment that keeps failing, or a repository looked at
+	// again and again, would otherwise pile up a whole copy of the container
+	// each time, with nothing ever clearing them. What stays is what a
+	// deployment that works leaves — the last few and the known good one —
+	// and the snapshot this one takes next.
+	steps := append(p.prune(d), plan.Command("Take a snapshot to come back to",
+		p.bin, "snapshot", p.container, entities.SnapshotName(service.Name, d.At)))
+	steps = append(steps,
 		p.exec("Install "+strings.Join(packages, ", "),
 			"apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "+
-				strings.Join(packages, " ")),
-	}
+				strings.Join(packages, " ")))
 	if d.Missing != nil && len(d.Missing.Certificates) > 0 {
 		steps = append(steps, p.trust(d.Missing))
 	}
@@ -115,9 +121,10 @@ func (p *Planner) Checkout(d Deployment) []plan.Step {
 
 // Deploy is the whole thing, in the order it has to happen.
 //
-// The snapshot is first and is not optional. A deployment that breaks the
-// service is recoverable; one that breaks the database inside the container is
-// not, unless there is a point to go back to. Taking it costs seconds and is
+// The snapshot comes before anything touches the container — only old
+// snapshots are cleared ahead of it — and is not optional. A deployment that
+// breaks the service is recoverable; one that breaks the database inside the
+// container is not, unless there is a point to go back to. Taking it costs seconds and is
 // the one advantage a system container has over an image.
 func (p *Planner) Deploy(d Deployment) plan.Plan {
 	service := d.Service
@@ -165,10 +172,6 @@ func (p *Planner) Deploy(d Deployment) plan.Plan {
 	if service.Health.Wanted() && !service.IsSite() {
 		steps = append(steps, p.check(service))
 	}
-
-	// Last, so that a deployment that fails leaves every point of return it
-	// had when it started.
-	steps = append(steps, p.prune(d)...)
 
 	return plan.New(steps...)
 }
