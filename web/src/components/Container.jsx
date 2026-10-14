@@ -6,6 +6,7 @@ import Gated from './Gated.jsx'
 import LogView from './LogView.jsx'
 import PlanDialog from './PlanDialog.jsx'
 import Actions from './Actions.jsx'
+import CopyButton from './CopyButton.jsx'
 import DomainList from './DomainList.jsx'
 import { useServices, useDatabases, useFoundDatabases } from '../lib/useContainer.js'
 import { href, serviceHref } from '../lib/useRoute.js'
@@ -117,12 +118,26 @@ export default function Container({
         )}
       </div>
 
-      <p className="font-mono text-xs text-muted">
-        {container.image} · {container.address}
-        {container.internalName ? ` · ${container.internalName}` : ''}
-        {container.cpuLimit ? ` · ${container.cpuLimit} CPU` : ''}
-        {container.memLimit ? ` · ${container.memLimit}` : ''}
-      </p>
+      {/* The facts asked for over ssh, each with its name, and the two that
+          are pasted elsewhere one press from the clipboard. */}
+      <dl className="flex flex-wrap gap-x-6 gap-y-2 text-xs">
+        {[
+          ['Address', container.address, true],
+          ['Name inside the network', container.internalName, true],
+          ['Image', container.image],
+          ['Limits', [container.cpuLimit && `${container.cpuLimit} CPU`, container.memLimit].filter(Boolean).join(' · ')],
+        ]
+          .filter(([, value]) => value)
+          .map(([label, value, copy]) => (
+            <div key={label} className="min-w-0">
+              <dt className="text-[11px] text-muted">{label}</dt>
+              <dd className="mt-0.5 flex items-center gap-1.5 font-mono">
+                <span className="truncate">{value}</span>
+                {copy && <CopyButton text={value} label={`Copy the ${label.toLowerCase()}`} />}
+              </dd>
+            </div>
+          ))}
+      </dl>
 
       {/* The project is a label on the container: moving it changes nothing
           it runs, so it sits here with the facts rather than among actions. */}
@@ -780,7 +795,13 @@ function Empty({ onDeploy, blockedId }) {
   )
 }
 
+// The one move a page calls for. It used to be raised grey beside quiet grey,
+// and nobody could tell which button the page was pointing at: one solid
+// button per view, in ink — not green, which says "running" and nothing else.
 export const HEADER_PRIMARY =
+  'rounded border border-ink bg-ink px-2.5 py-1 text-xs font-medium text-ground transition hover:bg-ink/85'
+// A button that matters inside its own card, below the page's one primary.
+export const RAISED =
   'rounded border border-edge-strong bg-raised px-2.5 py-1 text-xs transition hover:border-ink/30'
 export const HEADER_SECONDARY =
   'rounded border border-edge px-2.5 py-1 text-xs text-muted transition hover:border-edge-strong hover:text-ink'

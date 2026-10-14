@@ -14,20 +14,24 @@ import { readJSON, humane, isAgentDown } from '../lib/api.js'
 // history on the project's page.
 // jobs, when given, is a reading the page already has: the header counts
 // what is running from the same one, rather than a second poll beside it.
-export default function Activity({ commandMode, containers, title, limit, reading }) {
+// subject, when given, is one service — "container/service" — for the history
+// on its own page.
+export default function Activity({ commandMode, containers, subject, title, limit, reading, empty }) {
   const polled = useJobs(!reading)
   const { jobs, error, read } = reading ?? polled
   const [scope, setScope] = useState('all')
   const [failedOnly, setFailedOnly] = useState(false)
   const [open, setOpen] = useState(null)
 
-  const mine = containers
-    ? jobs.filter((j) => containers.includes(j.subject.split('/')[0]))
-    : jobs
+  const mine = subject
+    ? jobs.filter((j) => j.subject === subject)
+    : containers
+      ? jobs.filter((j) => containers.includes(j.subject.split('/')[0]))
+      : jobs
   const shown = mine
-    .filter((j) => (scope === 'all' || j.kind === 'deploy') && (!failedOnly || j.status === 'failed'))
+    .filter((j) => (scope === 'all' || DEPLOYS.has(j.kind)) && (!failedOnly || j.status === 'failed'))
     .slice(0, limit ?? Infinity)
-  const failures = mine.filter((j) => (scope === 'all' || j.kind === 'deploy') && j.status === 'failed').length
+  const failures = mine.filter((j) => (scope === 'all' || DEPLOYS.has(j.kind)) && j.status === 'failed').length
 
   return (
     <Card
@@ -52,7 +56,7 @@ export default function Activity({ commandMode, containers, title, limit, readin
         <p role="status" className="px-4 py-8 text-center text-xs text-muted">Reading the history&hellip;</p>
       ) : shown.length === 0 ? (
         <p className="px-4 py-8 text-center text-xs text-muted">
-          {failedOnly ? 'Nothing here has failed.' : 'Nothing has been done here yet.'}
+          {failedOnly ? 'Nothing here has failed.' : empty ?? 'Nothing has been done here yet.'}
         </p>
       ) : (
         <ul className="divide-y divide-edge">
@@ -88,8 +92,13 @@ const KIND = {
   'route-edit': 'Edit domain', 'route-remove': 'Remove domain', 'route-path': 'Change a path',
   tls: 'Enable https', takeover: 'Take over', wildcard: 'Wildcard certificate',
   expose: 'Expose the panel', database: 'Database', 'database-remove': 'Remove database',
-  environment: 'Change environment', project: 'Project', configure: 'Save properties',
+  environment: 'Change environment', project: 'Project', configure: 'Save configuration',
+  'auto-deploy': 'Automatic deployment', 'route-alias': 'Domain name', 'database-adopt': 'Adopt database',
+  'snapshot-remove': 'Delete snapshot',
 }
+
+// What "Deploys" shows: one somebody started and one a new commit did.
+export const DEPLOYS = new Set(['deploy', 'auto-deploy'])
 
 // destroy is both a container and a service; the subject says which.
 function kindOf(job) {
@@ -225,7 +234,7 @@ export function useJobs(enabled = true) {
   return { jobs, error, read }
 }
 
-function ago(when) {
+export function ago(when) {
   const minutes = Math.round((Date.now() - when.getTime()) / 60000)
   if (minutes < 1) return 'just now'
   if (minutes < 60) return `${minutes}m ago`

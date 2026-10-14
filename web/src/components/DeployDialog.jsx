@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useDialog, dialogProps } from '../lib/useDialog.js'
 import { Discard } from './PlanDialog.jsx'
 import PlanDialog from './PlanDialog.jsx'
@@ -301,7 +301,8 @@ function Found({ service, why, onChange, onDeploy, onEditSource, peers }) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <p className="text-sm">
             {service.runtime ? `Detected ${service.runtime}.` : 'Nothing recognisable at the root.'}{' '}
-            <span className="text-muted">{why}</span>
+            {/* The daemon's why can say the same as the sentence before it. */}
+            {why && !(!service.runtime && /^nothing recognisable/i.test(why)) && <span className="text-muted">{why}</span>}
           </p>
           <button
             onClick={onEditSource}
@@ -342,32 +343,58 @@ function Found({ service, why, onChange, onDeploy, onEditSource, peers }) {
   )
 }
 
-// ServiceFields is how a service is built and started: the same fields for
-// the first deployment, in the dialog, and for every change after it, on the
-// service's own page. existing says the service is already deployed, so its
-// environment is its own file and not part of this form.
+// ServiceFields is how a service is built and started, for the first
+// deployment, in the dialog. The service's own page lays the same groups out
+// as cards of their own — Build, Run, Readiness — so each is exported too, and
+// the two never disagree about a field.
 export function ServiceFields({ service, onChange, adopted, existing, peers }) {
-  const set = (key) => (v) => onChange({ ...service, [key]: v })
-
   return (
     <>
-      <Field label="Install — has to finish" value={service.install} onChange={set("install")} mono
-        hint="Run in the checkout. Several commands joined with &&." />
-      <Field label="Build — has to finish" value={service.build} onChange={set("build")} mono
-        hint="Left empty, no build step happens." />
-      {/* An adopted service runs the way its own unit says, with its own
-          environment file. Croft writes neither, so offering to edit them
-          here would be offering something it will not do. */}
-      {adopted?.site ? (
-        <p className="rounded border border-edge px-3 py-2 text-xs text-muted">
-          The build in <span className="font-mono">{adopted.output}/</span> is published to{' '}
-          <span className="font-mono">{adopted.site}</span>, which the web server already serves —
-          nothing is restarted. A build with no index.html is refused before anything is replaced.
-          {adopted.envFile && (
-            <> The build reads <span className="font-mono">{adopted.envFile}</span>, which croft never writes.</>
-          )}
-        </p>
-      ) : adopted ? (
+      <BuildFields service={service} onChange={onChange} />
+      <RunFields service={service} onChange={onChange} adopted={adopted} />
+      {/* Once a service exists its environment is its file, edited on its
+          own and never written over by a deployment. Only the first
+          deployment is given one here. */}
+      {existing ? null : <EnvEditor value={service.env} onChange={(env) => onChange({ ...service, env })} peers={peers} />}
+      <HealthFields service={service} onChange={onChange} adopted={adopted} />
+    </>
+  )
+}
+
+export function BuildFields({ service, onChange }) {
+  const set = (key) => (v) => onChange({ ...service, [key]: v })
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      <Field label="Install" value={service.install} onChange={set('install')} mono
+        placeholder="none" hint="Has to finish. Run in the checkout; join several with &&." />
+      <Field label="Build" value={service.build} onChange={set('build')} mono
+        placeholder="none" hint="Has to finish. Empty: no build step." />
+      <Field label="System packages" value={service.packages} onChange={set('packages')} mono
+        placeholder="none" hint="Installed first, separated by spaces. git and curl always are." />
+    </div>
+  )
+}
+
+// An adopted service runs the way its own unit says, with its own
+// environment file. Croft writes neither, so offering to edit them here would
+// be offering something it will not do.
+export function RunFields({ service, onChange, adopted }) {
+  const set = (key) => (v) => onChange({ ...service, [key]: v })
+  if (adopted?.site) {
+    return (
+      <p className="rounded border border-edge px-3 py-2 text-xs text-muted">
+        The build in <span className="font-mono">{adopted.output}/</span> is published to{' '}
+        <span className="font-mono">{adopted.site}</span>, which the web server already serves —
+        nothing is restarted. A build with no index.html is refused before anything is replaced.
+        {adopted.envFile && (
+          <> The build reads <span className="font-mono">{adopted.envFile}</span>, which croft never writes.</>
+        )}
+      </p>
+    )
+  }
+  return (
+    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_9rem]">
+      {adopted ? (
         <p className="rounded border border-edge px-3 py-2 text-xs text-muted">
           Runs as <span className="font-mono">{adopted.unit}</span> says
           {adopted.runAs ? <> (as <span className="font-mono">{adopted.runAs}</span>)</> : ''}, with its
@@ -375,71 +402,67 @@ export function ServiceFields({ service, onChange, adopted, existing, peers }) {
           exactly as they are — croft restarts the unit, and never rewrites it.
         </p>
       ) : (
-        <Field label="Start — keeps running" value={service.start} onChange={set("start")} mono
-          hint="What systemd runs, and restarts if it exits. The server goes here, not above." />
+        <Field label="Start command" value={service.start} onChange={set('start')} mono
+          hint="Keeps running: systemd restarts it if it exits. The server goes here." />
       )}
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        {!adopted?.site && (
-          <Field label="Port it listens on" type="number" value={service.port} onChange={set('port')} />
-        )}
-        <Field label="Packages to install first" value={service.packages} onChange={set('packages')} mono
-          hint="git and curl are always installed." />
-      </div>
-
-      {/* Once a service exists its environment is its file, edited on its
-          own and never written over by a deployment. Only the first
-          deployment is given one here. */}
-      {existing ? (
-        <p className="text-xs text-faint">
-          The environment is its own file — it is changed under Environment, below, and not by saving this.
-        </p>
-      ) : (
-        <EnvEditor value={service.env} onChange={set('env')} peers={peers} />
-      )}
-
-      {/* Nothing reports readiness, so without somewhere to ask, a
-          deployment is finished when the unit is up — which is a weaker
-          promise, and the panel says so rather than implying more. A site
-          has no process to ask at all. */}
-      {!adopted?.site && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Ready when this answers" value={service.health} onChange={set('health')} mono
-            placeholder="/health"
-            hint={(service.health ?? '').trim()
-              ? 'Asked from the host, for up to 30 seconds.'
-              : 'Left empty, the deployment ends when the unit starts.'} />
-          <Field label="…and the body contains" value={service.contains} onChange={set('contains')} mono
-            placeholder="optional" />
-        </div>
-      )}
-    </>
+      <Field label="Port" type="number" value={service.port} onChange={set('port')} mono
+        hint="What it listens on." />
+    </div>
   )
 }
 
-// invalid, when given, is what is wrong with the value, said under the field
-// in place of the hint — where the eye already is.
-export function Field({ label, hint, invalid, value, onChange, onBlur, mono, type, placeholder, autoFocus }) {
+// Nothing reports readiness, so without somewhere to ask, a deployment is
+// finished when the unit is up — which is a weaker promise, and the panel
+// says so rather than implying more. A site has no process to ask at all.
+export function HealthFields({ service, onChange, adopted }) {
+  const set = (key) => (v) => onChange({ ...service, [key]: v })
+  if (adopted?.site) return null
   return (
-    <label className="block">
-      <span className="mb-1 block text-xs text-muted">{label}</span>
+    <div className="grid gap-3 md:grid-cols-2">
+      <Field label="Ready when this path answers" value={service.health} onChange={set('health')} mono
+        placeholder="e.g. /health"
+        hint={(service.health ?? '').trim()
+          ? 'Asked on the port above, from the host, for up to 30 seconds.'
+          : 'Empty: the deployment ends when the unit starts.'} />
+      <Field label="…and its body contains" value={service.contains} onChange={set('contains')} mono
+        optional />
+    </div>
+  )
+}
+
+// One field of a form: its label above, what to know or what is wrong below,
+// both tied to the input for a screen reader. invalid, when given, is said in
+// place of the hint — where the eye already is.
+export function Field({ label, hint, invalid, value, onChange, onBlur, mono, type, placeholder, autoFocus, optional, className = '' }) {
+  const id = useId()
+  const noteId = `${id}-note`
+  const note = invalid || hint
+  return (
+    <div className={`min-w-0 ${className}`}>
+      <label htmlFor={id} className="mb-1 block text-xs text-muted">
+        {label}
+        {optional && <span className="text-faint"> · optional</span>}
+      </label>
       <input
+        id={id}
         type={type ?? 'text'}
         value={value ?? ''}
         placeholder={placeholder}
         autoFocus={autoFocus}
         onBlur={onBlur}
+        spellCheck={mono ? false : undefined}
         aria-invalid={invalid ? true : undefined}
+        aria-describedby={note ? noteId : undefined}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full rounded border bg-ground px-3 py-2 text-sm outline-none transition focus:border-ink/40 ${
+        className={`h-8 w-full rounded border bg-ground px-2.5 outline-none transition placeholder:text-faint focus:border-ink/40 ${
           invalid ? 'border-problem/60' : 'border-field-edge'
-        } ${mono ? 'font-mono text-xs' : ''}`}
+        } ${mono ? 'font-mono text-xs' : 'text-[13px]'}`}
       />
       {invalid ? (
-        <span className="mt-1 block text-xs text-problem">{invalid}</span>
+        <p id={noteId} className="mt-1 text-xs text-problem">{invalid}</p>
       ) : (
-        hint && <span className="mt-1 block text-xs text-faint">{hint}</span>
+        hint && <p id={noteId} className="mt-1 text-[11px] leading-snug text-faint">{hint}</p>
       )}
-    </label>
+    </div>
   )
 }

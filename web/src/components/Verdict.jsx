@@ -32,7 +32,10 @@ export default function Verdict({ data, problemCount }) {
           </>
         ) : (
           <>
-            <span className="size-2.5 rounded-full bg-running" />
+            {/* Green says "running" on this panel and nothing else. */}
+            <span aria-hidden="true" className="flex size-6 items-center justify-center rounded-full border border-edge-strong text-xs text-muted">
+              ✓
+            </span>
             <span className="text-2xl font-medium">All good</span>
           </>
         )}

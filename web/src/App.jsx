@@ -745,6 +745,9 @@ function Dashboard({ onSignOut, onSessionLost }) {
           key={`${name}/${serviceName}`}
           container={openedContainer}
           name={serviceName}
+          part={tab}
+          jobsReading={jobsReading}
+          agentDown={agentDown}
           routes={data.routes}
           certificates={data.certificates ?? []}
           instances={data.instances}

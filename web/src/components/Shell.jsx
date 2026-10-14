@@ -65,12 +65,15 @@ export default function Shell({ data, host, section, tab, crumbs, commandMode, o
               </svg>
             </button>
             <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2">
-              <span className="truncate font-mono text-xs text-muted">local</span>
+              {/* On a phone only the page and the one above it fit: the rest
+                  were cut to a letter each, which said nothing. */}
+              <span className="hidden truncate font-mono text-xs text-muted sm:inline">local</span>
               {crumbs.map((crumb, i) => {
                 const last = i === crumbs.length - 1
+                const near = i >= crumbs.length - 2
                 return (
-                  <span key={crumb.href ?? crumb.label} className="flex min-w-0 items-center gap-2">
-                    <span className="text-faint" aria-hidden="true">/</span>
+                  <span key={crumb.href ?? crumb.label} className={`${near ? 'flex' : 'hidden sm:flex'} min-w-0 items-center gap-2`}>
+                    <span className={`text-faint ${i === crumbs.length - 2 || crumbs.length === 1 ? 'hidden sm:inline' : ''}`} aria-hidden="true">/</span>
                     {last ? (
                       <span className={`truncate text-sm ${crumb.mono ? 'font-mono' : ''}`} aria-current="page">
                         {crumb.label}

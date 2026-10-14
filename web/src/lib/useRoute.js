@@ -9,6 +9,8 @@ import { useCallback, useEffect, useState } from 'react'
 //   #/containers?status=…    every container, optionally filtered
 //   #/containers/:name       one container
 //   #/containers/:name/services/:service   one service in it
+//   #/containers/:name/services/:service/:part   one part of its page —
+//                            configuration, domains, logs… — so each is linkable
 //   #/domains                domains
 //   #/domains/certificates   certificates
 //   #/activity, #/settings
@@ -22,7 +24,7 @@ export function parse(hash) {
     return { section, tab: name === 'certificates' ? 'certificates' : 'domains', name: null, service: null, query }
   }
   const service = section === 'containers' && parts[2] === 'services' ? parts[3] ?? null : null
-  return { section, name, service, tab: null, query }
+  return { section, name, service, tab: service ? parts[4] ?? null : null, query }
 }
 
 export function href(section, name, query) {
@@ -34,8 +36,10 @@ export function href(section, name, query) {
 
 // serviceHref is the page of one service: under its container, because a
 // service is only ever somewhere.
-export function serviceHref(container, service) {
-  return `${href('containers', container)}/services/${encodeURIComponent(service)}`
+// part, when given, is one section of its page.
+export function serviceHref(container, service, part) {
+  const page = `${href('containers', container)}/services/${encodeURIComponent(service)}`
+  return part ? `${page}/${encodeURIComponent(part)}` : page
 }
 
 export function useRoute() {
