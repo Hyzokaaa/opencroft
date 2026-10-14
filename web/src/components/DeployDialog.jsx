@@ -11,29 +11,17 @@ import EnvEditor, { toObject, invalidKeys } from './EnvEditor.jsx'
 //
 // That is the whole difference from a buildpack. We guess as much as anyone
 // does; we just do it where you can see it and change it.
-export default function DeployDialog({ container, service: deployed, peers, onClose, onFinished, onAddDomain }) {
-  // Deploying something already here is the same second half, with what the
-  // container remembers instead of what was just detected. Asking again for a
-  // repository it already knows would be asking a question we can answer.
-  const [stage, setStage] = useState(deployed ? 'found' : 'source')
-  const [source, setSource] = useState(() => ({
-    repo: deployed?.repo ?? '',
-    branch: deployed?.branch ?? 'main',
-    name: deployed?.name ?? '',
-    path: deployed?.path ?? '',
-  }))
-  const [service, setService] = useState(() => (deployed ? remembered(deployed) : null))
-  // What was saved when this opened, to tell a change from none.
-  const [original] = useState(() => (deployed ? remembered(deployed) : null))
-  const [why, setWhy] = useState(
-    deployed ? `Saved on the container. Changes take effect the next time ${deployed.name} is deployed.` : '',
-  )
-  const changed = Boolean(service) && (!original || JSON.stringify(body(service)) !== JSON.stringify(body(original)))
+export default function DeployDialog({ container, peers, onClose, onFinished, onAddDomain }) {
+  // A service that already exists is configured on its own page, in place;
+  // this is only the first deployment, which has nothing to configure until
+  // the repository has been read.
+  const [stage, setStage] = useState('source')
+  const [source, setSource] = useState({ repo: '', branch: 'main', name: '', path: '' })
+  const [service, setService] = useState(null)
+  const [why, setWhy] = useState('')
   // Anything worth asking about before it is thrown away: a new service is
-  // all unsaved work once a repository has been typed; an existing one only
-  // when something was changed.
-  const sourceChanged = Boolean(deployed) && (source.repo !== (deployed.repo ?? '') || source.branch !== (deployed.branch ?? 'main') || source.path !== (deployed.path ?? ''))
-  const dirty = deployed ? changed || sourceChanged : Boolean(source.repo.trim()) || Boolean(service)
+  // all unsaved work once a repository has been typed.
+  const dirty = Boolean(source.repo.trim()) || Boolean(service)
   const [error, setError] = useState(null)
 
   const name = source.name || guessName(source.repo)
@@ -42,60 +30,15 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
   if (stage === 'inspecting') {
     return (
       <PlanDialog
-        request={{
-          title: `Look at ${source.repo}`,
-          url: `/api/hosts/local/instances/${container.name}/services/inspect`,
-          method: 'POST',
-          defaults: asked,
-          // The answer is a detection, not a job, so the dialog hands it back
-          // instead of watching a stream.
-          immediate: true,
-          working: 'Cloning and reading the repository…',
-        }}
+        request={inspection(container, asked)}
         onClose={onClose}
         dirty={dirty}
         onBack={() => setStage('source')}
         onResult={(detection) => {
           setWhy(detection.why ?? '')
-          // Re-detecting a service that already exists — after changing its
-          // branch, say — looks at the new code, not at what it is configured
-          // to do with it. The environment and the readiness check are not on
-          // the branch; wiping them here would make "change the branch" also
-          // mean "forget the secrets".
-          setService((prev) => ({
-            ...asked,
-            install: (detection.install ?? []).join(' && '),
-            build: (detection.build ?? []).join(' && '),
-            start: detection.start ?? '',
-            runtime: detection.runtime ?? '',
-            port: detection.port ?? 0,
-            packages: (detection.packages ?? []).join(' '),
-            env: prev?.env ?? '',
-            health: prev?.health ?? '',
-            contains: prev?.contains ?? '',
-          }))
+          setService((prev) => detected(asked, detection, prev))
           setStage('found')
         }}
-      />
-    )
-  }
-
-  // Saving writes the properties and nothing else; they take effect at the
-  // next deployment, and the service says so until then.
-  if (stage === 'saving') {
-    return (
-      <PlanDialog
-        request={{
-          title: `Save the properties of ${service.name}`,
-          url: `/api/hosts/local/instances/${container.name}/services/${service.name}/properties`,
-          method: 'PUT',
-          defaults: body(service),
-          verb: 'Save',
-        }}
-        onClose={onClose}
-        dirty={dirty}
-        onBack={() => setStage('found')}
-        onFinished={onFinished}
       />
     )
   }
@@ -104,13 +47,11 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
     return (
       <PlanDialog
         request={{
-          title: deployed
-            ? `${changed ? 'Save and redeploy' : 'Redeploy'} ${service.name}`
-            : `Deploy ${service.name} to ${container.name}`,
+          title: `Deploy ${service.name} to ${container.name}`,
           url: `/api/hosts/local/instances/${container.name}/services/deploy`,
           method: 'POST',
           defaults: body(service),
-          verb: deployed ? 'Redeploy' : 'Deploy',
+          verb: 'Deploy',
           // Running and reachable by nothing is half done.
           // The domain is given to the service just deployed, not to the
           // container.
@@ -128,11 +69,7 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
   }
 
   return (
-    <Frame
-      title={deployed ? `Properties of ${deployed.name}` : `Deploy a service to ${container.name}`}
-      onClose={onClose}
-      dirty={dirty}
-    >
+    <Frame title={`Deploy a service to ${container.name}`} onClose={onClose} dirty={dirty}>
       {stage === 'source' && (
         <Source
           value={source}
@@ -157,14 +94,9 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
           why={why}
           onChange={setService}
           onDeploy={() => setStage('deploying')}
-          onSave={() => setStage('saving')}
-          changed={changed}
-          pending={Boolean(deployed?.pending)}
-          // A new service was just inspected from what was typed a moment
-          // ago; a typo in the branch is fixed by going back, not by closing.
+          // It was inspected from what was typed a moment ago; a typo in the
+          // branch is fixed by going back, not by closing.
           onEditSource={() => setStage('source')}
-          adopted={deployed?.adopted}
-          existing={Boolean(deployed)}
           peers={peers}
         />
       )}
@@ -172,8 +104,48 @@ export default function DeployDialog({ container, service: deployed, peers, onCl
   )
 }
 
+// inspection is the request that clones or fetches a repository and reads
+// it: the first step of a new service, and "look again" on an existing one.
+export function inspection(container, asked) {
+  return {
+    title: `Look at ${asked.repo}`,
+    url: `/api/hosts/local/instances/${container.name}/services/inspect`,
+    method: 'POST',
+    defaults: asked,
+    // The answer is a detection, not a job, so the dialog hands it back
+    // instead of watching a stream.
+    immediate: true,
+    working: 'Cloning and reading the repository…',
+  }
+}
+
+// detected fills the form from what was found. Re-detecting a service that
+// already exists — after changing its branch, say — looks at the new code,
+// not at what it is configured to do with it. The environment and the
+// readiness check are not on the branch; wiping them here would make "change
+// the branch" also mean "forget the secrets".
+export function detected(asked, detection, prev) {
+  // Finding nothing is not finding that there is nothing: on a service that
+  // already has commands, a look that recognised nothing keeps them, and a
+  // start command or a port the code does not mention stays as it was.
+  const keep = Boolean(prev) && detection.found === false
+  return {
+    ...asked,
+    install: keep ? prev.install : (detection.install ?? []).join(' && '),
+    build: keep ? prev.build : (detection.build ?? []).join(' && '),
+    start: detection.start || prev?.start || '',
+    runtime: keep ? prev.runtime : detection.runtime ?? '',
+    port: detection.port || prev?.port || 0,
+    packages: keep ? prev.packages : (detection.packages ?? []).join(' '),
+    env: prev?.env ?? '',
+    health: prev?.health ?? '',
+    contains: prev?.contains ?? '',
+    status: prev?.status ?? 0,
+  }
+}
+
 // body is what the form sends: the same for saving and for deploying.
-function body(service) {
+export function body(service) {
   return {
     name: service.name,
     repo: service.repo,
@@ -186,14 +158,16 @@ function body(service) {
     port: Number(service.port) || 0,
     packages: (service.packages ?? '').split(/\s+/).filter(Boolean),
     env: toObject(service.env),
-    health: { path: (service.health ?? '').trim(), contains: (service.contains ?? '').trim(), status: 0 },
+    // The status is not on the form, but it is kept: saving anything else
+    // must not quietly clear it.
+    health: { path: (service.health ?? '').trim(), contains: (service.contains ?? '').trim(), status: Number(service.status) || 0 },
   }
 }
 
 // remembered turns what is stored on the container back into what the form
 // edits. The environment comes back too — masked in the editor, but present,
 // so changing one variable does not mean retyping the other nineteen.
-function remembered(deployed) {
+export function remembered(deployed) {
   return {
     repo: deployed.repo,
     branch: deployed.branch,
@@ -208,13 +182,14 @@ function remembered(deployed) {
     env: '',
     health: deployed.health?.path ?? '',
     contains: deployed.health?.contains ?? '',
+    status: deployed.health?.status ?? 0,
   }
 }
 
 // repoProblem says what is wrong with a repository URL before anything is
 // cloned: only public https is supported, so anything else is said here
 // rather than by git a round trip later.
-function repoProblem(repo) {
+export function repoProblem(repo) {
   const value = (repo ?? '').trim()
   if (!value) return 'A repository URL is required.'
   if (!/^https:\/\//.test(value)) return 'Use the https address of the repository — it starts with https://. SSH addresses need a deploy key, which is not built yet.'
@@ -316,10 +291,9 @@ function Source({ value, name, onChange, error, onSubmit }) {
 
 // Everything here is editable on purpose. What was detected is a suggestion,
 // and a suggestion you cannot change is a decision made behind your back.
-function Found({ service, why, onChange, onDeploy, onSave, changed, pending, onEditSource, adopted, existing, peers }) {
-  const set = (key) => (v) => onChange({ ...service, [key]: v })
-  const runnable = Boolean(adopted) || Boolean(service.start?.trim())
-  const badNames = existing ? [] : invalidKeys(service.env)
+function Found({ service, why, onChange, onDeploy, onEditSource, peers }) {
+  const runnable = Boolean(service.start?.trim())
+  const badNames = invalidKeys(service.env)
 
   return (
     <>
@@ -329,14 +303,12 @@ function Found({ service, why, onChange, onDeploy, onSave, changed, pending, onE
             {service.runtime ? `Detected ${service.runtime}.` : 'Nothing recognisable at the root.'}{' '}
             <span className="text-muted">{why}</span>
           </p>
-          {onEditSource && (
-            <button
-              onClick={onEditSource}
-              className="shrink-0 text-xs text-muted underline decoration-dotted underline-offset-2 transition hover:text-ink"
-            >
-              Change repository or branch
-            </button>
-          )}
+          <button
+            onClick={onEditSource}
+            className="shrink-0 text-xs text-muted underline decoration-dotted underline-offset-2 transition hover:text-ink"
+          >
+            Change repository or branch
+          </button>
         </div>
         <p className="text-xs text-faint">
           {service.repo}
@@ -347,104 +319,100 @@ function Found({ service, why, onChange, onDeploy, onSave, changed, pending, onE
           and what gets written onto the container.
         </p>
 
-        <Field label="Install — has to finish" value={service.install} onChange={set("install")} mono
-          hint="Run in the checkout. Several commands joined with &&." />
-        <Field label="Build — has to finish" value={service.build} onChange={set("build")} mono
-          hint="Left empty, no build step happens." />
-        {/* An adopted service runs the way its own unit says, with its own
-            environment file. Croft writes neither, so offering to edit them
-            here would be offering something it will not do. */}
-        {adopted?.site ? (
-          <p className="rounded border border-edge px-3 py-2 text-xs text-muted">
-            The build in <span className="font-mono">{adopted.output}/</span> is published to{' '}
-            <span className="font-mono">{adopted.site}</span>, which the web server already serves —
-            nothing is restarted. A build with no index.html is refused before anything is replaced.
-            {adopted.envFile && (
-              <> The build reads <span className="font-mono">{adopted.envFile}</span>, which croft never writes.</>
-            )}
-          </p>
-        ) : adopted ? (
-          <p className="rounded border border-edge px-3 py-2 text-xs text-muted">
-            Runs as <span className="font-mono">{adopted.unit}</span> says
-            {adopted.runAs ? <> (as <span className="font-mono">{adopted.runAs}</span>)</> : ''}, with its
-            environment from <span className="font-mono">{adopted.envFile || 'nowhere'}</span>. Both stay
-            exactly as they are — croft restarts the unit, and never rewrites it.
-          </p>
-        ) : (
-          <Field label="Start — keeps running" value={service.start} onChange={set("start")} mono
-            hint="What systemd runs, and restarts if it exits. The server goes here, not above." />
-        )}
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          {!adopted?.site && (
-            <Field label="Port it listens on" type="number" value={service.port} onChange={set('port')} />
-          )}
-          <Field label="Packages to install first" value={service.packages} onChange={set('packages')} mono
-            hint="git and curl are always installed." />
-        </div>
-
-        {/* Once a service exists its environment is its file, edited from
-            Environment… and never written over by a deployment. Only the
-            first deployment is given one here. */}
-        {existing ? (
-          <p className="text-xs text-faint">
-            The environment is its own file now — change it from Environment&hellip; on the service.
-          </p>
-        ) : (
-          <EnvEditor value={service.env} onChange={set('env')} peers={peers} />
-        )}
-
-        {/* Nothing reports readiness, so without somewhere to ask, a
-            deployment is finished when the unit is up — which is a weaker
-            promise, and the panel says so rather than implying more. A site
-            has no process to ask at all. */}
-        {!adopted?.site && (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Ready when this answers" value={service.health} onChange={set('health')} mono
-              placeholder="/health"
-              hint={service.health.trim()
-                ? 'Asked from the host, for up to 30 seconds.'
-                : 'Left empty, the deployment ends when the unit starts.'} />
-            <Field label="…and the body contains" value={service.contains} onChange={set('contains')} mono
-              placeholder="optional" />
-          </div>
-        )}
+        <ServiceFields service={service} onChange={onChange} peers={peers} />
       </div>
 
-      {/* Configuring and deploying are two intentions. A service that exists
-          can have its properties saved for the next deployment, or saved and
-          deployed now; a new one has nothing to save until it is deployed. */}
       <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-edge px-5 py-3">
         <p className="text-xs text-muted">
           {!runnable
             ? 'Nothing says how to start it, so there is no deployment to run.'
             : badNames.length
               ? 'A variable name in Environment is not valid yet.'
-            : existing
-              ? changed
-                ? 'Saving changes nothing that runs.'
-                : pending ? 'Saved changes are waiting to be deployed.' : 'Nothing changed yet.'
               : 'A snapshot is taken first, so this can be undone.'}
         </p>
-        <div className="flex gap-2">
-          {existing && (
-            <button
-              onClick={onSave}
-              disabled={!changed}
-              className="rounded border border-edge px-3 py-1.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink disabled:opacity-40"
-            >
-              Save&hellip;
-            </button>
-          )}
-          <button
-            onClick={onDeploy}
-            disabled={!runnable || badNames.length > 0 || (existing && !changed && !pending)}
-            className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30 disabled:opacity-40"
-          >
-            {!existing ? 'Deploy…' : changed ? 'Save and redeploy…' : 'Redeploy…'}
-          </button>
-        </div>
+        <button
+          onClick={onDeploy}
+          disabled={!runnable || badNames.length > 0}
+          className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30 disabled:opacity-40"
+        >
+          Deploy&hellip;
+        </button>
       </footer>
+    </>
+  )
+}
+
+// ServiceFields is how a service is built and started: the same fields for
+// the first deployment, in the dialog, and for every change after it, on the
+// service's own page. existing says the service is already deployed, so its
+// environment is its own file and not part of this form.
+export function ServiceFields({ service, onChange, adopted, existing, peers }) {
+  const set = (key) => (v) => onChange({ ...service, [key]: v })
+
+  return (
+    <>
+      <Field label="Install — has to finish" value={service.install} onChange={set("install")} mono
+        hint="Run in the checkout. Several commands joined with &&." />
+      <Field label="Build — has to finish" value={service.build} onChange={set("build")} mono
+        hint="Left empty, no build step happens." />
+      {/* An adopted service runs the way its own unit says, with its own
+          environment file. Croft writes neither, so offering to edit them
+          here would be offering something it will not do. */}
+      {adopted?.site ? (
+        <p className="rounded border border-edge px-3 py-2 text-xs text-muted">
+          The build in <span className="font-mono">{adopted.output}/</span> is published to{' '}
+          <span className="font-mono">{adopted.site}</span>, which the web server already serves —
+          nothing is restarted. A build with no index.html is refused before anything is replaced.
+          {adopted.envFile && (
+            <> The build reads <span className="font-mono">{adopted.envFile}</span>, which croft never writes.</>
+          )}
+        </p>
+      ) : adopted ? (
+        <p className="rounded border border-edge px-3 py-2 text-xs text-muted">
+          Runs as <span className="font-mono">{adopted.unit}</span> says
+          {adopted.runAs ? <> (as <span className="font-mono">{adopted.runAs}</span>)</> : ''}, with its
+          environment from <span className="font-mono">{adopted.envFile || 'nowhere'}</span>. Both stay
+          exactly as they are — croft restarts the unit, and never rewrites it.
+        </p>
+      ) : (
+        <Field label="Start — keeps running" value={service.start} onChange={set("start")} mono
+          hint="What systemd runs, and restarts if it exits. The server goes here, not above." />
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {!adopted?.site && (
+          <Field label="Port it listens on" type="number" value={service.port} onChange={set('port')} />
+        )}
+        <Field label="Packages to install first" value={service.packages} onChange={set('packages')} mono
+          hint="git and curl are always installed." />
+      </div>
+
+      {/* Once a service exists its environment is its file, edited on its
+          own and never written over by a deployment. Only the first
+          deployment is given one here. */}
+      {existing ? (
+        <p className="text-xs text-faint">
+          The environment is its own file — it is changed under Environment, below, and not by saving this.
+        </p>
+      ) : (
+        <EnvEditor value={service.env} onChange={set('env')} peers={peers} />
+      )}
+
+      {/* Nothing reports readiness, so without somewhere to ask, a
+          deployment is finished when the unit is up — which is a weaker
+          promise, and the panel says so rather than implying more. A site
+          has no process to ask at all. */}
+      {!adopted?.site && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Ready when this answers" value={service.health} onChange={set('health')} mono
+            placeholder="/health"
+            hint={(service.health ?? '').trim()
+              ? 'Asked from the host, for up to 30 seconds.'
+              : 'Left empty, the deployment ends when the unit starts.'} />
+          <Field label="…and the body contains" value={service.contains} onChange={set('contains')} mono
+            placeholder="optional" />
+        </div>
+      )}
     </>
   )
 }

@@ -1,10 +1,12 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import Card from './Card.jsx'
 import Chip from './Chip.jsx'
 import Gated from './Gated.jsx'
 import LogView from './LogView.jsx'
 import PlanDialog from './PlanDialog.jsx'
 import DomainList from './DomainList.jsx'
+import { Discard } from './PlanDialog.jsx'
+import { Field, ServiceFields, body, remembered, repoProblem, inspection, detected } from './DeployDialog.jsx'
 import {
   Problems, Snapshots, StateDot, Reading, Failed, Unavailable, snapshotRemoval,
   HEADER_PRIMARY, HEADER_SECONDARY, SECONDARY,
@@ -32,8 +34,8 @@ export default function ServicePage({
   publicAddress,
   commandMode,
   runtime = 'lxc',
-  onDeploy,
   onRedeploy,
+  onWrite = (title, open) => open(),
   onPowerService,
   onEnvironment,
   onDestroy,
@@ -51,6 +53,46 @@ export default function ServicePage({
 
   const services = data?.services ?? []
   const service = services.find((s) => s.name === name)
+
+  // The configuration is edited in place. draft is what has been typed and
+  // not saved yet; with none, the form shows what the container has saved,
+  // and follows it as it is read again.
+  const [draft, setDraft] = useState(null)
+  const [why, setWhy] = useState('')
+  const [writing, setWriting] = useState(null)
+  const [settling, setSettling] = useState(null)
+  const [notice, setNotice] = useState(null)
+  const original = service ? remembered(service) : null
+  const form = draft ?? original
+  const changed = Boolean(draft && original) && JSON.stringify(body(draft)) !== JSON.stringify(body(original))
+
+  // A write has finished and the service been read again. If what is saved
+  // now is what was typed, the draft has done its job; if not — a deployment
+  // that stopped saves nothing — the draft stays, and the page says so,
+  // instead of the change vanishing with the dialog.
+  useEffect(() => {
+    if (!settling) return
+    setSettling(null)
+    if (!changed) {
+      setDraft(null)
+      setWhy('')
+      setNotice(null)
+    } else {
+      setNotice(
+        settling === 'deploy'
+          ? 'What is saved is still not what this form says — a deployment that stops saves nothing. Your changes are still here: fix what it stopped on and try again, or save them for later.'
+          : 'What is saved is still not what this form says. Your changes are still here, not saved.',
+      )
+    }
+  }, [settling, changed])
+
+  // Leaving the page with typed changes asks first, as closing a form does.
+  useEffect(() => {
+    if (!changed) return
+    const warn = (e) => e.preventDefault()
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [changed])
 
   // Before anything is known about it there is nothing to say about it: the
   // page says what it is waiting for, or what failed, and nothing else.
@@ -105,6 +147,30 @@ export default function ServicePage({
   const noPort = port ? null : `${name} listens on no port croft knows of, so a domain has nowhere to lead.`
   const addDomain = () => onAddDomain(container, service)
 
+  // What the configuration form can do, said once and used by the form's
+  // own buttons and by the header's.
+  const runnable = Boolean(service.adopted) || Boolean(form.start?.trim())
+  // What stops the form from being saved, in the words said beside its
+  // buttons — and beside the header's, which does the same thing.
+  const formProblem = repoProblem(form.repo)
+    ? 'The repository address needs fixing before this can be saved.'
+    : !site && (form.health ?? '').trim() && !Number(form.port)
+      ? 'A readiness check is asked on a port: say which one it listens on.'
+      : !runnable
+        ? 'Nothing says how to start it, so there is nothing to deploy.'
+        : null
+  const edit = (next) => {
+    setNotice(null)
+    setDraft(next)
+  }
+  const save = () => onWrite(`Save the configuration of ${name}`, () => setWriting('save'))
+  const saveAndDeploy = () => onWrite(`Save and redeploy ${name}`, () => setWriting('deploy'))
+  const lookAgain = () => onWrite(`Look at ${form.repo}`, () => setWriting('inspect'))
+  const finished = (what) => async () => {
+    await reload()
+    setSettling(what)
+  }
+
   // The one move the situation calls for, and the sentence that says why.
   // A stopped container stops everything in it, so starting it comes first;
   // a service that is down is looked at before it is written to; saved
@@ -114,8 +180,10 @@ export default function ServicePage({
     ? { sentence: `${container.name} is stopped, so ${name} is not running.`, primary: 'start-container' }
     : !running && !site
       ? { sentence: `${name} is ${service.state || 'not running'}${whole.length ? `, so ${whole[0].domain} answers with an error page` : ''}.`, primary: 'logs' }
+      : changed
+        ? { sentence: `${name} is running. The configuration below has changes that are not saved yet.`, primary: 'redeploy' }
       : service.pending
-        ? { sentence: `${name} is running. Changes saved in Properties are not deployed yet.`, primary: 'redeploy' }
+        ? { sentence: `${name} is running. Saved configuration changes are not deployed yet.`, primary: 'redeploy' }
         : whole.length === 0 && names.length > 0
           ? { sentence: `${name} is running, reached only at ${names.map((n) => n.domain).join(', ')}.`, primary: null }
         : whole.length === 0
@@ -132,7 +200,11 @@ export default function ServicePage({
     !site && running && { key: 'restart', label: 'Restart', onClick: () => onPowerService(container, service, 'restart') },
     !site && running && { key: 'stop', label: 'Stop', onClick: () => onPowerService(container, service, 'stop') },
     !site && !running && { key: 'start', label: 'Start', onClick: () => onPowerService(container, service, 'start') },
-    { key: 'redeploy', label: 'Redeploy', onClick: () => onRedeploy(container, service) },
+    // With the form changed, redeploying what is saved would quietly leave
+    // out what was just typed: the one button does what the form says.
+    changed
+      ? { key: 'redeploy', label: 'Save and redeploy…', onClick: saveAndDeploy, reason: up ? formProblem : null }
+      : { key: 'redeploy', label: 'Redeploy', onClick: () => onRedeploy(container, service) },
   ].filter(Boolean)
 
   return (
@@ -161,7 +233,7 @@ export default function ServicePage({
             <Chip
               label="changes not deployed"
               tone="border-yours/40 text-yours"
-              explain="Saved in Properties, not running yet. Redeploy to apply them."
+              explain="Saved in Configuration, not running yet. Redeploy to apply them."
             />
           )}
           {up && !running && service.state && (
@@ -183,6 +255,7 @@ export default function ServicePage({
           {verbs.map((v) => (
             <Gated
               key={v.key}
+              reason={v.reason}
               reasonId={up ? undefined : stoppedId}
               onClick={v.onClick}
               className={situation.primary === v.key ? HEADER_PRIMARY : HEADER_SECONDARY}
@@ -272,7 +345,25 @@ export default function ServicePage({
         )}
       </Card>
 
-      <Deployment service={service} container={container} onDeploy={onDeploy} onRedeploy={onRedeploy} blockedId={up ? undefined : stoppedId} />
+      <Configuration
+        service={service}
+        form={form}
+        onChange={edit}
+        changed={changed}
+        why={why}
+        notice={notice}
+        problem={formProblem}
+        repoWrong={repoProblem(form.repo)}
+        stoppedId={up ? undefined : stoppedId}
+        onLookAgain={lookAgain}
+        onSave={save}
+        onDeploy={saveAndDeploy}
+        onDiscard={() => {
+          setDraft(null)
+          setWhy('')
+          setNotice(null)
+        }}
+      />
 
       <Card title="Environment">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
@@ -331,6 +422,53 @@ export default function ServicePage({
 
       {logs && <LogView container={container.name} service={name} onClose={() => setLogs(false)} />}
 
+      {/* Each write shows its plan first. Closing one leaves the form as it
+          was: the draft lives on the page, not in the dialog. */}
+      {writing === 'inspect' && (
+        <PlanDialog
+          request={inspection(container, { repo: form.repo.trim(), branch: form.branch, name, path: form.path })}
+          onClose={() => setWriting(null)}
+          onBack={() => setWriting(null)}
+          onResult={(detection) => {
+            setWhy(
+              detection.found === false
+                ? 'nothing recognisable in it, so the commands below are the ones it already had'
+                : (detection.why || `found ${detection.runtime || 'something'}`).replace(/\.$/, ''),
+            )
+            edit(detected({ repo: form.repo.trim(), branch: form.branch, name, path: form.path }, detection, form))
+            setWriting(null)
+          }}
+        />
+      )}
+      {writing === 'save' && (
+        <PlanDialog
+          request={{
+            title: `Save the configuration of ${name}`,
+            url: `/api/hosts/local/instances/${container.name}/services/${name}/properties`,
+            method: 'PUT',
+            defaults: body(form),
+            verb: 'Save',
+          }}
+          onClose={() => setWriting(null)}
+          onBack={() => setWriting(null)}
+          onFinished={finished('save')}
+        />
+      )}
+      {writing === 'deploy' && (
+        <PlanDialog
+          request={{
+            title: `Save and redeploy ${name}`,
+            url: `/api/hosts/local/instances/${container.name}/services/deploy`,
+            method: 'POST',
+            defaults: body(form),
+            verb: 'Redeploy',
+          }}
+          onClose={() => setWriting(null)}
+          onBack={() => setWriting(null)}
+          onFinished={finished('deploy')}
+        />
+      )}
+
       {deleting && (
         <PlanDialog
           request={snapshotRemoval(container, deleting)}
@@ -345,35 +483,61 @@ export default function ServicePage({
   )
 }
 
-// Where the service comes from and how it is started: the facts Properties
-// changes, said rather than hidden behind the button.
-function Deployment({ service, container, onDeploy, onRedeploy, blockedId }) {
+// Where the service comes from and how it is built and started, as a form
+// on the page rather than behind a button. Saving writes it for the next
+// deployment; saving and redeploying puts it to work now. Reading the
+// repository again only suggests — nothing has to be looked at before
+// anything can be changed.
+//
+// Not a Card: its footer stays in sight while the form is scrolled, and a
+// clipped section would hold it in place.
+function Configuration({
+  service, form, onChange, changed, why, notice, problem, repoWrong, stoppedId,
+  onLookAgain, onSave, onDeploy, onDiscard,
+}) {
+  const [left, setLeft] = useState(false)
+  const [asking, setAsking] = useState(false)
+  const statusId = useId()
   const site = service.adopted?.site
-  const rows = [
-    ['Repository', `${service.repo || '—'}${service.branch ? ` @ ${service.branch}` : ''}`],
+  const set = (key) => (v) => onChange({ ...form, [key]: v })
+  const sourceMoved = form.repo !== (service.repo ?? '') || form.branch !== (service.branch ?? '')
+
+  const facts = [
     ['Deployed', service.commit ? service.commit.slice(0, 7) : 'not recorded'],
-    ['Path', `${service.path || '—'}${site ? ` → ${site}` : service.adopted?.unit ? ` · ${service.adopted.unit}` : ''}`],
-    !site && ['Port', service.port ? `:${service.port}` : container.port ? `:${container.port}, the container's` : null],
-    ['Readiness', service.health?.path ? `${service.health.path}${service.health.status ? ` answers ${service.health.status}` : ''}` : null],
+    site ? ['Published to', site] : service.adopted?.unit && ['Runs as', service.adopted.unit],
     ['Known good', service.healthy ?? null],
   ].filter(Boolean)
 
+  // Why the form's buttons cannot be used yet, in words, beside them.
+  const status = problem
+    ? problem
+    : changed
+        ? 'Saving changes nothing that runs; it takes effect at the next deployment.'
+        : service.pending
+          ? 'Saved changes are waiting to be deployed — Redeploy, at the top, applies them.'
+          : 'Nothing changed. Edit any field to change how it is deployed.'
+  const blocked = !changed || Boolean(problem)
+
   return (
-    <Card
-      title="Deployment"
-      action={
-        <div className="flex items-center gap-2">
-          <button onClick={() => onDeploy(container, service)} className={SECONDARY}>
-            Properties&hellip;
-          </button>
-          <Gated reasonId={blockedId} onClick={() => onRedeploy(container, service)} className={SECONDARY}>
-            Redeploy
-          </Gated>
+    <section aria-labelledby={`${statusId}-title`} className="rounded-lg border border-edge bg-panel">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-edge px-4 py-2.5">
+        <div className="flex items-baseline gap-2">
+          <h2 id={`${statusId}-title`} className="text-sm font-medium">Configuration</h2>
+          {changed && <span className="text-xs text-yours">not saved</span>}
         </div>
-      }
-    >
-      <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 px-4 py-3 text-xs">
-        {rows.map(([label, value]) => (
+        <button
+          onClick={() => {
+            setLeft(true)
+            if (!repoWrong) onLookAgain()
+          }}
+          className={SECONDARY}
+        >
+          Look at the repository again&hellip;
+        </button>
+      </header>
+
+      <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 border-b border-edge px-4 py-3 text-xs">
+        {facts.map(([label, value]) => (
           <div key={label} className="contents">
             <dt className="text-muted">{label}</dt>
             <dd className="min-w-0 break-all font-mono">
@@ -384,11 +548,83 @@ function Deployment({ service, container, onDeploy, onRedeploy, blockedId }) {
       </dl>
       {/* The fact belongs here; what to do about it, beside it. */}
       {!service.healthy && (
-        <p className="border-t border-edge px-4 py-2.5 text-[11px] text-caution">
+        <p className="border-b border-edge px-4 py-2.5 text-[11px] text-caution">
           Nothing is recorded as having worked for {service.name}, so a rollback has no point to go back to.
-          Set a readiness check in Properties and deploy again to get one.
+          Set a readiness check below and deploy again to get one.
         </p>
       )}
-    </Card>
+
+      <div className="space-y-3 px-4 py-4">
+        {notice && (
+          <p role="alert" className="rounded border border-caution/30 px-3 py-2 text-xs text-caution">
+            {notice}
+          </p>
+        )}
+
+        <Field
+          label="Repository"
+          hint="A public https URL. Private repositories need a deploy key, which is not built yet."
+          invalid={left ? repoWrong : null}
+          onBlur={() => setLeft(true)}
+          placeholder="https://github.com/you/app.git"
+          value={form.repo}
+          onChange={set('repo')}
+        />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Branch" value={form.branch} onChange={set('branch')} />
+          <Field label="Where it lands" value={form.path} onChange={set('path')} mono />
+        </div>
+
+        {why ? (
+          <p className="text-xs text-muted">
+            Read the repository again: {why}. Check what is below, then save.
+          </p>
+        ) : sourceMoved ? (
+          <p className="text-xs text-muted">
+            The commands below are still the ones saved for {service.repo || 'the old repository'}. Look at the
+            repository again to have them suggested from the new code, or change them yourself.
+          </p>
+        ) : null}
+
+        <ServiceFields service={form} onChange={onChange} adopted={service.adopted} existing />
+      </div>
+
+      <footer className={`${changed ? 'sticky bottom-0 z-10' : ''} flex flex-wrap items-center justify-between gap-3 rounded-b-lg border-t border-edge bg-panel px-4 py-3`}>
+        <p id={statusId} className={`text-xs ${service.pending && !changed ? 'text-yours' : 'text-muted'}`}>
+          {status}
+        </p>
+        {asking ? (
+          <Discard
+            onKeep={() => setAsking(false)}
+            onDiscard={() => {
+              setAsking(false)
+              setLeft(false)
+              onDiscard()
+            }}
+          />
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            {changed && (
+              <button
+                onClick={() => setAsking(true)}
+                className="px-1 text-xs text-muted underline decoration-dotted underline-offset-2 transition hover:text-ink"
+              >
+                Discard changes
+              </button>
+            )}
+            <Gated reasonId={blocked ? statusId : undefined} onClick={onSave} className={HEADER_SECONDARY}>
+              Save&hellip;
+            </Gated>
+            <Gated
+              reasonId={blocked ? statusId : stoppedId}
+              onClick={onDeploy}
+              className={HEADER_PRIMARY}
+            >
+              Save and redeploy&hellip;
+            </Gated>
+          </div>
+        )}
+      </footer>
+    </section>
   )
 }

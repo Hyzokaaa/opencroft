@@ -84,7 +84,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
   }
   const setDeploying = (d) =>
     d && agentDown
-      ? blockedByAgent(d.service ? `Properties of ${d.service.name}` : `Deploy a service to ${d.container.name}`)
+      ? blockedByAgent(`Deploy a service to ${d.container.name}`)
       : setDeployingState(d)
   const setEnvironment = (d) =>
     d && agentDown ? blockedByAgent(`Environment of ${d.service.name}`) : setEnvironmentState(d)
@@ -752,8 +752,8 @@ function Dashboard({ onSignOut, onSessionLost }) {
           publicAddress={publicAddressOf(host)}
           commandMode={commandMode}
           runtime={runtimeBin}
-          onDeploy={(container, service) => setDeploying({ container, service })}
           onRedeploy={redeploy}
+          onWrite={(title, open) => (agentDown ? blockedByAgent(title) : open())}
           onPowerService={powerService}
           onEnvironment={(container, service) => setEnvironment({ container, service })}
           onDestroy={destroyService}
@@ -886,7 +886,6 @@ function Dashboard({ onSignOut, onSessionLost }) {
       {deploying && (
         <DeployDialog
           container={deploying.container}
-          service={deploying.service}
           peers={data.instances}
           onClose={() => { setDeploying(null); reload() }}
           onFinished={reload}
