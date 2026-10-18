@@ -20,6 +20,9 @@ import (
 type fakeDeployer struct {
 	mu    sync.Mutex
 	asked []string
+
+	// services is what FindAll answers.
+	services []agent.ServiceDTO
 }
 
 func (f *fakeDeployer) record(format string, args ...any) {
@@ -42,7 +45,7 @@ func (f *fakeDeployer) was(call string) bool {
 func onePlan() plan.Plan { return plan.New(plan.Command("Do it", "lxc", "exec", "x")) }
 
 func (f *fakeDeployer) FindAll(context.Context, string) (agent.ServicesResponse, error) {
-	return agent.ServicesResponse{}, nil
+	return agent.ServicesResponse{Services: f.services}, nil
 }
 func (f *fakeDeployer) InspectPlan(context.Context, string, agent.ServiceDTO) (plan.Plan, error) {
 	return onePlan(), nil
@@ -300,6 +303,32 @@ func TestARedeployReachesTheAgentWithNothingInIt(t *testing.T) {
 		if !fake.was(call) {
 			t.Errorf("never asked: %s (asked %v)", call, fake.asked)
 		}
+	}
+}
+
+// A plan's summary is read as a promise. Saying a snapshot comes first, for a
+// service that takes none, would have somebody approve a deployment believing
+// it can be undone.
+func TestARedeploySaysWhetherItCanBeUndone(t *testing.T) {
+	handler, fake, _ := testAPI()
+	base := "/api/hosts/local/instances/helpdesk/services/web/redeploy?plan=1"
+
+	summary := func() string {
+		var body struct {
+			Summary string `json:"summary"`
+		}
+		_ = json.Unmarshal(request(t, handler, http.MethodPost, base).Body.Bytes(), &body)
+		return body.Summary
+	}
+
+	fake.services = []agent.ServiceDTO{{Name: "web", Branch: "dev"}}
+	if got := summary(); !strings.Contains(got, "A snapshot is taken first") {
+		t.Errorf("with snapshots on, the summary is %q", got)
+	}
+
+	fake.services = []agent.ServiceDTO{{Name: "web", Branch: "dev", NoSnapshot: true}}
+	if got := summary(); strings.Contains(got, "A snapshot is taken first") || !strings.Contains(got, "No snapshot") {
+		t.Errorf("with snapshots off, the summary is %q", got)
 	}
 }
 

@@ -254,9 +254,13 @@ func (d Deps) redeployService(w http.ResponseWriter, r *http.Request) {
 		if found, err := deployer.FindAll(r.Context(), name); err == nil {
 			for _, s := range found.Services {
 				if s.Name == service {
+					way := "A snapshot is taken first, so this can be undone."
+					if s.NoSnapshot {
+						way = "No snapshot is taken first: undoing it means redeploying an older commit."
+					}
 					summary = fmt.Sprintf(
-						"Redeploy %s from the tip of %s, with the commands and environment it already has. "+
-							"A snapshot is taken first, so this can be undone.", service, s.Branch)
+						"Redeploy %s from the tip of %s, with the commands and environment it already has. %s",
+						service, s.Branch, way)
 				}
 			}
 		}
