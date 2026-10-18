@@ -14,6 +14,9 @@ descargó.
 
 ## No publicado
 
+### v0.35.0 — 2026-10-18
+- feat: let a service deploy without a snapshot first, turned off and on from its deployments, for hosts where copying the whole container freezes the machine
+
 ### v0.34.0 — 2026-10-14
 - feat: deploy a service again whenever its branch moves, told by the repository's webhook or found by asking it every few minutes
 - feat: a service page in sections — overview, configuration in cards, domains, environment, automatic deployments, deployments and logs — each with its own address
