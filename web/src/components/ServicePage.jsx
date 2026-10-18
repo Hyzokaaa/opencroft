@@ -217,6 +217,7 @@ export default function ServicePage({
     ? `Take a snapshot before every deployment of ${name}`
     : `Deploy ${name} without a snapshot`
   const toggleSnapshots = () => onWrite(snapshotsTitle, () => setWriting('snapshot-policy'))
+  const repair = () => onWrite(`Repair the checkout of ${name}`, () => setWriting('repair'))
   const finished = (what) => async () => {
     await reload()
     setSettling(what)
@@ -459,6 +460,10 @@ export default function ServicePage({
 
           {part === 'deployments' && (
             <>
+              {/* First, not after the history: with a long list of deployments
+                  above it, a setting that decides what every one of them does
+                  was a scroll away from anybody looking for it. */}
+              <SnapshotPolicy name={name} off={Boolean(service.noSnapshot)} onToggle={toggleSnapshots} />
               <Activity
                 subject={subject}
                 title={`What was done to ${name}`}
@@ -466,7 +471,6 @@ export default function ServicePage({
                 commandMode={commandMode}
                 empty={`Nothing has been done to ${name} from this panel yet.`}
               />
-              <SnapshotPolicy name={name} off={Boolean(service.noSnapshot)} onToggle={toggleSnapshots} />
               <Snapshots
                 only={name}
                 untaken={Boolean(service.noSnapshot)}
@@ -483,6 +487,7 @@ export default function ServicePage({
                 onDelete={setDeleting}
                 databases={databases.data?.databases ?? []}
               />
+              <Checkout path={service.path} onRepair={repair} />
             </>
           )}
 
@@ -562,6 +567,19 @@ export default function ServicePage({
           onClose={() => setWriting(null)}
           onBack={() => setWriting(null)}
           onFinished={finished('deploy')}
+        />
+      )}
+
+      {writing === 'repair' && (
+        <PlanDialog
+          request={{
+            title: `Repair the checkout of ${name}`,
+            url: `/api/hosts/local/instances/${container.name}/services/${name}/repair`,
+            method: 'POST',
+            verb: 'Repair',
+          }}
+          onClose={() => setWriting(null)}
+          onFinished={reload}
         />
       )}
 
@@ -694,6 +712,28 @@ function SnapshotPolicy({ name, off, onToggle }) {
             container itself.
           </span>
         )}
+      </p>
+    </Card>
+  )
+}
+
+// Last and quiet: it is only ever needed after a deployment failed and said to
+// come here. Offered always rather than only then, because the panel cannot
+// tell a damaged checkout without asking git, and asking is the repair's job.
+function Checkout({ path, onRepair }) {
+  return (
+    <Card
+      title="Copy of the repository"
+      action={
+        <button type="button" onClick={onRepair} className={SECONDARY}>
+          Repair…
+        </button>
+      }
+    >
+      <p className="px-4 py-3 text-xs text-muted">
+        Kept in {path}. If a deployment stops because git&apos;s files there are damaged — what a power cut while
+        fetching leaves — repairing removes the empty files and fetches the branch again. Nothing outside .git
+        changes; deploy again afterwards.
       </p>
     </Card>
   )

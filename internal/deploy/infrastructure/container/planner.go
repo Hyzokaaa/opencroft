@@ -551,6 +551,35 @@ func counted(describe string, i, total int) string {
 	return fmt.Sprintf("%s (%d of %d)", describe, i+1, total)
 }
 
+// Repair mends a checkout that a power cut left damaged.
+//
+// git writes an object as a new file and moves the branch onto it. When the
+// machine loses power right after, the filesystem can keep the file's name and
+// lose what was in it: the branch then points at an empty object, and every
+// fetch after that stops on it. What is empty carries nothing, so it is
+// removed, and the branch is fetched again without trusting what is left.
+//
+// Nothing is reset, built or restarted — that is the next deployment's work,
+// approved as its own plan once this one has said it worked.
+func (p *Planner) Repair(service *entities.Service) plan.Plan {
+	branch := service.Source.Branch
+	if branch == "" {
+		branch = "main"
+	}
+	git := "git -C " + service.Path
+	depth := fmt.Sprintf(" --depth %d", Depth)
+	if service.Adopted != nil {
+		git = "git -c safe.directory=" + service.Path + " -C " + service.Path
+		depth = ""
+	}
+	return plan.New(
+		p.exec("Remove the empty files git left in "+service.Path+"/.git",
+			"find "+service.Path+"/.git -type f -empty -delete"),
+		p.exec("Fetch "+service.Source.Repo+" at "+branch+" again, every object of it",
+			fmt.Sprintf("%s fetch --refetch%s %s %s", git, depth, shellWord(service.Source.Repo), branch)),
+	)
+}
+
 // Destroy takes a service off the container.
 //
 // The snapshot is first and is not a DeployKind, so nothing will ever prune

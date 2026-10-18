@@ -145,6 +145,7 @@ func api(deps Deps) *http.ServeMux {
 	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/services/{service}/redeploy", deps.redeployService)
 	mux.HandleFunc("PUT /api/hosts/{hostId}/instances/{name}/services/{service}/properties", deps.configureService)
 	mux.HandleFunc("PUT /api/hosts/{hostId}/instances/{name}/services/{service}/snapshot-policy", deps.setSnapshotPolicy)
+	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/services/{service}/repair", deps.repairService)
 	mux.HandleFunc("POST /api/hosts/{hostId}/instances/{name}/services/{service}/domains", deps.addServiceDomain)
 	mux.HandleFunc("GET /api/hosts/{hostId}/instances/{name}/services/{service}/autodeploy", deps.showAutoDeploy)
 	mux.HandleFunc("PUT /api/hosts/{hostId}/instances/{name}/services/{service}/autodeploy", deps.changeAutoDeploy)

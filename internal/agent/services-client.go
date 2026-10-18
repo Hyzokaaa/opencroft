@@ -181,6 +181,20 @@ func (a *ServiceClient) Configure(ctx context.Context, container string, want Se
 		servicePath(container, "/"+url.PathEscape(want.Name)+"/properties"), want, report)
 }
 
+// ── Repairing a damaged checkout ─────────────────────────────────────────────
+
+func (a *ServiceClient) RepairPlan(ctx context.Context, container, service string) (plan.Plan, error) {
+	var response PlanResponse
+	err := a.c.call(ctx, http.MethodGet,
+		servicePath(container, "/"+url.PathEscape(service)+"/repair/plan"), nil, &response)
+	return response.Plan, err
+}
+
+func (a *ServiceClient) Repair(ctx context.Context, container, service string, report func(int, string)) error {
+	return a.c.streamed(ctx, http.MethodPost,
+		servicePath(container, "/"+url.PathEscape(service)+"/repair"), nil, report)
+}
+
 // ── Deploying with or without a snapshot ─────────────────────────────────────
 
 func (a *ServiceClient) SnapshotPolicyPlan(ctx context.Context, container, service string, want SnapshotPolicyDTO) (plan.Plan, error) {

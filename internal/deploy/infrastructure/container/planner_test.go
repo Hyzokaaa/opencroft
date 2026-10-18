@@ -97,6 +97,43 @@ func TestWithoutSnapshotsTheOldOnesAreStillCleared(t *testing.T) {
 	}
 }
 
+// Repairing is offered to somebody whose deployment just failed, and it
+// deletes files. It must reach nothing but git's own empty ones, and do
+// nothing a deployment would — no reset, no build, no restart — so that what
+// runs is only ever changed by a plan that says it deploys.
+func TestARepairOnlyTouchesGitsOwnFiles(t *testing.T) {
+	for _, service := range []*entities.Service{nodeService(), adoptedSite()} {
+		steps := planner().Repair(service).Steps
+		if len(steps) != 2 {
+			t.Fatalf("%s: %d steps", service.Name, len(steps))
+		}
+		if got := steps[0].Shell(); !strings.HasSuffix(got, "find "+service.Path+"/.git -type f -empty -delete") {
+			t.Errorf("%s removes: %s", service.Name, got)
+		}
+		body := text(planner().Repair(service))
+		for _, never := range []string{"reset", "build", "systemctl", "rm ", "snapshot"} {
+			if strings.Contains(body, never) {
+				t.Errorf("%s: a repair runs %q:\n%s", service.Name, never, body)
+			}
+		}
+		if !strings.Contains(body, "fetch --refetch") || !strings.Contains(body, service.Source.Repo) {
+			t.Errorf("%s: the branch is not fetched again from where it records:\n%s", service.Name, body)
+		}
+	}
+}
+
+// An adopted checkout is somebody else's and keeps its whole history; one croft
+// cloned is shallow on purpose. A repair leaves each the way it found it.
+func TestARepairKeepsTheCheckoutTheShapeItWas(t *testing.T) {
+	if body := text(planner().Repair(nodeService())); !strings.Contains(body, "--depth 10") {
+		t.Errorf("croft's own checkout comes back whole:\n%s", body)
+	}
+	site := text(planner().Repair(adoptedSite()))
+	if strings.Contains(site, "--depth") || !strings.Contains(site, "safe.directory=") {
+		t.Errorf("the adopted checkout is made shallow, or refused as someone else's:\n%s", site)
+	}
+}
+
 // Every step either acts on the container from outside, or runs inside it, or
 // is the readiness check — which has to be outside, and says so.
 func TestTheCommandsGoWhereTheyShould(t *testing.T) {

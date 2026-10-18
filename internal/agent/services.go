@@ -620,7 +620,7 @@ func (s *Server) inspect(w http.ResponseWriter, r *http.Request) {
 
 	for _, step := range p.Steps {
 		if err := host.RunStep(ctx, s.host, step); err != nil {
-			writeError(w, http.StatusInternalServerError, fmt.Errorf("%s: %w", step.Describe, err))
+			writeError(w, http.StatusInternalServerError, explain(step, err))
 			return
 		}
 	}
@@ -1022,7 +1022,31 @@ func explain(step plan.Step, err error) error {
 				"    %s",
 			step.Describe, container.Patience/60, step.Shell())
 	}
+	if damaged(err) {
+		return fmt.Errorf(
+			"%s stopped because the copy of the repository inside the container is damaged: files git was "+
+				"writing when the machine last lost power are empty.\n"+
+				"Repair the checkout from the service's Deployments — it removes the empty files and fetches the "+
+				"branch again, touching nothing outside .git — and then deploy again.\n"+
+				"    %v", step.Describe, err)
+	}
 	return fmt.Errorf("%s: %w", step.Describe, err)
+}
+
+// damaged is what git says, in its own words, when objects it wrote are not
+// there any more. Read off the message because git has no exit code of its
+// own for it: 128 is every fatal error.
+func damaged(err error) bool {
+	text := err.Error()
+	for _, sign := range []string{
+		"error: object file ", "fatal: bad object ", "cannot read existing object", "object corrupt or missing",
+		"loose object",
+	} {
+		if strings.Contains(text, sign) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) showAnnotations(w http.ResponseWriter, r *http.Request) {

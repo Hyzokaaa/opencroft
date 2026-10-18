@@ -699,6 +699,49 @@ func (d Deps) configureService(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": service})
 }
 
+// Repairer mends a checkout a power cut left with empty objects in it.
+type Repairer interface {
+	RepairPlan(ctx context.Context, container, service string) (plan.Plan, error)
+	Repair(ctx context.Context, container, service string, report func(int, string)) error
+}
+
+func (d Deps) repairService(w http.ResponseWriter, r *http.Request) {
+	if !d.writable(w) {
+		return
+	}
+	repairer, ok := d.Services.(Repairer)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, errors.New("this host cannot repair a checkout"))
+		return
+	}
+
+	name, service := r.PathValue("name"), r.PathValue("service")
+	p, err := repairer.RepairPlan(r.Context(), name, service)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if wantsPlan(r) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"summary": fmt.Sprintf("Repair the copy of the repository %s keeps in %s: remove the empty files a "+
+				"power cut left in .git and fetch the branch again. Nothing outside .git changes, and nothing is "+
+				"built or restarted — deploy again afterwards.", service, name),
+			"plan": p,
+		})
+		return
+	}
+
+	started := d.Jobs.Start("repair", name+"/"+service, p,
+		func(ctx context.Context, report func(int, string)) error {
+			if d.Simulated {
+				return d.rehearse(p, report)
+			}
+			return repairer.Repair(ctx, name, service, report)
+		})
+	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": service})
+}
+
 // SnapshotPolicy decides whether a service's deployments start with a
 // snapshot. Nothing that runs changes, so it is not a property and leaves
 // nothing pending.
