@@ -55,3 +55,10 @@ body {
   border: 3px solid var(--color-ground);
   border-radius: 6px;
 }
+
+/* A command too long for its line scrolls sideways, and the bar is drawn right
+   under the text. With one line and nothing below it, the bar sat across the
+   bottom of the letters and hid the command it was there to reveal. */
+pre.overflow-x-auto {
+  padding-bottom: 0.5rem;
+}
