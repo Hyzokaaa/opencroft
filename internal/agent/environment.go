@@ -102,7 +102,7 @@ func (s *Server) environmentPlan(
 	if err != nil {
 		return plan.Plan{}, err
 	}
-	return planner.ChangeEnvironment(service, file, next, len(want), time.Now()), nil
+	return planner.ChangeEnvironment(service, file, next, len(want), time.Now(), s.noSnapshot(ctx, name, service.Name)), nil
 }
 
 func (s *Server) acceptEnvironmentChange(r *http.Request) (string, *deployEntities.Service, string, EnvChangeDTO, map[string]string, error) {

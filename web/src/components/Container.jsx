@@ -1148,7 +1148,7 @@ function DataWarning({ databases }) {
 
 // only, when given, is one service: its own snapshots, the ones taken when it
 // was deployed. They are still of the whole container, and the card says so.
-export function Snapshots({ snapshots, services, container, commandMode, read, error, unavailable, onRetry, runtime, onRollback, onDelete, databases, only }) {
+export function Snapshots({ snapshots, services, container, commandMode, read, error, unavailable, onRetry, runtime, onRollback, onDelete, databases, only, untaken }) {
   const healthy = new Set(services.map((s) => s.healthy).filter(Boolean))
   const alive = new Set(services.map((s) => s.name))
 
@@ -1191,7 +1191,7 @@ export function Snapshots({ snapshots, services, container, commandMode, read, e
         )
       ) : rows.length === 0 ? (
         <p className="px-4 py-6 text-center text-xs text-muted">
-          None yet. One is taken before every deployment.
+          {untaken ? `None, and deployments of ${only} take none.` : 'None yet. One is taken before every deployment.'}
         </p>
       ) : (
         <>

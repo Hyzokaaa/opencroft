@@ -92,6 +92,10 @@ type ServiceDTO struct {
 	Commit  string `json:"commit,omitempty"`
 	Healthy string `json:"healthy,omitempty"`
 
+	// NoSnapshot is shown, never accepted: it is changed through its own
+	// request, so a deployment cannot turn the way back off by saying so.
+	NoSnapshot bool `json:"noSnapshot,omitempty"`
+
 	// State is read from the container, not remembered. The machine is the
 	// source of truth about whether something is running.
 	State string `json:"state,omitempty"`
@@ -425,6 +429,8 @@ func (s *Server) deployment(ctx context.Context, name string, service *deployEnt
 		Existing: s.snapshots(ctx, name),
 		Healthy:  s.get(ctx, name, full(service.Name, "healthy")),
 		Missing:  missing,
+
+		NoSnapshot: s.noSnapshot(ctx, name, service.Name),
 	}
 }
 
@@ -793,8 +799,9 @@ func (s *Server) runDeployment(w http.ResponseWriter, r *http.Request, name stri
 		// Only now is this a version known to work, and only now is it worth
 		// keeping as the one to come back to. A site has no readiness to ask;
 		// its check is the publish itself, which refuses a build with nothing
-		// to serve and swaps in the whole of one that has.
-		if service.Health.Wanted() || service.IsSite() {
+		// to serve and swaps in the whole of one that has. With no snapshot
+		// taken there is nothing to name, and the last one named stays.
+		if (service.Health.Wanted() || service.IsSite()) && !deployment.NoSnapshot {
 			_ = s.instances.Annotate(ctx, name, annotation(service.Name, "healthy"), snapshot)
 		}
 		return nil
@@ -1074,6 +1081,8 @@ func fromConfig(config map[string]string, name string) ServiceDTO {
 		},
 		Commit:  read("commit"),
 		Healthy: read("healthy"),
+
+		NoSnapshot: config[full(name, snapshotKey)] == snapshotOff,
 	}
 	if a := adoptionFrom(config, name); a != nil {
 		dto.Adopted = &AdoptedDTO{Unit: a.Unit, Site: a.Site, Output: a.Output, RunAs: a.RunAs, EnvFile: a.EnvFile}

@@ -58,6 +58,12 @@ type Deployment struct {
 	Existing []string
 	Healthy  string
 
+	// NoSnapshot is a service whose owner chose to deploy without a way
+	// back. On a `dir` pool every snapshot is a full copy of the container,
+	// and on some hosts writing that copy out has frozen the whole machine;
+	// a test environment can rather lose the rollback than the host.
+	NoSnapshot bool
+
 	// Missing is what the repository's server leaves out of its
 	// certificate, found while the plan was made; nil when nothing is.
 	Missing *Missing
@@ -106,9 +112,12 @@ func (p *Planner) Checkout(d Deployment) []plan.Step {
 	// again and again, would otherwise pile up a whole copy of the container
 	// each time, with nothing ever clearing them. What stays is what a
 	// deployment that works leaves — the last few and the known good one —
-	// and the snapshot this one takes next.
-	steps := append(p.prune(d), plan.Command("Take a snapshot to come back to",
-		p.bin, "snapshot", p.container, entities.SnapshotName(service.Name, d.At)))
+	// and the snapshot this one takes next. Pruning still runs when no new
+	// one is taken: what is already there stays within the same limit.
+	steps := p.prune(d)
+	if !d.NoSnapshot {
+		steps = append(steps, p.snapshot(service, d.At))
+	}
 	steps = append(steps,
 		p.exec("Install "+strings.Join(packages, ", "),
 			"apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "+
@@ -122,10 +131,11 @@ func (p *Planner) Checkout(d Deployment) []plan.Step {
 // Deploy is the whole thing, in the order it has to happen.
 //
 // The snapshot comes before anything touches the container — only old
-// snapshots are cleared ahead of it — and is not optional. A deployment that
-// breaks the service is recoverable; one that breaks the database inside the
-// container is not, unless there is a point to go back to. Taking it costs seconds and is
-// the one advantage a system container has over an image.
+// snapshots are cleared ahead of it. A deployment that breaks the service is
+// recoverable; one that breaks the database inside the container is not,
+// unless there is a point to go back to. It is the one advantage a system
+// container has over an image, so it is taken unless the service's owner
+// turned it off, and then the plan simply has no such step to approve.
 func (p *Planner) Deploy(d Deployment) plan.Plan {
 	service := d.Service
 	steps := p.Checkout(d)
@@ -352,13 +362,15 @@ func (p *Planner) WriteEnvironment(service *entities.Service, file, content stri
 // ChangeEnvironment writes an environment file and makes the change take
 // effect: a process reads its environment when it starts, and a site's build
 // read it when it was built. A snapshot comes first, like every other change
-// to a service — a variable deleted by mistake is one Restore away.
-func (p *Planner) ChangeEnvironment(service *entities.Service, file, content string, count int, at time.Time) plan.Plan {
-	steps := []plan.Step{
-		plan.Command("Take a snapshot to come back to",
-			p.bin, "snapshot", p.container, entities.SnapshotName(service.Name, at)),
-		p.WriteEnvironment(service, file, content, count),
+// to a service — a variable deleted by mistake is one Restore away — unless
+// the service deploys without snapshots, in which case it changes without one
+// too.
+func (p *Planner) ChangeEnvironment(service *entities.Service, file, content string, count int, at time.Time, noSnapshot bool) plan.Plan {
+	steps := []plan.Step{}
+	if !noSnapshot {
+		steps = append(steps, p.snapshot(service, at))
 	}
+	steps = append(steps, p.WriteEnvironment(service, file, content, count))
 
 	if !service.IsSite() {
 		return plan.New(append(steps,
@@ -476,6 +488,11 @@ func body(want string) string {
 		return "exit 0"
 	}
 	return "case \"$answer\" in *" + want + "*) exit 0;; esac"
+}
+
+func (p *Planner) snapshot(service *entities.Service, at time.Time) plan.Step {
+	return plan.Command("Take a snapshot to come back to",
+		p.bin, "snapshot", p.container, entities.SnapshotName(service.Name, at))
 }
 
 // prune removes our older snapshots for this service, and only ours. Each

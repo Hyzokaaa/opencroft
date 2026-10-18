@@ -181,6 +181,20 @@ func (a *ServiceClient) Configure(ctx context.Context, container string, want Se
 		servicePath(container, "/"+url.PathEscape(want.Name)+"/properties"), want, report)
 }
 
+// ── Deploying with or without a snapshot ─────────────────────────────────────
+
+func (a *ServiceClient) SnapshotPolicyPlan(ctx context.Context, container, service string, want SnapshotPolicyDTO) (plan.Plan, error) {
+	var response PlanResponse
+	err := a.c.call(ctx, http.MethodPut,
+		servicePath(container, "/"+url.PathEscape(service)+"/snapshot-policy/plan"), want, &response)
+	return response.Plan, err
+}
+
+func (a *ServiceClient) SetSnapshotPolicy(ctx context.Context, container, service string, want SnapshotPolicyDTO, report func(int, string)) error {
+	return a.c.streamed(ctx, http.MethodPut,
+		servicePath(container, "/"+url.PathEscape(service)+"/snapshot-policy"), want, report)
+}
+
 // ── Removing a snapshot ──────────────────────────────────────────────────────
 
 func (a *ServiceClient) SnapshotRemovalPlan(ctx context.Context, container, snapshot string) (plan.Plan, string, error) {

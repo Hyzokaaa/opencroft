@@ -695,6 +695,59 @@ func (d Deps) configureService(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": service})
 }
 
+// SnapshotPolicy decides whether a service's deployments start with a
+// snapshot. Nothing that runs changes, so it is not a property and leaves
+// nothing pending.
+type SnapshotPolicy interface {
+	SnapshotPolicyPlan(ctx context.Context, container, service string, want agent.SnapshotPolicyDTO) (plan.Plan, error)
+	SetSnapshotPolicy(ctx context.Context, container, service string, want agent.SnapshotPolicyDTO, report func(int, string)) error
+}
+
+func (d Deps) setSnapshotPolicy(w http.ResponseWriter, r *http.Request) {
+	if !d.writable(w) {
+		return
+	}
+	policy, ok := d.Services.(SnapshotPolicy)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, errors.New("this host cannot change how its services are snapshotted"))
+		return
+	}
+
+	name, service := r.PathValue("name"), r.PathValue("service")
+	var body agent.SnapshotPolicyDTO
+	if err := readBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	p, err := policy.SnapshotPolicyPlan(r.Context(), name, service, body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if wantsPlan(r) {
+		summary := fmt.Sprintf("Take a snapshot of %s before every deployment of %s again, so a deployment "+
+			"that breaks something can be undone. Nothing that runs changes now.", name, service)
+		if !body.Enabled {
+			summary = fmt.Sprintf("Deploy %s without a snapshot first. If a deployment breaks something, the way back "+
+				"is redeploying an older commit; whatever changed outside the code — the database, files — has "+
+				"none. Snapshots already taken stay. Nothing that runs changes now.", service)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"summary": summary, "plan": p})
+		return
+	}
+
+	started := d.Jobs.Start("snapshot-policy", name+"/"+service, p,
+		func(ctx context.Context, report func(int, string)) error {
+			if d.Simulated {
+				return d.rehearse(p, report)
+			}
+			return policy.SetSnapshotPolicy(ctx, name, service, body, report)
+		})
+	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": started.Id, "name": service})
+}
+
 // SnapshotRemover deletes a snapshot somebody chose to let go of.
 type SnapshotRemover interface {
 	SnapshotRemovalPlan(ctx context.Context, container, snapshot string) (plan.Plan, string, error)

@@ -174,6 +174,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /instances/{name}/services/{service}/tip", s.tip)
 	mux.HandleFunc("PUT /instances/{name}/services/{service}/properties/plan", s.planConfigure)
 	mux.HandleFunc("PUT /instances/{name}/services/{service}/properties", s.configure)
+	mux.HandleFunc("PUT /instances/{name}/services/{service}/snapshot-policy/plan", s.planSnapshotPolicy)
+	mux.HandleFunc("PUT /instances/{name}/services/{service}/snapshot-policy", s.setSnapshotPolicy)
 	mux.HandleFunc("GET /instances/{name}/units/{unit}/logs", s.unitLogs)
 	for kind, key := range map[Adoptable]string{AdoptUnit: "{unit}", AdoptSite: "{site}"} {
 		base := "/instances/{name}/" + string(kind) + "/" + key

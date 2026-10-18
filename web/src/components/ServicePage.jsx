@@ -213,6 +213,10 @@ export default function ServicePage({
   const save = () => onWrite(`Save the configuration of ${name}`, () => setWriting('save'))
   const saveAndDeploy = () => onWrite(`Save and redeploy ${name}`, () => setWriting('deploy'))
   const lookAgain = () => onWrite(`Look at ${form.repo}`, () => setWriting('inspect'))
+  const snapshotsTitle = service?.noSnapshot
+    ? `Take a snapshot before every deployment of ${name}`
+    : `Deploy ${name} without a snapshot`
+  const toggleSnapshots = () => onWrite(snapshotsTitle, () => setWriting('snapshot-policy'))
   const finished = (what) => async () => {
     await reload()
     setSettling(what)
@@ -462,8 +466,10 @@ export default function ServicePage({
                 commandMode={commandMode}
                 empty={`Nothing has been done to ${name} from this panel yet.`}
               />
+              <SnapshotPolicy name={name} off={Boolean(service.noSnapshot)} onToggle={toggleSnapshots} />
               <Snapshots
                 only={name}
+                untaken={Boolean(service.noSnapshot)}
                 snapshots={data?.snapshots ?? []}
                 services={services}
                 container={container}
@@ -559,6 +565,20 @@ export default function ServicePage({
         />
       )}
 
+      {writing === 'snapshot-policy' && (
+        <PlanDialog
+          request={{
+            title: snapshotsTitle,
+            url: `/api/hosts/local/instances/${container.name}/services/${name}/snapshot-policy`,
+            method: 'PUT',
+            defaults: { enabled: Boolean(service.noSnapshot) },
+            verb: service.noSnapshot ? 'Turn on' : 'Turn off',
+          }}
+          onClose={() => setWriting(null)}
+          onFinished={reload}
+        />
+      )}
+
       {deleting && (
         <PlanDialog
           request={snapshotRemoval(container, deleting)}
@@ -646,6 +666,39 @@ function Badge({ badge }) {
 
 // What it is and where it stands, on one screen: the facts somebody asks for
 // first, each one copyable; how it is reached; what was done to it last.
+// Whether deployments start with a snapshot, beside the snapshots themselves:
+// the choice and what it leaves are read in one place. Said as a cost both
+// ways, because each is one — a full copy of the container every time, or no
+// way back for anything outside the code.
+function SnapshotPolicy({ name, off, onToggle }) {
+  return (
+    <Card
+      title="Snapshot before each deployment"
+      action={
+        <button type="button" onClick={onToggle} className={SECONDARY}>
+          {off ? 'Turn on…' : 'Turn off…'}
+        </button>
+      }
+    >
+      <p className="px-4 py-3 text-xs">
+        {off ? (
+          <span className="text-caution">
+            Off. {name} deploys without a copy of the container first: if a deployment breaks something, the way
+            back is redeploying an older commit, and whatever changed outside the code — the database, files — has
+            none. The snapshots below were taken before this was turned off.
+          </span>
+        ) : (
+          <span className="text-muted">
+            On. Every deployment of {name}, and every change to its environment, starts with a copy of the whole
+            container to come back to. Depending on how the host stores containers, that copy can be the size of the
+            container itself.
+          </span>
+        )}
+      </p>
+    </Card>
+  )
+}
+
 function Overview({ service, container, port, names, certificates, noPort, autoDeploy, jobs, subject, to, stoppedId, onAddDomain }) {
   const site = service.adopted?.site
   const last = jobs.find((j) => j.subject === subject && DEPLOYS.has(j.kind))
@@ -683,7 +736,13 @@ function Overview({ service, container, port, names, certificates, noPort, autoD
           </div>
         </dl>
         {/* The fact belongs here; what to do about it, beside it. */}
-        {!service.healthy && !site && (
+        {service.noSnapshot ? (
+          <p className="border-t border-edge px-4 py-2.5 text-xs text-caution">
+            Deployed without snapshots: a deployment that breaks something is undone by redeploying an older
+            commit, and the database or files have no way back.{' '}
+            <a href={to('deployments')} className="underline underline-offset-2">Snapshot settings</a>
+          </p>
+        ) : !service.healthy && !site && (
           <p className="border-t border-edge px-4 py-2.5 text-xs text-caution">
             Nothing is recorded as having worked, so a rollback has no point to go back to.{' '}
             <a href={to('configuration')} className="underline underline-offset-2">Set a readiness check</a> and deploy

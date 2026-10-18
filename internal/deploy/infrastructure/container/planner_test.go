@@ -51,6 +51,52 @@ func TestTheSnapshotIsTakenBeforeAnythingElse(t *testing.T) {
 	}
 }
 
+// Turning snapshots off is a choice to deploy with no way back, made because a
+// full copy of the container can freeze the host it runs on. A plan that took
+// one anyway would bring back exactly what the choice was made to avoid; one
+// that took none without being asked would lose the rollback silently.
+func TestAServiceWithoutSnapshotsNeverTakesOne(t *testing.T) {
+	without := Deployment{Service: nodeService(), At: time.Unix(0, 0), NoSnapshot: true}
+
+	plans := map[string]plan.Plan{
+		"deploying":               planner().Deploy(without),
+		"looking at a repository": plan.New(planner().Checkout(without)...),
+		"changing the environment": planner().ChangeEnvironment(
+			nodeService(), "/srv/backend/.env", "PORT=1\n", 1, when(1), true),
+	}
+	for what, p := range plans {
+		for _, step := range p.Steps {
+			if len(step.Argv) > 1 && step.Argv[1] == "snapshot" {
+				t.Errorf("%s takes a snapshot: %q", what, step.Shell())
+			}
+		}
+	}
+
+	if !strings.Contains(text(deploy(t, nodeService())), "lxc snapshot helpdesk") {
+		t.Error("a service that never chose takes no snapshot either")
+	}
+}
+
+// Old snapshots are still cleared when no new one is taken: turning snapshots
+// off must not leave a dozen full copies of the container behind for ever.
+func TestWithoutSnapshotsTheOldOnesAreStillCleared(t *testing.T) {
+	existing := []string{}
+	for i := 1; i <= 6; i++ {
+		existing = append(existing, entities.SnapshotName("backend", when(i)))
+	}
+	removed := 0
+	for _, step := range planner().Deploy(Deployment{
+		Service: nodeService(), At: time.Unix(0, 0), Existing: existing, NoSnapshot: true,
+	}).Steps {
+		if len(step.Argv) > 2 && step.Argv[1] == "delete" {
+			removed++
+		}
+	}
+	if removed != len(existing)-Keep {
+		t.Errorf("removes %d of %d", removed, len(existing))
+	}
+}
+
 // Every step either acts on the container from outside, or runs inside it, or
 // is the readiness check — which has to be outside, and says so.
 func TestTheCommandsGoWhereTheyShould(t *testing.T) {
@@ -366,12 +412,12 @@ func TestNoEnvironmentMeansNoStepAtAll(t *testing.T) {
 // A changed environment takes effect the way that service reads it: a process
 // at start, a site's build when it is built.
 func TestAChangedEnvironmentTakesEffect(t *testing.T) {
-	process := text(planner().ChangeEnvironment(nodeService(), "/srv/backend/.env", "PORT=1\n", 1, when(1)))
+	process := text(planner().ChangeEnvironment(nodeService(), "/srv/backend/.env", "PORT=1\n", 1, when(1), false))
 	if !strings.Contains(process, "systemctl restart croft-backend") {
 		t.Errorf("the process is never restarted:\n%s", process)
 	}
 
-	site := text(planner().ChangeEnvironment(adoptedSite(), "/opt/open-helpdesk/client/.env", "VITE_X=1\n", 1, when(1)))
+	site := text(planner().ChangeEnvironment(adoptedSite(), "/opt/open-helpdesk/client/.env", "VITE_X=1\n", 1, when(1), false))
 	if strings.Contains(site, "systemctl") || !strings.Contains(site, "npm run build") ||
 		!strings.Contains(site, "/var/www/openhelpdesk.croft-new") {
 		t.Errorf("the site is not rebuilt and published:\n%s", site)
