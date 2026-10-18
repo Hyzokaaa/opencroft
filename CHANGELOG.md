@@ -14,6 +14,11 @@ descargó.
 
 ## No publicado
 
+### v0.36.0 — 2026-10-18
+- fix: a redeploy of a service that takes no snapshot no longer says it can be undone
+- fix: a long one-line command can be read in full instead of hidden under its scroll bar
+- feat: say when a deployment stops on a checkout a power cut damaged, and repair it from the service's deployments; the snapshot setting moves above the history
+
 ### v0.35.0 — 2026-10-18
 - feat: let a service deploy without a snapshot first, turned off and on from its deployments, for hosts where copying the whole container freezes the machine
 
