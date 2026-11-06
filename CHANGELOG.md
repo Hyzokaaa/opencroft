@@ -16,6 +16,9 @@ descargó.
 
 ### v0.37.0 — 2026-11-06
 - feat: say whether a site serves by asking for its front page, instead of taking its web server being up for it
+- feat: read what every container of a project holds in one request
+- feat: a project lists what it runs, not the boxes it runs in, with one way to make something new and the containers in no project on Home
+- feat: go to any service, container, domain or page by typing its name, with Ctrl+K
 
 ### v0.36.0 — 2026-10-18
 - fix: a redeploy of a service that takes no snapshot no longer says it can be undone
