@@ -14,6 +14,9 @@ descargó.
 
 ## No publicado
 
+### v0.37.0 — 2026-11-06
+- feat: say whether a site serves by asking for its front page, instead of taking its web server being up for it
+
 ### v0.36.0 — 2026-10-18
 - fix: a redeploy of a service that takes no snapshot no longer says it can be undone
 - fix: a long one-line command can be read in full instead of hidden under its scroll bar
