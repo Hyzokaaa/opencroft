@@ -31,6 +31,10 @@ func testServer() (*Server, *host.Fake) {
 	)
 	// Tests ask no server on the network for its certificates.
 	server.missingCheck = func(context.Context, string) (*container.Missing, error) { return nil, nil }
+	// Nor any site for its front page.
+	server.servingCheck = func(_ context.Context, _ string, _ int, domain string) ServingDTO {
+		return ServingDTO{Domain: domain, Status: http.StatusOK}
+	}
 	return server, fake
 }
 

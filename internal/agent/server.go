@@ -52,6 +52,9 @@ type Server struct {
 	// out; nil asks the network.
 	missingCheck missingFunc
 
+	// servingCheck asks a site for its front page; nil asks the network.
+	servingCheck servingFunc
+
 	dns internalDNS
 }
 

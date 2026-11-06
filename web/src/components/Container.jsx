@@ -12,6 +12,7 @@ import { useServices, useDatabases, useFoundDatabases } from '../lib/useContaine
 import { href, serviceHref } from '../lib/useRoute.js'
 import { OWNERSHIP, SEVERITY, VERBS, remediesFor } from '../lib/vocabulary.js'
 import { byService, reachingContainer } from '../lib/domains.js'
+import { servingOf } from '../lib/serving.js'
 import { readJSON } from '../lib/api.js'
 
 // What a container actually is, once something has been deployed into it.
@@ -818,22 +819,27 @@ export const SECONDARY =
 // is done: a list of rows each carrying eight verbs read as a wall, and the
 // verb wanted was nearly always the one about the service just looked at.
 function Service({ service, container }) {
-  const running = service.state === 'active'
   const site = service.adopted?.site
+  // A site's state is what its page answered; its web server being up is not
+  // the same thing.
+  const page = site ? servingOf(service) : null
+  const state = page ? page.state : service.state
+  const running = state === 'active'
+  const trouble = page ? page.state === 'failed' : !running
   const to = serviceHref(container.name, service.name)
 
   return (
     <li
       // The name is the link; the row is a larger target for a mouse.
       onClick={() => (location.hash = to)}
-      className={`relative cursor-pointer px-4 py-3 transition-colors hover:bg-white/[0.03] ${running ? '' : 'bg-problem/[0.04]'}`}
+      className={`relative cursor-pointer px-4 py-3 transition-colors hover:bg-white/[0.03] ${trouble ? 'bg-problem/[0.04]' : ''}`}
     >
-      {!running && <span className="absolute left-0 top-0 h-full w-[2px] bg-problem" />}
+      {trouble && <span className="absolute left-0 top-0 h-full w-[2px] bg-problem" />}
 
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <StateDot state={service.state} />
+            <StateDot state={state} />
             <a
               href={to}
               onClick={(e) => e.stopPropagation()}
@@ -844,9 +850,9 @@ function Service({ service, container }) {
             {site && <Chip label="site" tone="border-edge text-muted" />}
             {service.adopted && <Chip label="adopted" tone="border-yours/40 text-yours" />}
             {service.pending && <Chip label="changes not deployed" tone="border-yours/40 text-yours" />}
-            {!running && service.state && (
-              <span className="rounded border border-problem/40 px-1.5 py-px text-[11px] text-problem">
-                {service.state}
+            {!running && state && (
+              <span className={`rounded border px-1.5 py-px text-[11px] ${trouble ? 'border-problem/40 text-problem' : page?.caution ? 'border-caution/40 text-caution' : 'border-edge-strong text-muted'}`}>
+                {page ? page.label : service.state}
               </span>
             )}
           </div>

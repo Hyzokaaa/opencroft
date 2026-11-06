@@ -100,6 +100,10 @@ type ServiceDTO struct {
 	// source of truth about whether something is running.
 	State string `json:"state,omitempty"`
 
+	// Serving is what a site's front page answered just now. A site has no
+	// process, so State only says its web server is up.
+	Serving *ServingDTO `json:"serving,omitempty"`
+
 	// Pending is true when properties were saved after the last deployment
 	// and are not running yet.
 	Pending bool `json:"pending,omitempty"`
@@ -525,6 +529,7 @@ func (s *Server) listServices(w http.ResponseWriter, r *http.Request) {
 	for i := range out {
 		out[i].State = states[i]
 	}
+	s.sitesServing(ctx, name, out, served)
 	external := make([]UnitDTO, len(found))
 	for i, unit := range found {
 		external[i] = UnitDTO{Name: unit, State: states[len(out)+i]}

@@ -20,6 +20,7 @@ import { useServices, useDatabases } from '../lib/useContainer.js'
 import { href, serviceHref } from '../lib/useRoute.js'
 import { VERBS } from '../lib/vocabulary.js'
 import { portOf, reaching, stateOf } from '../lib/domains.js'
+import { servingOf } from '../lib/serving.js'
 import { readJSON } from '../lib/api.js'
 
 // One service: what it is doing, what reaches it, and everything done to it.
@@ -228,20 +229,24 @@ export default function ServicePage({
   // a service that is down is looked at before it is written to; typed and
   // saved changes wait for a redeploy; and otherwise, redeploying is what
   // this page is for.
+  const page = site ? servingOf(service) : null
+  const is = site ? 'is serving' : 'is running'
   const situation = !up
     ? { sentence: `${container.name} is stopped, so ${name} is not running.`, primary: 'start-container' }
+    : site && page.state !== 'active'
+      ? { sentence: `${name} ${page.sentence}`, primary: 'redeploy' }
     : !running && !site
       ? { sentence: `${name} is ${service.state || 'not running'}${whole.length ? `, so ${whole[0].domain} answers with an error page` : ''}.`, primary: 'logs' }
       : changed
-        ? { sentence: `${name} is running. Its configuration has changes that are not saved yet.`, primary: 'redeploy' }
+        ? { sentence: `${name} ${is}. Its configuration has changes that are not saved yet.`, primary: 'redeploy' }
       : service.pending
-        ? { sentence: `${name} is running. Saved configuration changes are not deployed yet.`, primary: 'redeploy' }
+        ? { sentence: `${name} ${is}. Saved configuration changes are not deployed yet.`, primary: 'redeploy' }
         : whole.length === 0 && names.length > 0
-          ? { sentence: `${name} is running, reached only at ${names.map((n) => n.domain).join(', ')}.`, primary: 'redeploy' }
+          ? { sentence: `${name} ${is}, reached only at ${names.map((n) => n.domain).join(', ')}.`, primary: 'redeploy' }
         : whole.length === 0
-          ? { sentence: noPort ? `${name} is running. It listens on no port, so no domain can reach it.` : `${name} is running on :${port}, and no domain reaches it yet.`, primary: noPort ? 'redeploy' : 'add-domain' }
+          ? { sentence: noPort ? `${name} ${is}. It listens on no port, so no domain can reach it.` : `${name} ${is} on :${port}, and no domain reaches it yet.`, primary: noPort ? 'redeploy' : 'add-domain' }
           : {
-              sentence: `${name} is running and answers at ${whole[0].domain}${
+              sentence: `${name} ${is} and answers at ${whole[0].domain}${
                 whole.length > 1 ? ` and ${whole.length - 1} other domain${whole.length > 2 ? 's' : ''}` : ''
               }.`,
               primary: 'redeploy',
@@ -274,7 +279,7 @@ export default function ServicePage({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 flex-wrap items-center gap-2.5">
             <h1 className="truncate font-mono text-base">{name}</h1>
-            <StatePill up={up} state={service.state} site={site} />
+            <StatePill up={up} state={service.state} page={page} />
             {site && <Chip label="site" tone="border-edge text-muted" />}
             {service.adopted && (
               <Chip
@@ -612,9 +617,17 @@ export default function ServicePage({
 }
 
 // How it is, in a word and not only a colour: running is the one green.
-function StatePill({ up, state, site }) {
+// A site's word comes from asking for its page, since it has no process.
+function StatePill({ up, state, page }) {
   if (!up) return <Chip label="container stopped" tone="border-edge-strong text-muted" />
-  if (site) return null
+  if (page) {
+    const tone =
+      page.state === 'active' ? 'border-running/40 text-running'
+        : page.state === 'failed' ? 'border-problem/40 text-problem'
+          : page.caution ? 'border-caution/40 text-caution'
+          : 'border-edge-strong text-muted'
+    return <Chip label={page.label} tone={tone} explain={`Its front page ${page.sentence}`} />
+  }
   if (state === 'active') return <Chip label="running" tone="border-running/40 text-running" />
   return <Chip label={state || 'unknown'} tone="border-problem/40 text-problem" />
 }
