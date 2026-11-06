@@ -207,11 +207,15 @@ func (c *Client) Routes(ctx context.Context) ([]*routeEntities.Route, error) {
 		for i, p := range dto.Paths {
 			paths[i] = routeEntities.PathRoute{Prefix: p.Prefix, Target: p.Target, Port: p.Port, Strip: p.Strip}
 		}
-		out = append(out, routeEntities.NewRoute(routeEntities.RouteProps{
+		route := routeEntities.NewRoute(routeEntities.RouteProps{
 			Domain: dto.Domain, Target: dto.Target, Port: dto.Port, SSL: dto.SSL,
 			Certificates: dto.Certificates, Paths: paths, Aliases: fromAliasDTOs(dto.Aliases),
 			State: routeEnums.ManagedState(dto.State), File: dto.File,
-		}))
+		})
+		// The agent opened the socket; dropping its answer here is what kept
+		// "nothing listening" from ever reaching the panel.
+		route.SetAnswers(dto.Answers)
+		out = append(out, route)
 	}
 	return out, nil
 }
