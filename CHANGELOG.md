@@ -14,6 +14,11 @@ descargó.
 
 ## No publicado
 
+### v0.38.0 — 2026-11-06
+- fix: the panel hears when nothing listens behind a domain
+- feat: a domain says what its front page answers, for services as well as sites
+- feat: containers, domains, certificates and activity read like a project
+
 ### v0.37.0 — 2026-11-06
 - feat: say whether a site serves by asking for its front page, instead of taking its web server being up for it
 - feat: read what every container of a project holds in one request
