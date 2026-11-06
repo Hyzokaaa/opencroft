@@ -124,10 +124,19 @@ func askSite(ctx context.Context, address string, port int, domain string) Servi
 
 	response, err := client.Do(request)
 	if err != nil {
-		answer.Problem = "nothing answered for " + domain + " on the container's web server"
+		answer.Problem = "nothing answered for " + domain + " at " + net.JoinHostPort(address, strconv.Itoa(port))
 		return answer
 	}
 	_ = response.Body.Close()
 	answer.Status = response.StatusCode
 	return answer
+}
+
+// ProbeWith replaces the two questions asked of the network — does anything
+// accept a connection, what does the page answer — for an agent on a host
+// where the containers it lists do not exist. The demo uses it; a real agent
+// never does.
+func (s *Server) ProbeWith(listening func(address string, port int) bool, page func(ctx context.Context, address string, port int, domain string) ServingDTO) {
+	s.listeningCheck = listening
+	s.servingCheck = page
 }

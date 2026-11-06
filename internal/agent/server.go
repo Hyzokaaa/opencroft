@@ -54,6 +54,9 @@ type Server struct {
 
 	// servingCheck asks a site for its front page; nil asks the network.
 	servingCheck servingFunc
+	// listeningCheck answers whether anything accepts a connection; nil
+	// opens a socket.
+	listeningCheck func(address string, port int) bool
 
 	dns internalDNS
 }
@@ -304,12 +307,28 @@ func (s *Server) listRoutes(w http.ResponseWriter, r *http.Request) {
 	// Asked all at once. A target that is down costs the whole dial timeout,
 	// and in a row that is the overview taking a second per broken route — on
 	// a page that refreshes every ten.
+	//
+	// Something accepting the connection says only that a process is there;
+	// the page is asked for too, by the route's name, because a 502 from an
+	// app that started badly is still "listening".
+	listening := s.listeningCheck
+	if listening == nil {
+		listening = answers
+	}
+	check := s.servingCheck
+	if check == nil {
+		check = askSite
+	}
 	var wg sync.WaitGroup
 	for i, route := range found {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			out[i].Answers = answers(route.Target, route.Port)
+			out[i].Answers = listening(route.Target, route.Port)
+			if out[i].Answers {
+				answer := check(r.Context(), route.Target, route.Port, route.Domain)
+				out[i].Serving = &answer
+			}
 		}()
 	}
 	wg.Wait()

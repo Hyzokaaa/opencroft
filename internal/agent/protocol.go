@@ -52,6 +52,9 @@ type RouteDTO struct {
 	File         string     `json:"file"`
 	// Answers is false when nothing accepts a connection at Target:Port.
 	Answers bool `json:"answers"`
+	// Serving is what the front page answered for Domain, asked only when
+	// something accepted the connection.
+	Serving *ServingDTO `json:"serving,omitempty"`
 }
 
 type AliasDTO struct {

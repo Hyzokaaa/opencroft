@@ -1,6 +1,10 @@
 package entities
 
-import "github.com/Hyzokaaa/opencroft/internal/route/domain/enums"
+import (
+	"time"
+
+	"github.com/Hyzokaaa/opencroft/internal/route/domain/enums"
+)
 
 // Route maps a domain to a container address and port — and, optionally, some
 // of its paths somewhere else.
@@ -26,6 +30,17 @@ type Route struct {
 
 	// nil when nobody checked whether anything is listening.
 	answers *bool
+	// nil when nobody asked for the front page.
+	serving *Serving
+}
+
+// Serving is what the front page answered when it was asked for by the
+// route's own name, straight from the container it points at. Status is the
+// HTTP code; Problem is set instead when nothing answered.
+type Serving struct {
+	Status  int
+	Problem string
+	At      time.Time
 }
 
 // Alias is one more name a route answers on. Until its certificate exists it
@@ -206,3 +221,9 @@ func (r *Route) Answers() (bool, bool) {
 	}
 	return *r.answers, true
 }
+
+// SetServing records what the front page answered. Like Answers, it is read
+// where a socket can be opened and never stored.
+func (r *Route) SetServing(serving Serving) { r.serving = &serving }
+
+func (r *Route) Serving() *Serving { return r.serving }

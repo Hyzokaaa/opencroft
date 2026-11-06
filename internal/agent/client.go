@@ -215,6 +215,9 @@ func (c *Client) Routes(ctx context.Context) ([]*routeEntities.Route, error) {
 		// The agent opened the socket; dropping its answer here is what kept
 		// "nothing listening" from ever reaching the panel.
 		route.SetAnswers(dto.Answers)
+		if s := dto.Serving; s != nil {
+			route.SetServing(routeEntities.Serving{Status: s.Status, Problem: s.Problem, At: s.At})
+		}
 		out = append(out, route)
 	}
 	return out, nil

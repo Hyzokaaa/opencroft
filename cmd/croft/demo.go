@@ -44,6 +44,22 @@ func demoAgent(ctx context.Context, socket string, pause time.Duration) {
 
 	server := agent.NewServer(instances, routes, demoCertificates{},
 		h, "lxd", version, "lxc")
+	// The seeded addresses are made up, so the network is not asked: what
+	// listens is whatever a running container would, and every page is fine.
+	server.ProbeWith(
+		func(address string, _ int) bool {
+			all, _ := instances.FindAll(ctx)
+			for _, i := range all {
+				if i.Address == address && i.Status == enums.StatusRunning {
+					return true
+				}
+			}
+			return false
+		},
+		func(_ context.Context, _ string, _ int, domain string) agent.ServingDTO {
+			return agent.ServingDTO{Domain: domain, Status: http.StatusOK, At: time.Now().UTC()}
+		},
+	)
 
 	listener, err := agent.Listen(socket, "")
 	if err != nil {

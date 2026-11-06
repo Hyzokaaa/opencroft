@@ -53,6 +53,15 @@ type RouteView struct {
 	State   string      `json:"state"`
 	File    string      `json:"file"`
 	Answers bool        `json:"answers"`
+	// Serving is what the front page answered when croft asked for it by
+	// this domain; absent when nothing was listening to ask.
+	Serving *ServingView `json:"serving,omitempty"`
+}
+
+type ServingView struct {
+	Status  int       `json:"status,omitempty"`
+	Problem string    `json:"problem,omitempty"`
+	At      time.Time `json:"at"`
 }
 
 type AliasView struct {
@@ -188,7 +197,7 @@ func (q *OverviewQuery) Execute(ctx context.Context) (OverviewResponse, error) {
 		response.Routes = append(response.Routes, RouteView{
 			Domain: r.Domain, Target: r.Target, Port: r.Port,
 			SSL: r.SSL, Certificates: r.Certificates, Paths: paths, Aliases: aliases, State: string(r.State), File: r.File,
-			Answers: answersOf(r),
+			Answers: answersOf(r), Serving: servingOf(r),
 		})
 	}
 
@@ -209,6 +218,14 @@ func (q *OverviewQuery) Execute(ctx context.Context) (OverviewResponse, error) {
 func answersOf(route *routeEntities.Route) bool {
 	answers, checked := route.Answers()
 	return !checked || answers
+}
+
+func servingOf(route *routeEntities.Route) *ServingView {
+	s := route.Serving()
+	if s == nil {
+		return nil
+	}
+	return &ServingView{Status: s.Status, Problem: s.Problem, At: s.At}
 }
 
 func (q *OverviewQuery) currentRuntime() string {
