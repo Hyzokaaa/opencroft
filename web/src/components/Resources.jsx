@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Chip from './Chip.jsx'
 import Chevron from './Chevron.jsx'
+import { Toolbar, Status, matches } from './Listing.jsx'
 import { href, serviceHref } from '../lib/useRoute.js'
 import { portOf, reaching } from '../lib/domains.js'
-import { servingOf } from '../lib/serving.js'
+import { servingOf, toneOf } from '../lib/serving.js'
 import { readJSON, humane, isAgentDown } from '../lib/api.js'
 
 // A resource is what a person thinks they have — the API, the web, the
@@ -42,14 +43,6 @@ export function useResources(project) {
   return { containers, error, reload: load }
 }
 
-// The same four tones everywhere: green is running and nothing else.
-const TONES = {
-  running: { pill: 'border-running/40 text-running', dot: 'bg-running' },
-  problem: { pill: 'border-problem/40 text-problem', dot: 'bg-problem ring-2 ring-problem/25' },
-  caution: { pill: 'border-caution/40 text-caution', dot: 'border border-caution' },
-  muted: { pill: 'border-edge-strong text-muted', dot: 'border border-stopped' },
-}
-
 function unitStatus(state) {
   if (state === 'active') return { label: 'running', tone: 'running' }
   if (!state || state === 'unknown') return { label: 'unknown', tone: 'muted' }
@@ -75,7 +68,7 @@ export function rowsOf(containers, instances, routes) {
       const status = !up
         ? stopped
         : page
-          ? { label: page.label, tone: page.state === 'active' ? 'running' : page.state === 'failed' ? 'problem' : page.caution ? 'caution' : 'muted', explain: `Its front page ${page.sentence}` }
+          ? { label: page.label, tone: toneOf(page), explain: `Its front page ${page.sentence}` }
           : unitStatus(s.state)
       const names = reaching(routes, container.address, portOf(s, container))
       rows.push({
@@ -185,16 +178,6 @@ function Glyph({ kind }) {
   )
 }
 
-function Status({ status }) {
-  const tone = TONES[status.tone] ?? TONES.muted
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${tone.dot}`} />
-      <Chip label={status.label} tone={tone.pill} explain={status.explain} />
-    </span>
-  )
-}
-
 function Domain({ name }) {
   if (!name) return <span className="text-faint">—</span>
   return (
@@ -211,48 +194,27 @@ export function ResourceTable({ rows, reading, error, showContainer = true, empt
   const [query, setQuery] = useState('')
   const [kind, setKind] = useState('all')
 
-  const shown = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return (rows ?? []).filter(
-      (r) =>
-        (kind === 'all' || r.kind === kind) &&
-        (!q || [r.name, r.description, r.container, r.domain?.domain].some((v) => v?.toLowerCase().includes(q))),
-    )
-  }, [rows, query, kind])
+  const shown = useMemo(
+    () =>
+      (rows ?? []).filter(
+        (r) => (kind === 'all' || r.kind === kind) && matches(query, [r.name, r.description, r.container, r.domain?.domain]),
+      ),
+    [rows, query, kind],
+  )
 
   const present = new Set((rows ?? []).map((r) => r.kind))
   const kinds = KINDS.filter((k) => k.id === 'all' || present.has(k.id))
 
   return (
     <section className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="relative min-w-0 flex-1 sm:max-w-sm">
-          <span className="sr-only">Search resources</span>
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search resources"
-            className="h-9 w-full rounded-md border border-field-edge bg-panel px-3 text-sm placeholder:text-faint"
-          />
-        </label>
-        {kinds.length > 2 && (
-          <div role="group" aria-label="Show" className="flex flex-wrap gap-1">
-            {kinds.map((k) => (
-              <button
-                key={k.id}
-                onClick={() => setKind(k.id)}
-                aria-pressed={kind === k.id}
-                className={`h-9 rounded-md border px-3 text-xs transition ${
-                  kind === k.id ? 'border-edge-strong bg-raised text-ink' : 'border-edge text-muted hover:text-ink'
-                }`}
-              >
-                {k.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      <Toolbar
+        query={query}
+        onQuery={setQuery}
+        placeholder="Search resources"
+        filters={kinds.length > 2 ? kinds : null}
+        filter={kind}
+        onFilter={setKind}
+      />
 
       {error && (
         <p className="rounded-lg border border-caution/30 bg-panel px-4 py-2.5 text-xs">

@@ -3,10 +3,10 @@ import Shell from './components/Shell.jsx'
 import Verdict, { StartHere } from './components/Verdict.jsx'
 import Gated from './components/Gated.jsx'
 import Findings from './components/Findings.jsx'
-import InstanceTable from './components/InstanceTable.jsx'
-import RouteTable from './components/RouteTable.jsx'
-import Card from './components/Card.jsx'
-import CertificateTable from './components/CertificateTable.jsx'
+import ContainersPage from './components/ContainersPage.jsx'
+import DomainsPage from './components/DomainsPage.jsx'
+import { CertificatesPage } from './components/CertificateTable.jsx'
+import { PageHead, ReadWith } from './components/Listing.jsx'
 import Settings from './components/Settings.jsx'
 import Login from './components/Login.jsx'
 import PlanDialog from './components/PlanDialog.jsx'
@@ -663,14 +663,6 @@ function Dashboard({ onSignOut, onSessionLost }) {
   })()
 
   // Filters a count on the home page opened the list with.
-  const listed = data.instances.filter(
-    (i) => (!query.status || (query.status === 'running' ? i.status === 'running' : i.status !== 'running')) &&
-      (!query.project || i.project === query.project),
-  )
-  const routesListed = data.routes.filter((r) => !query.tls || r.ssl)
-  // The Domains page lists names, one per row, so it counts them too.
-  const namesListed = allNames(routesListed).length
-  const filtered = query.status || query.project || query.tls
 
   return (
     <Shell
@@ -808,24 +800,21 @@ function Dashboard({ onSignOut, onSessionLost }) {
       )}
 
       {section === 'containers' && !name && (
-        <Card
-          title={filtered ? `Containers · ${query.status ?? ''} ${query.project ?? ''}`.trim() : 'Containers'}
-          count={listed.length}
-          commandMode={commandMode}
-          commands={containerCommands}
-          action={
-            <div className="flex items-center gap-3">
-              {filtered && (
-                <a href={href('containers')} className="text-xs text-muted transition hover:text-ink">
-                  Show all
-                </a>
-              )}
-              <NewButton onClick={() => newContainer()} />
-            </div>
-          }
-        >
-          <InstanceTable {...tableProps} instances={listed} empty={filtered ? 'Nothing matches.' : undefined} />
-        </Card>
+        <>
+          {/* The filters start where the link said; a new link starts them again. */}
+          <ContainersPage
+            key={`${query.status}/${query.project}`}
+            data={data}
+            problems={problems}
+            query={query}
+            onNew={() => newContainer()}
+            onPower={powerContainer}
+            onDeploy={(container) => setDeploying({ container })}
+            onAddDomain={addDomain}
+            onDestroy={destroyContainer}
+          />
+          <ReadWith commandMode={commandMode} commands={containerCommands} />
+        </>
       )}
 
       {section === 'domains' && (
@@ -838,56 +827,29 @@ function Dashboard({ onSignOut, onSessionLost }) {
           </nav>
 
           {tab !== 'certificates' ? (
-            <Card
-              title={query.tls ? 'Domains · with TLS' : 'Domains'}
-              count={namesListed}
-              commandMode={commandMode}
-              commands={routeCommands}
-              action={
-                <div className="flex items-center gap-3">
-                  {query.tls && (
-                    <a href={href('domains')} className="text-xs text-muted transition hover:text-ink">
-                      Show all
-                    </a>
-                  )}
-                  {/* A domain is served from a container; with none, the form
-                      would offer an empty list to choose from. */}
-                  <Gated
-                    reason={data.instances.length ? undefined : 'Create a container first.'}
-                    onClick={() => addDomain(null)}
-                    className="rounded border border-edge-strong bg-raised px-2 py-1 text-xs transition hover:border-ink/30"
-                  >
-                    Add domain
-                  </Gated>
-                </div>
-              }
-            >
-              <RouteTable {...tableProps} routes={routesListed} />
-            </Card>
+            <DomainsPage
+              key={String(query.tls)}
+              data={data}
+              publicAddress={publicAddressOf(host)}
+              query={query}
+              tableProps={tableProps}
+              onAddDomain={addDomain}
+            />
           ) : (
-            <Card
-              title="Certificates"
-              count={data.certificates?.length ?? 0}
-              action={
-                <button
-                  onClick={wildcard}
-                  className="rounded border border-edge-strong bg-raised px-2 py-1 text-xs transition hover:border-ink/30"
-                >
-                  Wildcard certificate
-                </button>
-              }
-              commandMode={commandMode}
-              commands={["ls /etc/letsencrypt/live/", "openssl x509 -enddate -noout -in <file>"]}
-            >
-              <CertificateTable certificates={data.certificates ?? []} />
-            </Card>
+            <CertificatesPage certificates={data.certificates ?? []} onWildcard={wildcard} />
           )}
+          <ReadWith commandMode={commandMode} commands={tab === 'certificates' ? ['ls /etc/letsencrypt/live/', 'openssl x509 -enddate -noout -in <file>'] : routeCommands} />
         </>
       )}
 
       {section === 'settings' && <Settings onExpose={exposePanel} />}
 
-      {section === 'activity' && <Activity commandMode={commandMode} reading={jobsReading} />}
+      {section === 'activity' && (
+        <>
+          <PageHead title="Activity" summary={activitySummary(jobs)} />
+          <Activity commandMode={commandMode} reading={jobsReading} />
+        </>
+      )}
 
       {creating && (
         <NewResource
@@ -959,17 +921,6 @@ function Tab({ on, to, children }) {
   )
 }
 
-function NewButton({ onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      className="rounded border border-edge-strong bg-raised px-2 py-1 text-xs transition hover:border-ink/30"
-    >
-      New container
-    </button>
-  )
-}
-
 function relative(date) {
   const seconds = Math.round((Date.now() - date.getTime()) / 1000)
   if (seconds < 5) return 'just now'
@@ -981,4 +932,19 @@ function freshness(date, loading) {
   if (loading && !date) return 'loading'
   if (!date) return '—'
   return relative(date)
+}
+
+// What the Activity page says above the list: what is running now and what
+// failed this week — the two reasons anyone opens it.
+function activitySummary(jobs) {
+  const week = Date.now() - 7 * 24 * 3600 * 1000
+  const running = jobs.filter((j) => j.status === 'running').length
+  const failed = jobs.filter((j) => j.status === 'failed' && new Date(j.started).getTime() > week).length
+  return (
+    <>
+      {running ? `${running} running now` : 'Nothing running now'}
+      {' · '}
+      {failed ? <span className="text-problem">{failed} failed in the last 7 days</span> : 'nothing failed in the last 7 days'}
+    </>
+  )
 }

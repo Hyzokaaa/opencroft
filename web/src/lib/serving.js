@@ -43,3 +43,10 @@ export function servingOf(service) {
     sentence: `answers ${s.status} at ${s.domain}: visitors get an error page.`,
   }
 }
+
+// toneOf is the status tone an answer is shown in.
+export function toneOf(page) {
+  if (page.state === 'active') return 'running'
+  if (page.state === 'failed') return 'problem'
+  return page.caution ? 'caution' : 'muted'
+}

@@ -2,7 +2,8 @@ import Chip from './Chip.jsx'
 import Actions from './Actions.jsx'
 import { OWNERSHIP, VERBS } from '../lib/vocabulary.js'
 import { href } from '../lib/useRoute.js'
-import { allNames, stateOf, certificateFor } from '../lib/domains.js'
+import { allNames, answerOf, certificateFor } from '../lib/domains.js'
+import { Status } from './Listing.jsx'
 import { nameActions } from './DomainList.jsx'
 
 // Every name on the host, one row each. A route answering on three names is
@@ -10,9 +11,11 @@ import { nameActions } from './DomainList.jsx'
 // waiting for its DNS while the others serve — so each gets its own row, its
 // own state and its own certificate. Which names were set up together is said
 // on the row, not by nesting it.
-export default function RouteTable({ routes, instances, certificates = [], problems, highlighted, onHover, empty, ...handlers }) {
-  if (!routes.length) {
-    return <p className="px-4 py-8 text-center text-sm text-muted">{empty ?? 'No domains routed yet.'}</p>
+export default function RouteTable({ routes, instances, certificates = [], problems, highlighted, onHover, empty, serviceAt, only, ...handlers }) {
+  // only narrows the rows to the names a search or a filter kept.
+  const names = allNames(routes).filter((n) => !only || only(n))
+  if (!names.length) {
+    return <p className="px-4 py-8 text-center text-sm text-muted">{routes.length ? 'No domain matches.' : empty ?? 'No domains routed yet.'}</p>
   }
 
   const nameFor = (address) => instances.find((i) => i.address === address)?.name
@@ -21,23 +24,26 @@ export default function RouteTable({ routes, instances, certificates = [], probl
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-edge text-left text-[11px] uppercase tracking-wide text-faint">
-            <th className="px-4 py-2 font-medium">Domain</th>
-            <th className="hidden px-4 py-2 font-medium sm:table-cell">Serves</th>
-            <th className="px-4 py-2 font-medium">State</th>
-            <th className="hidden px-4 py-2 font-medium md:table-cell">Certificate</th>
-            <th className="hidden px-4 py-2 font-medium xl:table-cell">File</th>
+          <tr className="border-b border-edge text-left text-xs text-muted">
+            <th className="px-4 py-2.5 font-normal">Domain</th>
+            <th className="hidden px-4 py-2.5 font-normal sm:table-cell">Reaches</th>
+            <th className="px-4 py-2.5 font-normal">Answers</th>
+            <th className="hidden px-4 py-2.5 font-normal md:table-cell">Certificate</th>
+            <th className="hidden px-4 py-2.5 font-normal xl:table-cell">File</th>
             <th className="px-4 py-2"><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody>
-          {allNames(routes).map((name) => {
+          {names.map((name) => {
             const r = name.route
             const target = nameFor(r.target)
             const ownership = OWNERSHIP[r.state] ?? OWNERSHIP.managed
             const problem = problems.has(name.domain)
             const lit = highlighted === name.domain || (target && highlighted === target)
-            const state = stateOf(name, certificates)
+            const answer = answerOf(name)
+            // What it reaches, when the page knows what listens there: a
+            // person looks for the API, not for port 3000.
+            const service = serviceAt?.(r.target, r.port)
             // Opening a domain means opening what it serves: that is where
             // anything about it gets fixed.
             const opens = target ? href('containers', target) : null
@@ -52,7 +58,7 @@ export default function RouteTable({ routes, instances, certificates = [], probl
                   lit ? 'bg-white/[0.05]' : 'hover:bg-white/[0.03]'
                 }`}
               >
-                <td className="relative px-4 py-2.5">
+                <td className="relative px-4 py-3">
                   {problem && <span className="absolute left-0 top-0 h-full w-[2px] bg-problem" />}
                   {/* The lock stays beside the name; the chip may wrap under
                       it on a narrow screen. */}
@@ -97,27 +103,31 @@ export default function RouteTable({ routes, instances, certificates = [], probl
                   ))}
                 </td>
 
-                <td className="hidden px-4 py-2.5 text-xs sm:table-cell">
-                  <span className="font-mono">{target ?? r.target}</span>
+                <td className="hidden px-4 py-3 text-xs sm:table-cell">
+                  {service && (
+                    <>
+                      <a href={service.to} onClick={(e) => e.stopPropagation()} className="font-mono underline-offset-4 hover:underline">
+                        {service.name}
+                      </a>
+                      <span className="text-faint"> in </span>
+                    </>
+                  )}
+                  <span className={`font-mono ${service ? 'text-muted' : ''}`}>{target ?? r.target}</span>
                   <span className="text-faint">:{r.port}</span>
                 </td>
 
-                <td className="whitespace-nowrap px-4 py-2.5 text-xs">
-                  {state.reason ? (
-                    <Chip label={state.label} tone={`${BORDER[state.tone] ?? 'border-edge'} ${state.tone}`} explain={state.reason} />
-                  ) : (
-                    <span className={state.tone}>{state.label}</span>
-                  )}
+                <td className="whitespace-nowrap px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                  <Status status={answer} />
                 </td>
 
-                <td className="hidden px-4 py-2.5 text-xs md:table-cell">
+                <td className="hidden px-4 py-3 text-xs md:table-cell">
                   <Expiry name={name} certificates={certificates} />
                 </td>
 
-                <td className="hidden px-4 py-2.5 font-mono text-xs text-faint xl:table-cell">{r.file}</td>
+                <td className="hidden px-4 py-3 font-mono text-xs text-faint xl:table-cell">{r.file}</td>
 
-                <td className="px-4 py-2.5 text-right">
-                  <Actions label={`Actions for ${name.domain}`} actions={nameActions(name, state, handlers)} />
+                <td className="px-4 py-3 text-right">
+                  <Actions label={`Actions for ${name.domain}`} actions={nameActions(name, answer, handlers)} />
                 </td>
               </tr>
             )
@@ -126,14 +136,6 @@ export default function RouteTable({ routes, instances, certificates = [], probl
       </table>
     </div>
   )
-}
-
-// The border that goes with each state's text, for the chip that carries a
-// reason.
-const BORDER = {
-  'text-problem': 'border-problem/40',
-  'text-caution': 'border-caution/40',
-  'text-muted': 'border-edge',
 }
 
 // routeActions is what can be done to a domain, wherever it is listed — here,
@@ -165,7 +167,13 @@ export function routeActions(r, { onRemoveDomain, onEnableTLS, onEditDomain, onA
 // The certificate a name is served with, and how long it has: the deadline
 // belongs where the domain is managed, not only on a page of its own.
 function Expiry({ name, certificates }) {
-  if (!name.ssl) return <span className="text-faint">&mdash;</span>
+  // Over http the column still says why: by choice, or until a certificate
+  // can be issued — the second is waiting on something.
+  if (!name.ssl) {
+    return name.route.ssl
+      ? <span className="text-caution">waiting for its certificate</span>
+      : <span className="text-faint">http only</span>
+  }
   const covering = certificateFor(name.domain, certificates)
   if (!covering) return <span className="text-faint">&mdash;</span>
   const tone = covering.daysLeft < 7 ? 'text-problem' : covering.daysLeft < 21 ? 'text-caution' : 'text-muted'

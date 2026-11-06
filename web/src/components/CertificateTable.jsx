@@ -1,5 +1,7 @@
 import Chip from './Chip.jsx'
+import { PageHead } from './Listing.jsx'
 import { renewedBy } from '../lib/domains.js'
+import { PRIMARY } from '../lib/ui.js'
 
 // Certificates are the one thing on this panel with a deadline. The column
 // that matters is not who issued it — it is how long you have, so the soonest
@@ -21,14 +23,15 @@ export default function CertificateTable({ certificates }) {
 
   return (
     <div className="overflow-x-auto">
-    <table className="w-full text-sm">
+    {/* Fixed widths, so the two groups on the page line up as one list. */}
+    <table className="w-full text-sm lg:table-fixed">
       <thead>
-        <tr className="border-b border-edge text-left text-[11px] uppercase tracking-wide text-faint">
-          <th className="px-4 py-2 font-medium">Domain</th>
-          <th className="px-4 py-2 font-medium">Expires</th>
-          <th className="px-4 py-2 font-medium">Renewed by</th>
-          <th className="hidden px-4 py-2 font-medium sm:table-cell">Issuer</th>
-          <th className="hidden px-4 py-2 font-medium lg:table-cell">File</th>
+        <tr className="border-b border-edge text-left text-xs text-muted">
+          <th className="px-4 py-2.5 font-normal lg:w-[30%]">Domain</th>
+          <th className="px-4 py-2.5 font-normal lg:w-[16%]">Expires</th>
+          <th className="px-4 py-2.5 font-normal lg:w-[16%]">Renewed by</th>
+          <th className="hidden px-4 py-2.5 font-normal sm:table-cell lg:w-[14%]">Issuer</th>
+          <th className="hidden px-4 py-2.5 font-normal lg:table-cell">File</th>
         </tr>
       </thead>
       <tbody>
@@ -38,8 +41,8 @@ export default function CertificateTable({ certificates }) {
           const others = (c.names ?? []).filter((n) => n !== c.domain)
           const renewer = renewedBy(c)
           return (
-          <tr key={c.domain} className="border-b border-edge/50 last:border-0">
-            <td className="relative px-4 py-2.5">
+          <tr key={c.domain} className="border-b border-edge/60 last:border-0">
+            <td className="relative px-4 py-3">
               {c.daysLeft < 21 && <span className="absolute left-0 top-0 h-full w-[2px] bg-problem" />}
               <div className="flex flex-wrap items-center gap-2">
                 <span className="break-all font-mono">{c.domain}</span>
@@ -58,15 +61,15 @@ export default function CertificateTable({ certificates }) {
               )}
             </td>
 
-            <td className="whitespace-nowrap px-4 py-2.5">
+            <td className="whitespace-nowrap px-4 py-3">
               <Remaining days={c.daysLeft} />
             </td>
 
-            <td className="px-4 py-2.5 text-xs">
+            <td className="px-4 py-3 text-xs">
               {renewer ? <span className="text-muted">{renewer}</span> : <span className="text-caution">nobody croft knows of</span>}
             </td>
-            <td className="hidden px-4 py-2.5 text-xs text-muted sm:table-cell">{c.issuer || '—'}</td>
-            <td className="hidden px-4 py-2.5 font-mono text-xs text-faint lg:table-cell">{c.path}</td>
+            <td className="hidden px-4 py-3 text-xs text-muted sm:table-cell">{c.issuer || '—'}</td>
+            <td className="hidden px-4 py-3 break-all font-mono text-xs text-faint lg:table-cell">{c.path}</td>
           </tr>
           )
         })}
@@ -76,15 +79,78 @@ export default function CertificateTable({ certificates }) {
   )
 }
 
+// The bar is the 90 days a Let's Encrypt certificate lives, so how much of it
+// is left is seen before the number is read. The words stay beside it.
 function Remaining({ days }) {
-  if (days < 0) {
-    return <span className="text-problem">expired {Math.abs(days)} days ago</span>
-  }
-  if (days < 7) {
-    return <span className="text-problem">in {days} days</span>
-  }
-  if (days < 21) {
-    return <span className="text-caution">in {days} days</span>
-  }
-  return <span className="text-muted">in {days} days</span>
+  const [text, bar] = days < 7 ? ['text-problem', 'bg-problem'] : days < 21 ? ['text-caution', 'bg-caution'] : ['text-muted', 'bg-muted/60']
+  return (
+    <>
+      <span className={text}>{days < 0 ? `expired ${Math.abs(days)} days ago` : `in ${days} days`}</span>
+      <span aria-hidden="true" className="mt-1 block h-1 w-28 overflow-hidden rounded bg-edge">
+        <span
+          className={`block h-full ${bar}`}
+          style={{ width: `${Math.max(0, Math.min(100, (days / 90) * 100))}%` }}
+        />
+      </span>
+    </>
+  )
+}
+
+// CertificatesPage is every certificate on the host, those expiring within
+// 21 days apart and first: that group is the reason to open the page.
+export function CertificatesPage({ certificates, onWildcard }) {
+  const soon = certificates.filter((c) => c.daysLeft < 21)
+  const rest = certificates.filter((c) => c.daysLeft >= 21)
+  const nobody = certificates.filter((c) => !renewedBy(c) && !c.selfSigned).length
+
+  return (
+    <>
+      <PageHead
+        title="Certificates"
+        summary={
+          <>
+            {certificates.length} certificate{certificates.length === 1 ? '' : 's'}
+            {soon.length > 0 && <span className="text-caution"> · {soon.length} expire{soon.length === 1 ? 's' : ''} within 21 days</span>}
+            {nobody > 0 && <span className="text-caution"> · {nobody} renewed by nobody croft knows of</span>}
+            {' '}· read from the certificate files themselves, wherever they came from
+          </>
+        }
+      >
+        <button onClick={onWildcard} className={PRIMARY}>
+          <span aria-hidden="true">+</span> Wildcard certificate
+        </button>
+      </PageHead>
+
+      {certificates.length === 0 ? (
+        <div className="rounded-lg border border-edge bg-panel">
+          <CertificateTable certificates={[]} />
+        </div>
+      ) : (
+        <>
+          {soon.length > 0 && (
+            <section className="space-y-2">
+              <h2 className="text-xs font-medium text-caution">
+                Expire within 21 days <span className="text-faint">{soon.length}</span>
+              </h2>
+              <div className="overflow-hidden rounded-lg border border-edge bg-panel">
+                <CertificateTable certificates={soon} />
+              </div>
+            </section>
+          )}
+          {rest.length > 0 && (
+            <section className="space-y-2">
+              {soon.length > 0 && (
+                <h2 className="text-xs font-medium text-muted">
+                  The rest <span className="text-faint">{rest.length}</span>
+                </h2>
+              )}
+              <div className="overflow-hidden rounded-lg border border-edge bg-panel">
+                <CertificateTable certificates={rest} />
+              </div>
+            </section>
+          )}
+        </>
+      )}
+    </>
+  )
 }

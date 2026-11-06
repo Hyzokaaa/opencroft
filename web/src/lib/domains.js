@@ -1,3 +1,5 @@
+import { servingOf, toneOf } from './serving.js'
+
 // What reaches what. A route is a vhost — one domain, maybe more names, maybe
 // some paths sent elsewhere — but a person thinks in names: "is
 // help.customer.com working?". These read the routes the overview carries and
@@ -135,4 +137,32 @@ export function renewedBy(certificate) {
 // panel knows it — what a DNS record has to point at.
 export function publicAddress(host) {
   return (host?.addresses ?? []).find((a) => a.public)?.address ?? null
+}
+
+// answerOf is what a visitor typing this name gets, as far as croft could
+// see from the host: nothing listening, still waiting for its DNS, or what
+// the front page answered when it was asked for by the route's own name.
+// Another name of a route answers exactly as the route does, so it carries
+// the route's answer. tone is the status vocabulary: running, problem,
+// caution, muted.
+export function answerOf(name) {
+  const { route, alias } = name
+  if (route.answers === false) {
+    return { key: 'down', label: 'nothing listening', tone: 'problem',
+      explain: `Nothing accepts a connection on ${route.target}:${route.port}, so visitors get an error page.` }
+  }
+  if (alias?.waiting) {
+    return { key: 'waiting', label: 'waiting for DNS', tone: 'caution', explain: alias.waiting }
+  }
+  if (!route.serving) {
+    return { key: 'unknown', label: 'not asked', tone: 'muted',
+      explain: 'Croft has not asked this name for its page yet.' }
+  }
+  const page = servingOf({ serving: { ...route.serving, domain: route.domain } })
+  return {
+    key: page.state === 'active' ? 'serving' : page.state === 'failed' ? 'failing' : 'other',
+    label: page.label,
+    tone: toneOf(page),
+    explain: `Its front page ${page.sentence}`,
+  }
 }
