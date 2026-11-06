@@ -11,6 +11,7 @@ import Settings from './components/Settings.jsx'
 import Login from './components/Login.jsx'
 import PlanDialog from './components/PlanDialog.jsx'
 import DeployDialog from './components/DeployDialog.jsx'
+import NewResource from './components/NewResource.jsx'
 import AdoptDialog from './components/AdoptDialog.jsx'
 import EnvDialog from './components/EnvDialog.jsx'
 import { AgentDownScreen, AgentBanner, AGENT_BLOCKED } from './components/AgentDown.jsx'
@@ -72,6 +73,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
   const [deploying, setDeployingState] = useState(null)
   const [adopting, setAdoptingState] = useState(null)
   const [environment, setEnvironmentState] = useState(null)
+  const [creating, setCreating] = useState(null)
 
   // With the agent down nothing can be changed, and every way into a change
   // passes here: the dialog it would have opened says so, once, instead of a
@@ -619,7 +621,11 @@ function Dashboard({ onSignOut, onSessionLost }) {
     certificates: data.certificates ?? [],
   }
 
-  const projectActions = { newContainer, newProject, declareProject, removeProject, addToProject }
+  // New resource asks what and where, then hands over to the flow that
+  // already makes that thing; it makes nothing itself.
+  const newResource = (project, containers) =>
+    agentDown ? blockedByAgent('New resource') : setCreating({ project, containers })
+  const projectActions = { newContainer, newProject, declareProject, removeProject, addToProject, newResource }
 
   const runtimeBin = data.runtime === 'demo' ? 'incus' : data.runtime
   const containerCommands = [`${runtimeBin} list --format json`]
@@ -882,6 +888,18 @@ function Dashboard({ onSignOut, onSessionLost }) {
       {section === 'settings' && <Settings onExpose={exposePanel} />}
 
       {section === 'activity' && <Activity commandMode={commandMode} reading={jobsReading} />}
+
+      {creating && (
+        <NewResource
+          project={creating.project}
+          containers={creating.containers}
+          onClose={() => setCreating(null)}
+          onService={(container) => { setCreating(null); setDeploying({ container }) }}
+          onDatabase={(container) => { setCreating(null); location.hash = href('containers', container.name, { add: 'database' }) }}
+          onAdopt={(container) => { setCreating(null); location.hash = href('containers', container.name) }}
+          onNewContainer={() => { setCreating(null); newContainer(creating.project) }}
+        />
+      )}
 
       {/* Deploying has a step in the middle — look at the repository, then
           decide — so it runs its own flow and hands off to the same plan

@@ -29,6 +29,11 @@
   /* Being edited by hand is the product working, not a warning.
      It gets its own calm tone, deliberately not amber. */
   --color-yours: #a894e8;
+
+  /* The one thing on a screen you are most likely to want to do. One per
+     screen, so it is found without reading: green, amber, red and violet
+     already mean something, so it is blue. Dark text on it is 9.5:1. */
+  --color-action: #8ab4f8;
 }
 
 html {

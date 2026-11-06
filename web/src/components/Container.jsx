@@ -9,7 +9,7 @@ import Actions from './Actions.jsx'
 import CopyButton from './CopyButton.jsx'
 import DomainList from './DomainList.jsx'
 import { useServices, useDatabases, useFoundDatabases } from '../lib/useContainer.js'
-import { href, serviceHref } from '../lib/useRoute.js'
+import { href, parse, serviceHref } from '../lib/useRoute.js'
 import { OWNERSHIP, SEVERITY, VERBS, remediesFor } from '../lib/vocabulary.js'
 import { byService, reachingContainer } from '../lib/domains.js'
 import { servingOf } from '../lib/serving.js'
@@ -56,6 +56,15 @@ export default function Container({
   const [logs, setLogs] = useState(null)
   const [dialog, setDialog] = useState(null)
   const [deleting, setDeleting] = useState(null)
+
+  // "New resource → Database" chooses the container elsewhere and lands here
+  // with ?add=database: the dialog that adds one lives on this page. The
+  // query is dropped once read, so Back or a reload does not open it again.
+  useEffect(() => {
+    if (parse(location.hash).query.add !== 'database') return
+    history.replaceState(null, '', href('containers', container.name))
+    setDialog({ kind: 'add' })
+  }, [container.name])
 
   const services = data?.services ?? []
   const external = data?.external ?? []

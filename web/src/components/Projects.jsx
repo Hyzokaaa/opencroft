@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import Card from './Card.jsx'
 import Chip from './Chip.jsx'
 import Activity from './Activity.jsx'
-import InstanceTable, { StatusDot } from './InstanceTable.jsx'
+import { StatusDot } from './InstanceTable.jsx'
+import { ResourceTable, rowsOf, useResources } from './Resources.jsx'
+import { PRIMARY, QUIET, SECONDARY } from '../lib/ui.js'
 import RouteTable from './RouteTable.jsx'
 import { href } from '../lib/useRoute.js'
 import { allNames } from '../lib/domains.js'
@@ -69,6 +71,9 @@ const SMALL = 'text-xs text-muted transition hover:text-ink'
 // ProjectCards is the home page's body: every project as a card, and the
 // containers in none of them last.
 export function ProjectCards({ data, projects, error, agentDown, problems, actions }) {
+  // Every container's resources in one request, each card taking its own.
+  const all = useResources()
+  const rows = all.containers ? rowsOf(all.containers, data.instances, data.routes) : null
   if (error) {
     return (
       <div className="rounded-lg border border-caution/30 bg-panel px-4 py-2.5 text-xs">
@@ -91,24 +96,14 @@ export function ProjectCards({ data, projects, error, agentDown, problems, actio
     <section aria-labelledby="projects-heading" className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 id="projects-heading" className="text-sm font-medium">Projects</h2>
-        <div className="flex gap-2">
-          <button
-            onClick={() => actions.newContainer()}
-            className="rounded border border-edge px-2 py-1 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
-          >
+        <div className="flex items-center gap-4">
+          <button onClick={() => actions.newContainer()} className={QUIET}>
             New container
           </button>
           {/* With no containers yet, the first step is the one above the
               list, and it alone stands out. */}
-          <button
-            onClick={actions.newProject}
-            className={
-              data.instances.length
-                ? 'rounded border border-edge-strong bg-raised px-2 py-1 text-xs transition hover:border-ink/30'
-                : 'rounded border border-edge px-2 py-1 text-xs text-muted transition hover:border-edge-strong hover:text-ink'
-            }
-          >
-            New project
+          <button onClick={actions.newProject} className={data.instances.length ? PRIMARY : SECONDARY}>
+            <span aria-hidden="true">+</span> New project
           </button>
         </div>
       </div>
@@ -130,20 +125,31 @@ export function ProjectCards({ data, projects, error, agentDown, problems, actio
             problems={problems}
             actions={actions}
             others={data.instances.filter((i) => i.project !== project.name)}
+            rows={rows?.filter((r) => data.instances.some((i) => i.name === r.container && i.project === project.name))}
           />
         ))}
-
-        {loose.length > 0 && (
-          <Card title="No project" count={loose.length}>
-            <Members containers={loose} problems={problems} />
-          </Card>
-        )}
       </div>
+
+      {/* Containers in no project are still somebody's: listed with what
+          they hold, the same way, rather than as bare names. */}
+      {loose.length > 0 && (
+        <section aria-labelledby="others-heading" className="space-y-3 pt-3">
+          <div className="flex flex-wrap items-baseline gap-2">
+            <h2 id="others-heading" className="text-sm font-medium">Other containers</h2>
+            <span className="text-xs text-faint">{loose.length}, in no project</span>
+          </div>
+          <ResourceTable
+            rows={rows?.filter((r) => loose.some((i) => i.name === r.container)) ?? null}
+            error={all.error}
+            empty="Nothing here."
+          />
+        </section>
+      )}
     </section>
   )
 }
 
-function ProjectCard({ project, containers, routes, problems, actions, others }) {
+function ProjectCard({ project, containers, routes, problems, actions, others, rows }) {
   const domains = domainsOf(containers, routes)
   const troubled = containers.filter((c) => problems.has(c.name) || (c.domain && problems.has(c.domain)))
 
@@ -154,7 +160,7 @@ function ProjectCard({ project, containers, routes, problems, actions, others })
           {project.name}
         </a>
       }
-      count={containers.length}
+      count={rows ? `${rows.filter((r) => r.kind !== "empty" && r.kind !== "unread").length} resources · ${containers.length} containers` : containers.length}
       action={
         <div className="flex gap-3">
           {!project.declared && (
@@ -183,6 +189,12 @@ function ProjectCard({ project, containers, routes, problems, actions, others })
             ))}
           </p>
         )}
+        {(rows ?? []).filter((r) => r.status.tone === 'problem').map((r) => (
+          <p key={r.key} className="text-xs text-problem">
+            <a href={r.to} className="font-mono underline underline-offset-4">{r.name}</a> {r.status.label}
+            <span className="text-muted"> in {r.container}</span>
+          </p>
+        ))}
         {project.description && <p className="text-xs text-muted">{project.description}</p>}
         {/* Found on containers, declared nowhere on this host: most often it
             arrived with a migrated container. */}
@@ -196,7 +208,8 @@ function ProjectCard({ project, containers, routes, problems, actions, others })
         {containers.length === 0 ? (
           <p className="text-xs text-muted">No containers yet.</p>
         ) : (
-          <Members containers={containers} problems={problems} flush />
+          // Until what they hold is read, the containers themselves.
+          rows ? <ResourceLines rows={rows} /> : <Members containers={containers} problems={problems} flush />
         )}
 
         {domains.length > 0 && (
@@ -213,6 +226,38 @@ function ProjectCard({ project, containers, routes, problems, actions, others })
     </Card>
   )
 }
+
+// ResourceLines is a project card's body: one line per thing it runs, with
+// how it is in a word. What is failing comes first, so a glance at Home is
+// enough to know where to go.
+function ResourceLines({ rows }) {
+  const order = { problem: 0, caution: 1 }
+  const sorted = [...rows].sort((a, b) => (order[a.status.tone] ?? 2) - (order[b.status.tone] ?? 2))
+  return (
+    <ul className="divide-y divide-edge/50">
+      {sorted.map((r) => (
+        <li key={r.key}>
+          <a href={r.to} className="flex items-center justify-between gap-3 py-1.5 transition hover:text-ink">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className={`size-2 shrink-0 rounded-full ${DOTS[r.status.tone] ?? DOTS.muted}`} aria-hidden="true" />
+              <span className="truncate font-mono text-sm">{r.name}</span>
+              <span className="truncate text-xs text-faint">{r.kind === 'empty' ? 'empty container' : r.kind}</span>
+            </span>
+            <span className={`shrink-0 text-xs ${TEXT[r.status.tone] ?? TEXT.muted}`}>{r.status.label}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+const DOTS = {
+  running: 'bg-running',
+  problem: 'bg-problem ring-2 ring-problem/25',
+  caution: 'border border-caution',
+  muted: 'border border-stopped',
+}
+const TEXT = { running: 'text-running', problem: 'text-problem', caution: 'text-caution', muted: 'text-muted' }
 
 // Members is one line per container: its state, its name, how its
 // neighbours reach it. The same row in every card, grouped or not.
@@ -240,9 +285,11 @@ function Members({ containers, problems, flush }) {
   )
 }
 
-// ProjectPage is one project in full: its containers, the domains that reach
-// them, the data they hold, and what was done to them lately.
+// ProjectPage is one project in full: what runs in it, wherever it runs, the
+// domains that reach it, and what was done to it lately.
 export default function ProjectPage({ name, data, projects, problems, commandMode, actions, tableProps, jobsReading }) {
+  // Before any early return: a hook is called on every render or on none.
+  const resources = useResources(name)
   if (!projects) return <p role="status" className="text-xs text-muted">Reading the projects&hellip;</p>
   const project = projects.find((p) => p.name === name)
   if (!project) {
@@ -259,45 +306,67 @@ export default function ProjectPage({ name, data, projects, problems, commandMod
   const containers = containersOf(project, data.instances)
   const routes = routesOf(containers, data.routes)
   const others = data.instances.filter((i) => i.project !== project.name)
+  const rows = resources.containers ? rowsOf(resources.containers, data.instances, data.routes) : null
+  const count = rows?.filter((r) => r.kind !== 'empty' && r.kind !== 'unread').length
 
   return (
     <>
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="font-mono text-base">{project.name}</h1>
-          <p className="mt-0.5 text-xs text-muted">
-            {project.description || (project.declared ? 'No description.' : 'Named by a container’s label, not declared on this host.')}
+          <h1 className="font-mono text-xl">{project.name}</h1>
+          <p className="mt-1 text-xs text-muted">
+            {rows ? `${count} resource${count === 1 ? '' : 's'} in ${containers.length} container${containers.length === 1 ? '' : 's'}` : 'Reading…'}
+            {project.description ? ` · ${project.description}` : !project.declared ? ' · named by a container’s label, not declared on this host' : ''}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={() => actions.declareProject(project)} className="rounded border border-edge px-2.5 py-1 text-xs text-muted transition hover:border-edge-strong hover:text-ink">
+        <div className="flex flex-wrap items-center gap-4">
+          <button onClick={() => actions.declareProject(project)} className={QUIET}>
             {project.declared ? 'Edit description' : 'Declare'}
           </button>
-          <button onClick={() => actions.addToProject(project, others)} className="rounded border border-edge px-2.5 py-1 text-xs text-muted transition hover:border-edge-strong hover:text-ink">
+          <button onClick={() => actions.addToProject(project, others)} className={QUIET}>
             Add a container&hellip;
           </button>
-          <button onClick={() => actions.newContainer(project.name)} className="rounded border border-edge-strong bg-raised px-2.5 py-1 text-xs transition hover:border-ink/30">
-            New container
+          <button onClick={() => actions.newResource(project.name, containers)} className={PRIMARY}>
+            <span aria-hidden="true">+</span> New resource
           </button>
         </div>
-      </div>
+      </header>
 
-      <Card title="Containers" count={containers.length}>
-        <InstanceTable {...tableProps} instances={containers} empty="No containers in this project yet." />
-      </Card>
+      {/* The containers stay in sight: they are what is started, stopped,
+          snapshotted and moved, even when what matters is what runs in them. */}
+      {containers.length > 0 && (
+        <ul aria-label="Containers" className="flex flex-wrap gap-2">
+          {containers.map((c) => (
+            <li key={c.name}>
+              <a href={href('containers', c.name)} className="flex items-center gap-2 rounded-md border border-edge bg-panel px-3 py-1.5 text-xs transition hover:border-edge-strong">
+                <StatusDot status={c.status} problem={problems.has(c.name)} />
+                <span className="font-mono">{c.name}</span>
+                <span className="font-mono text-faint">{c.address || c.status}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
 
+      <ResourceTable
+        rows={containers.length === 0 ? [] : rows}
+        error={resources.error}
+        empty={
+          <>
+            No containers in this project yet.{' '}
+            <button onClick={() => actions.newContainer(project.name)} className="underline underline-offset-4 hover:text-ink">
+              Make one
+            </button>{' '}
+            or add one that exists.
+          </>
+        }
+      />
+
+      {/* What reaches the project but leads to no resource in it — a name
+          left pointing at a port nothing listens on — would vanish from a
+          table of resources, so the domains keep their own list. */}
       <Card title="Domains" count={allNames(routes).length}>
         <RouteTable {...tableProps} routes={routes} empty="No domain reaches this project yet. A domain is given to a service, on its page." />
-      </Card>
-
-      <Card title="Databases">
-        {containers.length === 0 ? (
-          <p className="px-4 py-5 text-center text-xs text-muted">No containers, so no databases.</p>
-        ) : (
-          <ul className="divide-y divide-edge">
-            {containers.map((c) => <ProjectDatabases key={c.name} container={c} />)}
-          </ul>
-        )}
       </Card>
 
       <Activity
@@ -322,40 +391,3 @@ export default function ProjectPage({ name, data, projects, problems, commandMod
   )
 }
 
-// Read once, not every few seconds for every container in the project: what
-// databases exist changes when somebody adds one, and the container's own
-// page is where that is watched.
-function ProjectDatabases({ container }) {
-  const [data, setData] = useState(null)
-  useEffect(() => {
-    let current = true
-    // A failure is said as one, not as "none": an empty list and an unread
-    // one are different answers to "where is the data".
-    fetch(`/api/hosts/local/instances/${container.name}/databases`)
-      .then(readJSON)
-      .then((payload) => current && setData(payload ?? { databases: [] }))
-      .catch((e) => current && setData({ failed: e.status === 503 ? 'not readable on this host' : 'could not be read' }))
-    return () => {
-      current = false
-    }
-  }, [container.name])
-  const databases = data?.databases ?? []
-  return (
-    <li className="px-4 py-2.5 text-xs">
-      <a href={href('containers', container.name)} className="font-mono text-muted underline-offset-4 hover:text-ink hover:underline">
-        {container.name}
-      </a>
-      {!data ? (
-        <span className="ml-2 text-faint">reading&hellip;</span>
-      ) : data.failed ? (
-        <span className="ml-2 text-caution">{data.failed}</span>
-      ) : databases.length === 0 ? (
-        <span className="ml-2 text-faint">none</span>
-      ) : (
-        <span className="ml-2 font-mono">
-          {databases.map((d) => `${d.name} (${d.engine}${d.location ? `, in ${d.location}` : ''})`).join(' · ')}
-        </span>
-      )}
-    </li>
-  )
-}
