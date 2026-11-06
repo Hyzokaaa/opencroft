@@ -181,6 +181,7 @@ func api(deps Deps) *http.ServeMux {
 	mux.HandleFunc("POST /api/hosts/{hostId}/expose", deps.exposePanel)
 
 	mux.HandleFunc("GET /api/hosts/{hostId}/projects", deps.listProjects)
+	mux.HandleFunc("GET /api/hosts/{hostId}/resources", deps.listResources)
 	mux.HandleFunc("POST /api/hosts/{hostId}/projects", deps.declareProject)
 	mux.HandleFunc("DELETE /api/hosts/{hostId}/projects/{project}", deps.removeProject)
 	mux.HandleFunc("PUT /api/hosts/{hostId}/instances/{name}/project", deps.assignProject)
