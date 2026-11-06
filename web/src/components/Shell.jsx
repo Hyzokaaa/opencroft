@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { href } from '../lib/useRoute.js'
 import { allNames } from '../lib/domains.js'
 import Command from './Command.jsx'
+import GoTo, { useGoTo } from './GoTo.jsx'
 import CopyButton from './CopyButton.jsx'
 import { primaryAddress } from './AgentDown.jsx'
 
@@ -28,6 +29,7 @@ export { SECTIONS }
 // last one being this page.
 export default function Shell({ data, host, section, tab, crumbs, commandMode, onToggleCommands, freshness, onReload, stale, running, onSignOut, children }) {
   const [navOpen, setNavOpen] = useState(false)
+  const [goingTo, setGoingTo] = useGoTo()
 
   useEffect(() => {
     if (!navOpen) return
@@ -48,7 +50,8 @@ export default function Shell({ data, host, section, tab, crumbs, commandMode, o
       {navOpen && (
         <div className="fixed inset-0 z-10 bg-black/50 md:hidden" onClick={() => setNavOpen(false)} aria-hidden="true" />
       )}
-      <Rail data={data} host={host} commandMode={commandMode} section={section} tab={tab} open={navOpen} />
+      <Rail data={data} host={host} commandMode={commandMode} section={section} tab={tab} open={navOpen} onGoTo={() => setGoingTo(true)} />
+      {goingTo && <GoTo data={data} onClose={() => setGoingTo(false)} />}
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center justify-between gap-4 border-b border-edge bg-ground/90 px-4 backdrop-blur md:px-6">
@@ -142,7 +145,7 @@ export default function Shell({ data, host, section, tab, crumbs, commandMode, o
   )
 }
 
-function Rail({ data, host, commandMode, section, tab, open }) {
+function Rail({ data, host, commandMode, section, tab, open, onGoTo }) {
   // Hidden off-screen on a phone is still reachable by Tab unless it is inert.
   const [narrow, setNarrow] = useState(() => matchMedia('(max-width: 767px)').matches)
   useEffect(() => {
@@ -169,6 +172,13 @@ function Rail({ data, host, commandMode, section, tab, open }) {
         {/* One host for now. Shown as a fact rather than a control, so it
             does not promise a choice that is not there yet. */}
         <HostAddress host={host ?? data?.host} commandMode={commandMode} />
+
+        <div className="px-2 pt-2">
+          <button onClick={onGoTo} className="flex w-full items-center justify-between rounded-md border border-edge px-3 py-1.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink">
+            Go to&hellip;
+            <kbd className="rounded border border-edge px-1 font-mono text-[10px] text-faint">Ctrl K</kbd>
+          </button>
+        </div>
 
         <ul className="min-h-0 flex-1 space-y-px overflow-y-auto p-2">
           {SECTIONS.map((s) => {
