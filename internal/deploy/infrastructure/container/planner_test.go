@@ -498,6 +498,29 @@ func TestNoHealthPathMeansNoWaiting(t *testing.T) {
 	}
 }
 
+// The readiness check is what lets the panel say a deployment worked rather
+// than finished. Marking any other step would claim it for a service nobody
+// asked.
+func TestOnlyTheReadinessCheckProvesADeployment(t *testing.T) {
+	proving := 0
+	for _, step := range deploy(t, withHealth(nodeService())).Steps {
+		if step.Proves {
+			proving++
+			if !strings.Contains(step.Shell(), "/health") {
+				t.Errorf("a step that is not the check proves the deployment: %s", step.Describe)
+			}
+		}
+	}
+	if proving != 1 {
+		t.Errorf("%d steps prove the deployment, want the one check", proving)
+	}
+	for _, step := range deploy(t, nodeService()).Steps {
+		if step.Proves {
+			t.Errorf("with no check configured, %q claims to prove it", step.Describe)
+		}
+	}
+}
+
 // Pruning is the one place croft removes something on its own, so it happens
 // in the open, one step at a time.
 func TestPruningOnlyTouchesOurOwnSnapshots(t *testing.T) {

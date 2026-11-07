@@ -73,7 +73,14 @@ const OUTCOME = {
   running: { label: 'running', tone: 'border-caution/40 text-caution' },
   // Green says "running" on this panel and nothing else. A job that worked
   // is a fact about the past: a tick, in the neutral tone.
-  done: { label: '✓ worked', tone: 'border-edge-strong text-ink' },
+  worked: {
+    label: '✓ worked',
+    tone: 'border-edge-strong text-ink',
+    explain: 'Every step ran, and the readiness check answered as it should.',
+  },
+  // Every step ran, which is not the same claim: nothing asked the result
+  // whether it serves.
+  finished: { label: '✓ finished', tone: 'border-edge-strong text-muted', explain: 'Every step ran.' },
   failed: { label: 'failed', tone: 'border-problem/40 text-problem' },
   interrupted: {
     label: 'interrupted',
@@ -97,6 +104,17 @@ const KIND = {
   'snapshot-remove': 'Delete snapshot',
 }
 
+// outcomeOf is how a job ended, in the words every list of jobs uses. A
+// deployment says it worked only when its readiness check passed.
+export function outcomeOf(job) {
+  if (job.status !== 'done') return OUTCOME[job.status] ?? { label: job.status, tone: 'border-edge text-muted' }
+  const verified = job.verified ?? (job.plan?.steps ?? []).some((s) => s.proves)
+  if (verified) return OUTCOME.worked
+  return DEPLOYS.has(job.kind)
+    ? { ...OUTCOME.finished, explain: 'Every step ran, but nothing asked the service whether it answers. Give it a readiness check and the next deployment says whether it worked.' }
+    : OUTCOME.finished
+}
+
 // What "Deploys" shows: one somebody started and one a new commit did.
 export const DEPLOYS = new Set(['deploy', 'auto-deploy'])
 
@@ -107,7 +125,7 @@ function kindOf(job) {
 }
 
 function Row({ job, open, onToggle }) {
-  const outcome = OUTCOME[job.status] ?? { label: job.status, tone: 'border-edge text-muted' }
+  const outcome = outcomeOf(job)
   const [container, service] = job.subject.split('/')
   const failed = job.status === 'failed'
 

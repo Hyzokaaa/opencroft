@@ -63,6 +63,21 @@ type Snapshot struct {
 	Ended   time.Time `json:"ended,omitzero"`
 }
 
+// Verified is whether the job ended having passed a step that proves it
+// did what it was for. Finishing every step says only that nothing failed:
+// a deployment with no readiness check is up, not known to work.
+func (s Snapshot) Verified() bool {
+	if s.Status != StatusDone {
+		return false
+	}
+	for _, step := range s.Plan.Steps {
+		if step.Proves {
+			return true
+		}
+	}
+	return false
+}
+
 type Job struct {
 	Snapshot
 

@@ -470,7 +470,9 @@ func (p *Planner) check(service *entities.Service) plan.Step {
 		"*"+fmt.Sprint(service.Health.Code()), body(service.Health.Contains),
 		url, Budget)
 
-	return plan.Command(p.describeCheck(service, url), "sh", "-c", command)
+	step := plan.Command(p.describeCheck(service, url), "sh", "-c", command)
+	step.Proves = true
+	return step
 }
 
 func (p *Planner) describeCheck(service *entities.Service, url string) string {

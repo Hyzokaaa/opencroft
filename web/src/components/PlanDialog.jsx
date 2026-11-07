@@ -588,7 +588,11 @@ export function Progress({ steps, events, error, done }) {
       </ol>
 
       <p role="status" className="mt-4 text-xs">
-        {done && !error && <span className="text-ink">✓ Finished.</span>}
+        {/* Every step ran either way; only a readiness check passed says the
+            thing it was for answers. */}
+        {done && !error && (steps.some((s) => s.proves)
+          ? <span className="text-ink">✓ Worked: it answered its readiness check.</span>
+          : <span className="text-ink">✓ Finished.</span>)}
         {error && <span className="text-problem">Stopped: {error}</span>}
       </p>
     </div>

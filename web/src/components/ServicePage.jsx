@@ -5,7 +5,7 @@ import Gated from './Gated.jsx'
 import CopyButton from './CopyButton.jsx'
 import PlanDialog from './PlanDialog.jsx'
 import DomainList from './DomainList.jsx'
-import Activity, { DEPLOYS, ago } from './Activity.jsx'
+import Activity, { DEPLOYS, ago, outcomeOf } from './Activity.jsx'
 import AutoDeploy, { useAutoDeploy } from './AutoDeploy.jsx'
 import { LogPane } from './LogView.jsx'
 import { Discard } from './PlanDialog.jsx'
@@ -857,7 +857,7 @@ function Overview({ service, container, port, names, certificates, noPort, autoD
             <div className="space-y-1 px-4 py-3 text-xs">
               <p>
                 <span className={last.status === 'failed' ? 'text-problem' : last.status === 'running' ? 'text-caution' : ''}>
-                  {last.status === 'done' ? '✓ worked' : last.status}
+                  {outcomeOf(last).label}
                 </span>
                 <span className="text-muted">
                   {' '}· {last.kind === 'auto-deploy' ? 'automatic, after a new commit' : 'started from the panel'} ·{' '}

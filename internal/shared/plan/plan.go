@@ -22,6 +22,10 @@ type Step struct {
 	// Secret steps carry secrets in the command itself. They are shown before
 	// they run, like every step — and never written down afterwards.
 	Secret bool `json:"secret,omitempty"`
+	// Proves marks the step whose success shows the work did what it was
+	// for, not only that it ran: a deployment's readiness check. A job that
+	// passed one "worked"; one with none only "finished".
+	Proves bool `json:"proves,omitempty"`
 }
 
 func Command(describe string, argv ...string) Step {

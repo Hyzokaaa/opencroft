@@ -112,3 +112,27 @@ func TestSubscribingLateStillSeesWhatHappened(t *testing.T) {
 	}
 	runner.Cancel(j.Id)
 }
+
+// "✓ worked" is a claim about the service, not about the steps. A deployment
+// with no readiness check finished every step and could still be serving
+// errors, so only a job that passed a step meant to prove it says so.
+func TestOnlyAJobThatPassedItsCheckWorked(t *testing.T) {
+	check := plan.Command("wait until it answers", "true")
+	check.Proves = true
+
+	cases := []struct {
+		name string
+		job  Snapshot
+		want bool
+	}{
+		{"checked and done", Snapshot{Status: StatusDone, Plan: plan.New(check)}, true},
+		{"done with nothing to check", Snapshot{Status: StatusDone, Plan: onestep()}, false},
+		{"failed at its check", Snapshot{Status: StatusFailed, Plan: plan.New(check)}, false},
+		{"interrupted before it was seen", Snapshot{Status: StatusInterrupted, Plan: plan.New(check)}, false},
+	}
+	for _, c := range cases {
+		if got := c.job.Verified(); got != c.want {
+			t.Errorf("%s: verified=%v, want %v", c.name, got, c.want)
+		}
+	}
+}

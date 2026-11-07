@@ -154,6 +154,9 @@ type jobSummary struct {
 	// different story from one at step 1.
 	Steps   int `json:"steps"`
 	Reached int `json:"reached"`
+	// Verified is a job that ended having passed its readiness check: it
+	// worked, rather than only finished.
+	Verified bool `json:"verified,omitempty"`
 }
 
 func (d Deps) listJobs(w http.ResponseWriter, r *http.Request) {
@@ -179,6 +182,7 @@ func (d Deps) listJobs(w http.ResponseWriter, r *http.Request) {
 		summaries[i] = jobSummary{
 			Id: s.Id, Kind: s.Kind, Subject: s.Subject, Status: s.Status, Error: s.Error,
 			Started: s.Started, Ended: s.Ended, Steps: len(s.Plan.Steps), Reached: reached,
+			Verified: s.Verified(),
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"jobs": summaries})
