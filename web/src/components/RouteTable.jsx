@@ -81,6 +81,16 @@ export default function RouteTable({ routes, instances, certificates = [], probl
                   {name.alias && (
                     <p className="mt-0.5 pl-5 text-[11px] text-faint">set up with {r.domain}</p>
                   )}
+                  {/* On a narrow screen the columns that say where it goes and
+                      how long its certificate has are hidden; the row still
+                      says both, or a coloured bar beside it has no reason. */}
+                  <p className="mt-0.5 pl-5 text-[11px] text-muted md:hidden">
+                    <span className="sm:hidden">
+                      <span className="font-mono">{service ? `${service.name} in ` : ''}{target ?? r.target}:{r.port}</span> ·{' '}
+                    </span>
+                    {name.ssl && <span>certificate </span>}
+                    <Expiry name={name} certificates={certificates} />
+                  </p>
                   {/* A prefix served from somewhere of its own, under the
                       domain it belongs to — that is where a person looks for
                       /api/. */}

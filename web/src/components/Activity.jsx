@@ -39,8 +39,9 @@ export default function Activity({ commandMode, containers, subject, title, limi
       count={read ? shown.length : undefined}
       commandMode={commandMode}
       commands={['sqlite3 /var/lib/croft/croft.db "SELECT started, kind, subject, status FROM jobs ORDER BY started DESC"']}
+      // Filters over nothing are buttons that cannot change what is shown.
       action={
-        <div className="flex items-center gap-1.5">
+        read && mine.length > 0 && <div className="flex items-center gap-1.5">
           <Toggle on={scope === 'all'} onClick={() => setScope('all')}>Everything</Toggle>
           <Toggle on={scope === 'deploys'} onClick={() => setScope('deploys')}>Deploys</Toggle>
           <span className="mx-1 h-4 w-px bg-edge" />
@@ -55,9 +56,18 @@ export default function Activity({ commandMode, containers, subject, title, limi
       {!read ? (
         <p role="status" className="px-4 py-8 text-center text-xs text-muted">Reading the history&hellip;</p>
       ) : shown.length === 0 ? (
-        <p className="px-4 py-8 text-center text-xs text-muted">
-          {failedOnly ? 'Nothing here has failed.' : empty ?? 'Nothing has been done here yet.'}
-        </p>
+        <div className="px-4 py-8 text-center text-xs">
+          <p className="text-muted">
+            {failedOnly ? 'Nothing here has failed.' : mine.length > 0 ? 'No deployments among these.' : empty ?? 'Nothing has been done here yet.'}
+          </p>
+          {/* What will be here, so an empty list reads as a beginning and
+              not as something that failed to load. */}
+          {mine.length === 0 && (
+            <p className="mt-1 text-faint">
+              Deployments, restarts, domains and certificates done from this panel show up here, each with its steps.
+            </p>
+          )}
+        </div>
       ) : (
         <ul className="divide-y divide-edge">
           {shown.map((j) => (

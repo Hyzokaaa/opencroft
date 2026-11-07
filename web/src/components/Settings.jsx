@@ -279,6 +279,9 @@ function keysFor(provider, status) {
 // is removed again in that case, so the worst outcome is that nothing changed.
 function PanelAddress({ onExpose }) {
   const [domain, setDomain] = useState('')
+  // Said when the button is pressed with nothing typed, rather than a dimmed
+  // button that gives no reason for not working.
+  const [empty, setEmpty] = useState(false)
   const field = useId()
 
   return (
@@ -299,6 +302,7 @@ function PanelAddress({ onExpose }) {
         <form
           onSubmit={(e) => {
             e.preventDefault()
+            if (!domain.trim()) return setEmpty(true)
             onExpose?.(domain.trim())
           }}
           className="space-y-1"
@@ -310,18 +314,22 @@ function PanelAddress({ onExpose }) {
           <input
             id={field}
             value={domain}
-            onChange={(e) => setDomain(e.target.value)}
+            onChange={(e) => {
+              setDomain(e.target.value)
+              setEmpty(false)
+            }}
+            aria-invalid={empty || undefined}
             placeholder="panel.example.com"
             className="min-w-0 flex-1 rounded border border-field-edge bg-ground px-3 py-2 font-mono text-sm outline-none transition focus:border-ink/40"
           />
           <button
             type="submit"
-            disabled={!domain.trim()}
             className={`shrink-0 ${PRIMARY}`}
           >
             Show me the plan
           </button>
           </div>
+          {empty && <p role="alert" className="text-xs text-caution">Type the domain the panel should answer at first.</p>}
         </form>
       </div>
 

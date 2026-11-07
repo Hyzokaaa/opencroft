@@ -1198,13 +1198,15 @@ function DataWarning({ databases }) {
     <div className="border-b border-edge px-4 py-2.5 text-[11px]">
       {inside.length > 0 && (
         <p className="text-caution">
-          Restoring takes {inside.join(', ')} back to that moment too, losing anything written
-          since.
+          {/* Named as databases: a database called like its project read as
+              the whole project going back. */}
+          Restoring also takes the {inside.join(', ')} database{inside.length === 1 ? '' : 's'} back to that
+          moment: anything written to {inside.length === 1 ? 'it' : 'them'} since is lost.
         </p>
       )}
       {away.map((d) => (
         <p key={d.name} className="text-caution">
-          {d.db} is in {d.location} and does <strong>not</strong> go back — the application would
+          The {d.db} database is in {d.location} and does <strong>not</strong> go back — the application would
           return to an older version against today&apos;s data.
         </p>
       ))}

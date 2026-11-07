@@ -845,8 +845,9 @@ function Dashboard({ onSignOut, onSessionLost }) {
             <CertificatesPage
               certificates={data.certificates ?? []}
               onWildcard={wildcard}
-              renewable={(c) => data.routes.find((r) => r.ssl && r.state === 'managed' && c.path?.startsWith(r.certificates + '/'))}
+              renewable={(c) => data.routes.find((r) => r.ssl && r.certificates && c.path?.startsWith(r.certificates + '/'))}
               onRenew={enableTLS}
+              onTakeOver={takeOver}
             />
           )}
           <ReadWith commandMode={commandMode} commands={tab === 'certificates' ? ['ls /etc/letsencrypt/live/', 'openssl x509 -enddate -noout -in <file>'] : routeCommands} />

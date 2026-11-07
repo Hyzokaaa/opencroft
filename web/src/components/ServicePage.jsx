@@ -908,7 +908,16 @@ function Environment({ container, service, environment, onEdit }) {
               {!file.exists && <span>— not there yet; editing creates it.</span>}
             </p>
             {keys.length === 0 ? (
-              <p className="text-muted">No variables yet.</p>
+              // Empty, the way forward is here rather than up in the card's
+              // header, where nobody reading this line was looking.
+              <div className="space-y-2">
+                <p className="text-muted">
+                  No variables yet. Database addresses, keys and settings {name} reads from its environment go here.
+                </p>
+                <button onClick={onEdit} className={RAISED}>
+                  Add variables&hellip;
+                </button>
+              </div>
             ) : (
               <>
                 <ul aria-label="Variable names" className="flex flex-wrap gap-1.5">
