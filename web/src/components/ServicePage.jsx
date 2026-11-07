@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import Card from './Card.jsx'
 import Chip from './Chip.jsx'
 import Gated from './Gated.jsx'
@@ -22,6 +22,7 @@ import { VERBS } from '../lib/vocabulary.js'
 import { portOf, reaching, stateOf } from '../lib/domains.js'
 import { servingOf } from '../lib/serving.js'
 import { readJSON } from '../lib/api.js'
+import { Tabs } from './Listing.jsx'
 
 // One service: what it is doing, what reaches it, and everything done to it.
 //
@@ -30,25 +31,23 @@ import { readJSON } from '../lib/api.js'
 // puts the one move the answer calls for at the top.
 //
 // It was one long scroll — domains, a form the height of the screen, the
-// environment, snapshots — every part at the same weight, and whatever was
-// wanted was somewhere below. Now the header stays and says how it is; each
-// part is a page of its own, with its own address, chosen from a list beside
-// it: Overview, then what is set (configuration, domains, environment,
-// automatic deployments), then what happened (deployments, logs), and the
-// danger zone apart at the end.
+// environment, snapshots — every part at the same weight. Then a column of
+// sections beside it, which on a laptop took a fifth of the width to say six
+// words. Now the header stays and says how it is, and the parts are tabs
+// under it, each with its own address. What decides how deployments happen —
+// automatically or not, with a snapshot or not — sits with the deployments.
 const PARTS = [
   { id: 'overview', label: 'Overview' },
-  { group: 'Settings' },
   { id: 'configuration', label: 'Configuration' },
   { id: 'domains', label: 'Domains' },
   { id: 'environment', label: 'Environment' },
-  { id: 'auto-deploy', label: 'Automatic deployments' },
-  { group: 'Observe' },
   { id: 'deployments', label: 'Deployments' },
   { id: 'logs', label: 'Logs', process: true },
-  { group: '' },
-  { id: 'danger', label: 'Danger zone' },
 ]
+
+// Addresses from when these were parts of their own, so a link kept from
+// then still opens where the thing now is.
+const MOVED = { 'auto-deploy': 'deployments', danger: 'configuration' }
 
 export default function ServicePage({
   container,
@@ -195,7 +194,8 @@ export default function ServicePage({
   const to = (p) => serviceHref(container.name, name, p)
 
   const parts = PARTS.filter((p) => !(p.process && site))
-  const part = parts.some((p) => p.id === asked) ? asked : 'overview'
+  const wanted = MOVED[asked] ?? asked
+  const part = parts.some((p) => p.id === wanted) ? wanted : 'overview'
 
   // What the configuration form can do, said once and used by the form's
   // own buttons and by the header's.
@@ -268,7 +268,6 @@ export default function ServicePage({
   const badges = {
     configuration: changed ? { dot: true, sr: 'not saved' } : null,
     domains: { text: String(names.length) },
-    'auto-deploy': autoDeploy.read ? { text: autoDeploy.data?.enabled ? 'on' : 'off' } : null,
     deployments: snapshotCount ? { text: String(snapshotCount), sr: `${snapshotCount} snapshots` } : null,
   }
 
@@ -392,140 +391,141 @@ export default function ServicePage({
         </p>
       )}
 
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[12.5rem_minmax(0,1fr)] lg:items-start">
-        <SubNav parts={parts} part={part} to={to} badges={badges} label={`${name}: sections`} />
+      <Tabs parts={parts} part={part} to={to} badges={badges} label={`${name}: sections`} />
 
-        <div className="min-w-0 max-w-6xl space-y-4">
-          {part === 'overview' && (
-            <Overview
-              service={service}
-              container={container}
-              port={port}
-              names={names}
-              certificates={certificates}
-              noPort={noPort}
-              autoDeploy={autoDeploy}
-              jobs={jobsReading?.jobs ?? []}
-              subject={subject}
-              to={to}
-              stoppedId={up ? undefined : stoppedId}
-              onAddDomain={addDomain}
-            />
-          )}
+      <div className="min-w-0 space-y-4">
+        {part === 'overview' && (
+          <Overview
+            service={service}
+            container={container}
+            port={port}
+            names={names}
+            certificates={certificates}
+            noPort={noPort}
+            autoDeploy={autoDeploy}
+            jobs={jobsReading?.jobs ?? []}
+            subject={subject}
+            to={to}
+            stoppedId={up ? undefined : stoppedId}
+            onAddDomain={addDomain}
+          />
+        )}
 
-          {part === 'configuration' && (
-            <Configuration
-              service={service}
-              form={form}
-              onChange={edit}
-              changed={changed}
-              why={why}
-              problem={formProblem}
-              repoWrong={repoProblem(form.repo)}
-              stoppedId={up ? undefined : stoppedId}
-              onLookAgain={lookAgain}
-              onSave={save}
-              onDeploy={saveAndDeploy}
-              onDiscard={() => {
-                setDraft(null)
-                setWhy('')
-                setNotice(null)
-              }}
-            />
-          )}
+        {part === 'configuration' && (
+          <Configuration
+            service={service}
+            form={form}
+            onChange={edit}
+            changed={changed}
+            why={why}
+            problem={formProblem}
+            repoWrong={repoProblem(form.repo)}
+            stoppedId={up ? undefined : stoppedId}
+            onLookAgain={lookAgain}
+            onSave={save}
+            onDeploy={saveAndDeploy}
+            onDiscard={() => {
+              setDraft(null)
+              setWhy('')
+              setNotice(null)
+            }}
+          />
+        )}
 
-          {part === 'domains' && (
-            <Card
-              title="Domains"
-              count={names.length}
-              description={`The names that reach ${name}${port ? ` on :${port}` : ''}. Each opens the site.`}
-              commandMode={commandMode}
-              commands={port ? [`nginx -T | grep -B3 'proxy_pass http://${container.address}:${port}'`] : undefined}
-              action={
-                names.length > 0 && (
-                  <Gated reasonId={up ? undefined : stoppedId} onClick={addDomain} className={HEADER_SECONDARY}>
-                    Add domain
-                  </Gated>
-                )
-              }
-            >
-              {names.length === 0 ? (
-                <NoDomain name={name} noPort={noPort} publicAddress={publicAddress} stoppedId={up ? undefined : stoppedId} onAddDomain={addDomain} />
-              ) : (
-                <DomainList names={names} certificates={certificates} handlers={routeHandlers} publicAddress={publicAddress} />
-              )}
-            </Card>
-          )}
+        {part === 'domains' && (
+          <Card
+            title="Domains"
+            count={names.length}
+            description={`The names that reach ${name}${port ? ` on :${port}` : ''}. Each opens the site.`}
+            commandMode={commandMode}
+            commands={port ? [`nginx -T | grep -B3 'proxy_pass http://${container.address}:${port}'`] : undefined}
+            action={
+              names.length > 0 && (
+                <Gated reasonId={up ? undefined : stoppedId} onClick={addDomain} className={HEADER_SECONDARY}>
+                  Add domain
+                </Gated>
+              )
+            }
+          >
+            {names.length === 0 ? (
+              <NoDomain name={name} noPort={noPort} publicAddress={publicAddress} stoppedId={up ? undefined : stoppedId} onAddDomain={addDomain} />
+            ) : (
+              <DomainList names={names} certificates={certificates} handlers={routeHandlers} publicAddress={publicAddress} />
+            )}
+          </Card>
+        )}
 
-          {part === 'environment' && (
-            <Environment container={container} service={service} environment={environment} onEdit={() => onEnvironment(container, service)} />
-          )}
+        {part === 'environment' && (
+          <Environment container={container} service={service} environment={environment} onEdit={() => onEnvironment(container, service)} />
+        )}
 
-          {part === 'auto-deploy' && <AutoDeploy service={service} state={autoDeploy} agentDown={agentDown} />}
-
-          {part === 'deployments' && (
-            <>
-              {/* First, not after the history: with a long list of deployments
-                  above it, a setting that decides what every one of them does
-                  was a scroll away from anybody looking for it. */}
+        {part === 'deployments' && (
+          <>
+            {/* First, not after the history: with a long list of deployments
+                below them, the settings that decide what every one of them
+                does were a scroll away from anybody looking for them. */}
+            <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
+              <AutoDeploy service={service} state={autoDeploy} agentDown={agentDown} />
               <SnapshotPolicy name={name} off={Boolean(service.noSnapshot)} onToggle={toggleSnapshots} />
-              <Activity
-                subject={subject}
-                title={`What was done to ${name}`}
-                reading={jobsReading}
-                commandMode={commandMode}
-                empty={`Nothing has been done to ${name} from this panel yet.`}
-              />
-              <Snapshots
-                only={name}
-                untaken={Boolean(service.noSnapshot)}
-                snapshots={data?.snapshots ?? []}
-                services={services}
-                container={container}
-                commandMode={commandMode}
-                read={read}
-                error={error}
-                unavailable={unavailable}
-                onRetry={reload}
-                runtime={runtime}
-                onRollback={onRollback}
-                onDelete={setDeleting}
-                databases={databases.data?.databases ?? []}
-              />
-              <Checkout path={service.path} onRepair={repair} />
-            </>
-          )}
+            </div>
+            <Activity
+              subject={subject}
+              title={`What was done to ${name}`}
+              reading={jobsReading}
+              commandMode={commandMode}
+              empty={`Nothing has been done to ${name} from this panel yet.`}
+            />
+            <Snapshots
+              only={name}
+              untaken={Boolean(service.noSnapshot)}
+              snapshots={data?.snapshots ?? []}
+              services={services}
+              container={container}
+              commandMode={commandMode}
+              read={read}
+              error={error}
+              unavailable={unavailable}
+              onRetry={reload}
+              runtime={runtime}
+              onRollback={onRollback}
+              onDelete={setDeleting}
+              databases={databases.data?.databases ?? []}
+            />
+            <Checkout path={service.path} onRepair={repair} />
+          </>
+        )}
 
-          {part === 'logs' && (
-            <section aria-label={`Logs of ${name}`} className="flex h-[70vh] min-h-80 flex-col overflow-hidden rounded-lg border border-edge bg-panel">
-              <LogPane container={container.name} service={name} title="Logs" />
-            </section>
-          )}
+        {part === 'logs' && (
+          <section aria-label={`Logs of ${name}`} className="flex h-[70vh] min-h-80 flex-col overflow-hidden rounded-lg border border-edge bg-panel">
+            <LogPane container={container.name} service={name} title="Logs" />
+          </section>
+        )}
 
-          {part === 'danger' && (
-            <Card title="Danger zone">
-              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-                <p className="max-w-prose text-xs text-muted">
-                  {service.adopted
-                    ? `Releasing ${name} forgets what croft wrote down about it. Nothing it runs or serves is touched.`
-                    : `Removing ${name} stops it and deletes its files and environment, after a snapshot.${
-                        whole.length ? ` ${whole.length === 1 ? 'Its domain stops' : `Its ${whole.length} domains stop`} reaching anything.` : ''
-                      }`}
-                </p>
-                <button
-                  onClick={() => onDestroy(container, service)}
-                  className={
-                    service.adopted
-                      ? SECONDARY
-                      : 'rounded border border-problem/50 px-2.5 py-1 text-xs text-problem transition hover:bg-problem/10'
-                  }
-                >
-                  {service.adopted ? `${VERBS.release}…` : `Remove ${name}…`}
-                </button>
-              </div>
-            </Card>
-          )}
-        </div>
+        {/* At the end of what is set, apart: removing it is the last thing
+            about it that can be changed. */}
+        {part === 'configuration' && (
+          <Card title="Danger zone">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+              <p className="max-w-prose text-xs text-muted">
+                {service.adopted
+                  ? `Releasing ${name} forgets what croft wrote down about it. Nothing it runs or serves is touched.`
+                  : `Removing ${name} stops it and deletes its files and environment, after a snapshot.${
+                      whole.length ? ` ${whole.length === 1 ? 'Its domain stops' : `Its ${whole.length} domains stop`} reaching anything.` : ''
+                    }`}
+              </p>
+              <button
+                onClick={() => onDestroy(container, service)}
+                className={
+                  service.adopted
+                    ? SECONDARY
+                    : 'rounded border border-problem/50 px-2.5 py-1 text-xs text-problem transition hover:bg-problem/10'
+                }
+              >
+                {service.adopted ? `${VERBS.release}…` : `Remove ${name}…`}
+              </button>
+            </div>
+          </Card>
+        )}
       </div>
 
       {/* Each write shows its plan first. Closing one leaves the form as it
@@ -632,69 +632,6 @@ function StatePill({ up, state, page }) {
   return <Chip label={state || 'unknown'} tone="border-problem/40 text-problem" />
 }
 
-// The parts of the page: a column beside it on a wide screen, a row of tabs
-// above it on a narrow one — scrolled sideways inside itself, never the page.
-function SubNav({ parts, part, to, badges, label }) {
-  // On a phone the row is wider than the screen: the part being shown is
-  // brought into view, rather than left past the edge.
-  const list = useRef(null)
-  useEffect(() => {
-    const ul = list.current
-    const here = ul?.querySelector('[aria-current="page"]')
-    if (!ul || !here || ul.scrollWidth <= ul.clientWidth) return
-    ul.scrollLeft = here.parentElement.offsetLeft - ul.offsetLeft - 16
-  }, [part])
-
-  return (
-    <nav aria-label={label} className="min-w-0 lg:sticky lg:top-16">
-      <ul ref={list} className="-mx-4 flex gap-1 overflow-x-auto border-b border-edge px-4 pb-2 md:-mx-6 md:px-6 lg:mx-0 lg:block lg:space-y-px lg:border-0 lg:p-0">
-        {parts.map((p, i) =>
-          p.group !== undefined ? (
-            <li key={`g${i}`} aria-hidden="true" className="hidden lg:block">
-              {p.group ? (
-                <span className="block px-2.5 pb-1 pt-4 text-[11px] uppercase tracking-wide text-faint">{p.group}</span>
-              ) : (
-                <span className="my-3 block border-t border-edge" />
-              )}
-            </li>
-          ) : (
-            <li key={p.id} className="shrink-0">
-              <a
-                href={to(p.id === 'overview' ? null : p.id)}
-                aria-current={p.id === part ? 'page' : undefined}
-                className={`flex items-center justify-between gap-2 whitespace-nowrap rounded px-2.5 py-1.5 text-sm transition ${
-                  p.id === part ? 'bg-raised text-ink' : 'text-muted hover:bg-white/[0.03] hover:text-ink'
-                } ${p.id === 'danger' && p.id !== part ? 'hover:text-problem' : ''}`}
-              >
-                <span>{p.label}</span>
-                <Badge badge={badges[p.id]} />
-              </a>
-            </li>
-          ),
-        )}
-      </ul>
-    </nav>
-  )
-}
-
-function Badge({ badge }) {
-  if (!badge) return null
-  if (badge.dot) {
-    return (
-      <>
-        <span aria-hidden="true" className="size-1.5 rounded-full bg-yours" />
-        <span className="sr-only"> — {badge.sr}</span>
-      </>
-    )
-  }
-  return (
-    <span className="text-xs text-faint">
-      <span aria-hidden={badge.sr ? true : undefined}>{badge.text}</span>
-      {badge.sr && <span className="sr-only">{badge.sr}</span>}
-    </span>
-  )
-}
-
 // What it is and where it stands, on one screen: the facts somebody asks for
 // first, each one copyable; how it is reached; what was done to it last.
 // Whether deployments start with a snapshot, beside the snapshots themselves:
@@ -782,7 +719,7 @@ function Overview({ service, container, port, names, certificates, noPort, autoD
           <div className="min-w-0">
             <dt className="text-[11px] text-muted">Automatic deployments</dt>
             <dd className="mt-0.5 text-xs">
-              <a href={to('auto-deploy')} className="underline-offset-4 hover:underline">
+              <a href={to('deployments')} className="underline-offset-4 hover:underline">
                 {!autoDeploy.read ? '…' : auto ? `On — follows ${service.branch || 'its branch'}` : 'Off'}
               </a>
             </dd>

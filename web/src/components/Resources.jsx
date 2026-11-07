@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Chip from './Chip.jsx'
 import Chevron from './Chevron.jsx'
 import { Toolbar, Status, matches } from './Listing.jsx'
-import { href, serviceHref } from '../lib/useRoute.js'
+import { containerHref, href, serviceHref } from '../lib/useRoute.js'
 import { portOf, reaching } from '../lib/domains.js'
 import { servingOf, toneOf } from '../lib/serving.js'
 import { readJSON, humane, isAgentDown } from '../lib/api.js'
@@ -98,7 +98,7 @@ export function rowsOf(containers, instances, routes) {
         description: [d.engine, d.user && `user ${d.user}`, d.port && `:${d.port}`].filter(Boolean).join(' · '),
         container: c.name,
         status: up ? unitStatus(d.state) : stopped,
-        to: href('containers', c.name),
+        to: containerHref(c.name, 'databases'),
         chips: [d.adopted && { label: 'adopted', tone: 'border-yours/40 text-yours' }].filter(Boolean),
       })
     }

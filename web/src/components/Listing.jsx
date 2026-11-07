@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import Chip from './Chip.jsx'
 import Command from './Command.jsx'
 
@@ -94,3 +95,57 @@ export function ReadWith({ commandMode, commands }) {
     </section>
   )
 }
+
+// The parts of the page, as tabs under the header: a row that scrolls
+// sideways inside itself on a phone, never the page.
+export function Tabs({ parts, part, to, badges = {}, label }) {
+  // On a phone the row is wider than the screen: the part being shown is
+  // brought into view, rather than left past the edge.
+  const list = useRef(null)
+  useEffect(() => {
+    const ul = list.current
+    const here = ul?.querySelector('[aria-current="page"]')
+    if (!ul || !here || ul.scrollWidth <= ul.clientWidth) return
+    ul.scrollLeft = here.parentElement.offsetLeft - ul.offsetLeft - 16
+  }, [part])
+
+  return (
+    <nav aria-label={label} className="min-w-0">
+      <ul ref={list} className="-mx-4 flex gap-1 overflow-x-auto border-b border-edge px-4 md:mx-0 md:px-0">
+        {parts.map((p) => (
+          <li key={p.id} className="shrink-0">
+            <a
+              href={to(p.id === 'overview' ? null : p.id)}
+              aria-current={p.id === part ? 'page' : undefined}
+              className={`-mb-px flex items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm transition ${
+                p.id === part ? 'border-action text-ink' : 'border-transparent text-muted hover:text-ink'
+              }`}
+            >
+              <span>{p.label}</span>
+              <Badge badge={badges[p.id]} />
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  )
+}
+
+function Badge({ badge }) {
+  if (!badge) return null
+  if (badge.dot) {
+    return (
+      <>
+        <span aria-hidden="true" className="size-1.5 rounded-full bg-yours" />
+        <span className="sr-only"> — {badge.sr}</span>
+      </>
+    )
+  }
+  return (
+    <span className="text-xs text-faint">
+      <span aria-hidden={badge.sr ? true : undefined}>{badge.text}</span>
+      {badge.sr && <span className="sr-only">{badge.sr}</span>}
+    </span>
+  )
+}
+

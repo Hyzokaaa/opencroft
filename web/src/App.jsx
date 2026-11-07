@@ -770,6 +770,8 @@ function Dashboard({ onSignOut, onSessionLost }) {
         openedContainer ? (
           <Container
             container={openedContainer}
+            part={route.part}
+            jobsReading={jobsReading}
             routes={data.routes}
             certificates={data.certificates ?? []}
             publicAddress={publicAddressOf(host)}

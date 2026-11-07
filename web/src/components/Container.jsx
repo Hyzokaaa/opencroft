@@ -9,7 +9,11 @@ import Actions from './Actions.jsx'
 import CopyButton from './CopyButton.jsx'
 import DomainList from './DomainList.jsx'
 import { useServices, useDatabases, useFoundDatabases } from '../lib/useContainer.js'
-import { href, parse, serviceHref } from '../lib/useRoute.js'
+import Activity from './Activity.jsx'
+import { ResourceTable, rowsOf } from './Resources.jsx'
+import { Status, Tabs } from './Listing.jsx'
+import { containerHref, href, parse, serviceHref } from '../lib/useRoute.js'
+import { PRIMARY as PRIMARY_BUTTON, SECONDARY as SECONDARY_BUTTON } from '../lib/ui.js'
 import { OWNERSHIP, SEVERITY, VERBS, remediesFor } from '../lib/vocabulary.js'
 import { byService, reachingContainer } from '../lib/domains.js'
 import { servingOf } from '../lib/serving.js'
@@ -27,8 +31,20 @@ import { readJSON } from '../lib/api.js'
 //
 // Each service has a page of its own, where everything done to it is done —
 // its domains included. Here it is a row that says how it is and leads there.
+// The parts of its page. Overview is what it holds, as the project page
+// lists it; the rest are what used to be one long scroll under it.
+const PARTS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'domains', label: 'Domains' },
+  { id: 'databases', label: 'Databases' },
+  { id: 'snapshots', label: 'Snapshots' },
+  { id: 'activity', label: 'Activity' },
+]
+
 export default function Container({
   container,
+  part: asked,
+  jobsReading,
   routes,
   certificates = [],
   publicAddress,
@@ -62,7 +78,7 @@ export default function Container({
   // query is dropped once read, so Back or a reload does not open it again.
   useEffect(() => {
     if (parse(location.hash).query.add !== 'database') return
-    history.replaceState(null, '', href('containers', container.name))
+    location.replace(containerHref(container.name, 'databases'))
     setDialog({ kind: 'add' })
   }, [container.name])
 
@@ -85,88 +101,108 @@ export default function Container({
   const blockedId = useId()
   const deployBlocked = !running ? null : unavailable ? 'This host cannot deploy services.' : null
 
+  const part = PARTS.some((p) => p.id === asked) ? asked : 'overview'
+  // The same rows the project page lists, for this one container.
+  const rows = rowsOf(
+    [{ ...container, services: data, databases: databases.data }],
+    [container],
+    routes,
+  ).filter((r) => r.kind !== 'empty')
+  const held = rows.filter((r) => r.kind !== 'unread').length
+  const databaseCount = (databases.data?.databases ?? []).filter((d) => !d.location).length
+  const badges = {
+    domains: { text: String(domains.length) },
+    databases: databases.data ? { text: String(databaseCount) } : null,
+    snapshots: read ? { text: String(snapshots.length) } : null,
+  }
+
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <h1 className="truncate font-mono text-base">{container.name}</h1>
-          <Chip
-            label={container.status}
-            tone={
-              container.status === 'running'
-                ? 'border-running/40 text-running'
-                : 'border-edge-strong text-muted'
-            }
-          />
+      <header className="space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <h1 className="truncate font-mono text-xl">{container.name}</h1>
+              <Status
+                status={running ? { label: 'running', tone: 'running' } : { label: container.status, tone: 'muted' }}
+              />
+            </div>
+            <p className="mt-1 text-xs text-muted">
+              {read ? `${held} resource${held === 1 ? '' : 's'}` : 'Reading what it holds…'}
+              {' · '}
+              {domains.length} domain{domains.length === 1 ? '' : 's'}
+              {container.address && <> · reached at <span className="font-mono">{container.address}</span></>}
+            </p>
+          </div>
+
+          {/* A stopped container can be started and nothing else here: what
+              comes next is starting it, so that is the button that stands out,
+              and the one that needs it running says so. A domain is given to a
+              service, on its page — not to the container. */}
+          {running ? (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button onClick={() => onPower(container, true)} className={SECONDARY_BUTTON}>
+                Stop
+              </button>
+              <Gated reason={deployBlocked} onClick={() => onDeploy(container)} className={PRIMARY_BUTTON}>
+                <span aria-hidden="true">+</span> Deploy a service
+              </Gated>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <span id={blockedId} className="text-xs text-muted">
+                Start it first: deploying and adding need it running.
+              </span>
+              <Gated reasonId={blockedId} className={SECONDARY_BUTTON}>
+                Deploy a service
+              </Gated>
+              <button onClick={() => onPower(container, false)} className={PRIMARY_BUTTON}>
+                Start
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* A stopped container can be started and nothing else here: what
-            comes next is starting it, so that is the button that stands out,
-            and the one that needs it running says so. A domain is given to a
-            service, on its page — not to the container. */}
-        {running ? (
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <button onClick={() => onPower(container, true)} className={HEADER_SECONDARY}>
-              Stop
-            </button>
-            <Gated reason={deployBlocked} onClick={() => onDeploy(container)} className={HEADER_PRIMARY}>
-              Deploy a service
-            </Gated>
+        {/* The facts asked for over ssh, each with its name, and the two that
+            are pasted elsewhere one press from the clipboard. The project is a
+            label on the container: moving it changes nothing it runs, so it
+            sits with the facts rather than among actions. */}
+        <dl className="flex flex-wrap gap-x-6 gap-y-2 text-xs">
+          {[
+            ['Address', container.address, true],
+            ['Name inside the network', container.internalName, true],
+            ['Image', container.image],
+            ['Limits', [container.cpuLimit && `${container.cpuLimit} CPU`, container.memLimit].filter(Boolean).join(' · ')],
+          ]
+            .filter(([, value]) => value)
+            .map(([label, value, copy]) => (
+              <div key={label} className="min-w-0">
+                <dt className="text-[11px] text-muted">{label}</dt>
+                <dd className="mt-0.5 flex items-center gap-1.5 font-mono">
+                  <span className="truncate">{value}</span>
+                  {copy && <CopyButton text={value} label={`Copy the ${label.toLowerCase()}`} />}
+                </dd>
+              </div>
+            ))}
+          <div className="min-w-0">
+            <dt className="text-[11px] text-muted">Project</dt>
+            <dd className="mt-0.5 flex items-center gap-1.5">
+              {container.project ? (
+                <a href={href('projects', container.project)} className="font-mono underline-offset-4 hover:underline">
+                  {container.project}
+                </a>
+              ) : (
+                <span className="text-muted">none</span>
+              )}
+              <button onClick={() => onMoveProject(container)} className="text-muted underline-offset-2 transition hover:text-ink hover:underline">
+                Move&hellip;
+              </button>
+            </dd>
           </div>
-        ) : (
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <span id={blockedId} className="text-xs text-muted">
-              Start it first: deploying and adding need it running.
-            </span>
-            <Gated reasonId={blockedId} className={HEADER_SECONDARY}>
-              Deploy a service
-            </Gated>
-            <button onClick={() => onPower(container, false)} className={HEADER_PRIMARY}>
-              Start
-            </button>
-          </div>
-        )}
-      </div>
+        </dl>
+      </header>
 
-      {/* The facts asked for over ssh, each with its name, and the two that
-          are pasted elsewhere one press from the clipboard. */}
-      <dl className="flex flex-wrap gap-x-6 gap-y-2 text-xs">
-        {[
-          ['Address', container.address, true],
-          ['Name inside the network', container.internalName, true],
-          ['Image', container.image],
-          ['Limits', [container.cpuLimit && `${container.cpuLimit} CPU`, container.memLimit].filter(Boolean).join(' · ')],
-        ]
-          .filter(([, value]) => value)
-          .map(([label, value, copy]) => (
-            <div key={label} className="min-w-0">
-              <dt className="text-[11px] text-muted">{label}</dt>
-              <dd className="mt-0.5 flex items-center gap-1.5 font-mono">
-                <span className="truncate">{value}</span>
-                {copy && <CopyButton text={value} label={`Copy the ${label.toLowerCase()}`} />}
-              </dd>
-            </div>
-          ))}
-      </dl>
-
-      {/* The project is a label on the container: moving it changes nothing
-          it runs, so it sits here with the facts rather than among actions. */}
-      <p className="text-xs text-muted">
-        {container.project ? (
-          <>
-            In the project{' '}
-            <a href={href('projects', container.project)} className="font-mono text-ink underline-offset-4 hover:underline">
-              {container.project}
-            </a>
-          </>
-        ) : (
-          'In no project'
-        )}
-        {' · '}
-        <button onClick={() => onMoveProject(container)} className="text-muted underline-offset-2 transition hover:text-ink hover:underline">
-          Move&hellip;
-        </button>
-      </p>
+      <Tabs parts={PARTS} part={part} to={(p) => containerHref(container.name, p)} badges={badges} label={`${container.name}: sections`} />
 
       <Problems problems={problems} instances={instances} routes={routes} onRemedy={onRemedy} />
 
@@ -182,156 +218,172 @@ export default function Container({
         </div>
       )}
 
-      <Card
-        title="Domains"
-        count={domains.length}
-        commandMode={commandMode}
-        commands={['nginx -T | grep server_name']}
-        action={
-          // With a service croft deployed, a domain is given to it on its
-          // page. With none, there is nothing to give it to but the
-          // container's own port, and this is the only way in.
-          read && services.length === 0 && (
-            <Gated
-              reasonId={running ? undefined : blockedId}
-              onClick={() => onAddDomain(container)}
-              className="text-xs text-muted transition hover:text-ink"
-            >
-              Add domain
-            </Gated>
-          )
-        }
-      >
-        <ContainerDomains
-          container={container}
-          domains={domains}
-          services={services}
-          found={external.length > 0 || sites.length > 0}
-          read={read}
-          routes={routes}
-          certificates={certificates}
-          publicAddress={publicAddress}
-          routeHandlers={routeHandlers}
-          onAddAlias={onAddAlias}
-        />
-      </Card>
-
-      <Card
-        title="Services"
-        count={read ? services.length : undefined}
-        commandMode={commandMode}
-        commands={[`${runtime} exec ${container.name} -- systemctl list-units 'croft-*'`]}
-      >
-        {unavailable ? (
-          <Unavailable what="what runs inside its containers" reason={unavailable} />
-        ) : !read ? (
-          error ? (
-            <Failed what="what is running inside" error={error} onRetry={reload} stopped={!running} />
+      {part === 'overview' && (
+        <>
+          {unavailable ? (
+            <Card title="What it holds">
+              <Unavailable what="what runs inside its containers" reason={unavailable} />
+            </Card>
+          ) : !read && error ? (
+            <Card title="What it holds">
+              <Failed what="what is running inside" error={error} onRetry={reload} stopped={!running} />
+            </Card>
+          ) : read && held === 0 ? (
+            <Card title="What it holds">
+              <Empty onDeploy={() => onDeploy(container)} blockedId={running ? undefined : blockedId} />
+            </Card>
           ) : (
-            <Reading what="what is running inside" />
-          )
-        ) : services.length === 0 && external.length === 0 && sites.length === 0 ? (
-          <Empty onDeploy={() => onDeploy(container)} blockedId={running ? undefined : blockedId} />
-        ) : (
-          <>
-            {services.length > 0 && (
+            <ResourceTable
+              rows={read ? rows : null}
+              reading={<>Reading what {container.name} holds&hellip;</>}
+              showContainer={false}
+              empty={`Nothing deployed in ${container.name} yet.`}
+            />
+          )}
+
+          {/* Repeated on every row, this stops being read by the second one.
+              Said once, about all of them, it says something the repetitions
+              did not: that rolling the container back has nowhere safe to
+              land. */}
+          {services.length > 1 && services.every((s) => !s.healthy) && (
+            <p className="text-xs text-caution">
+              None of these services has a version recorded as having worked, so a rollback here cannot promise
+              anything yet.
+            </p>
+          )}
+
+          {/* What croft found and did not deploy is a row above, so it is not
+              forgotten; what can be done to it is here. */}
+          {(external.length > 0 || sites.length > 0) && (
+            <Card
+              title="Found here"
+              count={external.length + sites.length}
+              commandMode={commandMode}
+              commands={[`${runtime} exec ${container.name} -- systemctl list-units --type=service --state=running`]}
+            >
+              <p className="px-4 pt-3 pb-1 text-[11px] text-faint">
+                Not created by croft. You can restart or stop what is already there — or take it on, so croft can
+                redeploy it from its repository.
+              </p>
               <ul className="divide-y divide-edge">
-                {services.map((service) => (
-                  <Service key={service.name} service={service} container={container} />
+                {external.map((unit) => (
+                  <ExternalUnit
+                    key={unit.name}
+                    unit={unit}
+                    onLogs={() => setLogs({ name: unit.name, kind: 'unit' })}
+                    onPower={(action) => onPowerUnit(container, unit, action)}
+                    onAdopt={() => onAdopt(container, { kind: 'units', name: unit.name })}
+                  />
+                ))}
+                {sites.map((site) => (
+                  <FoundSite
+                    key={site.root}
+                    site={site}
+                    onAdopt={() => onAdopt(container, { kind: 'sites', name: site.domains[0] })}
+                  />
                 ))}
               </ul>
-            )}
+            </Card>
+          )}
 
-            {/* Repeated on every row, this stops being read by the second one.
-                Said once, about all of them, it says something the repetitions
-                did not: that rolling the container back has nowhere safe to
-                land. */}
-            {services.length > 1 && services.every((s) => !s.healthy) && (
-              <p className="border-t border-edge px-4 py-2.5 text-[11px] text-caution">
-                None of these has a version recorded as having worked, so a rollback here cannot
-                promise anything yet.
-              </p>
-            )}
+          {fetchedAt && (
+            <p className="text-[11px] text-faint">
+              Read from the machine at {fetchedAt.toLocaleTimeString()}, and again every five seconds.
+            </p>
+          )}
 
-            {(external.length > 0 || sites.length > 0) && (
-              <div className="border-t border-edge">
-                <p className="px-4 pt-3 pb-1 text-[11px] text-faint">
-                  Found on this container, not created by croft. You can restart or stop what is
-                  already there — or take it on, so croft can redeploy it from its repository.
-                </p>
-                <ul className="divide-y divide-edge">
-                  {external.map((unit) => (
-                    <ExternalUnit
-                      key={unit.name}
-                      unit={unit}
-                      onLogs={() => setLogs({ name: unit.name, kind: 'unit' })}
-                      onPower={(action) => onPowerUnit(container, unit, action)}
-                      onAdopt={() => onAdopt(container, { kind: 'units', name: unit.name })}
-                    />
-                  ))}
-                  {sites.map((site) => (
-                    <FoundSite
-                      key={site.root}
-                      site={site}
-                      onAdopt={() => onAdopt(container, { kind: 'sites', name: site.domains[0] })}
-                    />
-                  ))}
-                </ul>
-              </div>
-            )}
+          <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-problem/30 bg-panel px-4 py-3">
+            <p className="text-xs text-muted">
+              Destroying {container.name} deletes it with its disk, its snapshots and every database inside it.
+            </p>
+            <button
+              onClick={() => onDestroyContainer(container.name)}
+              className="rounded border border-problem/50 px-2.5 py-1 text-xs text-problem transition hover:bg-problem/10"
+            >
+              {VERBS.destroy} container&hellip;
+            </button>
+          </section>
+        </>
+      )}
 
-            {fetchedAt && (
-              <p className="border-t border-edge px-4 py-2 text-[11px] text-muted">
-                Read from the machine at {fetchedAt.toLocaleTimeString()}, and again every five
-                seconds.
-              </p>
-            )}
-          </>
-        )}
-      </Card>
+      {part === 'domains' && (
+        <Card
+          title="Domains"
+          count={domains.length}
+          commandMode={commandMode}
+          commands={['nginx -T | grep server_name']}
+          action={
+            // With a service croft deployed, a domain is given to it on its
+            // page. With none, there is nothing to give it to but the
+            // container's own port, and this is the only way in.
+            read && services.length === 0 && (
+              <Gated
+                reasonId={running ? undefined : blockedId}
+                onClick={() => onAddDomain(container)}
+                className="text-xs text-muted transition hover:text-ink"
+              >
+                Add domain
+              </Gated>
+            )
+          }
+        >
+          <ContainerDomains
+            container={container}
+            domains={domains}
+            services={services}
+            found={external.length > 0 || sites.length > 0}
+            read={read}
+            routes={routes}
+            certificates={certificates}
+            publicAddress={publicAddress}
+            routeHandlers={routeHandlers}
+            onAddAlias={onAddAlias}
+          />
+        </Card>
+      )}
 
-      <Databases
-        container={container}
-        state={databases}
-        runtime={runtime}
-        blockedId={running ? undefined : blockedId}
-        commandMode={commandMode}
-        onAdd={() => setDialog({ kind: 'add' })}
-        onRemove={(database) => setDialog({ kind: 'remove', database })}
-        found={found}
-        onAdopt={(candidate) => setDialog({ kind: 'adopt', found: candidate })}
-        offers={offers}
-        onConnect={(offer) => setDialog({ kind: 'connect', offer })}
-      />
+      {part === 'databases' && (
+        <Databases
+          container={container}
+          state={databases}
+          runtime={runtime}
+          blockedId={running ? undefined : blockedId}
+          commandMode={commandMode}
+          onAdd={() => setDialog({ kind: 'add' })}
+          onRemove={(database) => setDialog({ kind: 'remove', database })}
+          found={found}
+          onAdopt={(candidate) => setDialog({ kind: 'adopt', found: candidate })}
+          offers={offers}
+          onConnect={(offer) => setDialog({ kind: 'connect', offer })}
+        />
+      )}
 
-      <Snapshots
-        snapshots={snapshots}
-        services={services}
-        container={container}
-        commandMode={commandMode}
-        read={read}
-        error={error}
-        unavailable={unavailable}
-        onRetry={reload}
-        runtime={runtime}
-        onRollback={onRollback}
-        onDelete={setDeleting}
-        databases={databases.data?.databases ?? []}
-      />
+      {part === 'snapshots' && (
+        <Snapshots
+          snapshots={snapshots}
+          services={services}
+          container={container}
+          commandMode={commandMode}
+          read={read}
+          error={error}
+          unavailable={unavailable}
+          onRetry={reload}
+          runtime={runtime}
+          onRollback={onRollback}
+          onDelete={setDeleting}
+          databases={databases.data?.databases ?? []}
+        />
+      )}
 
-      <Card title="Danger zone">
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <p className="text-xs text-muted">
-            Destroying {container.name} deletes it with its disk, its snapshots and every database inside it.
-          </p>
-          <button
-            onClick={() => onDestroyContainer(container.name)}
-            className="rounded border border-problem/50 px-2.5 py-1 text-xs text-problem transition hover:bg-problem/10"
-          >
-            {VERBS.destroy} container&hellip;
-          </button>
-        </div>
-      </Card>
+      {part === 'activity' && (
+        <Activity
+          containers={[container.name]}
+          title={`What was done in ${container.name}`}
+          reading={jobsReading}
+          commandMode={commandMode}
+          empty={`Nothing has been done in ${container.name} from this panel yet.`}
+        />
+      )}
 
       {logs && (
         <LogView
@@ -807,9 +859,10 @@ function Empty({ onDeploy, blockedId }) {
 
 // The one move a page calls for. It used to be raised grey beside quiet grey,
 // and nobody could tell which button the page was pointing at: one solid
-// button per view, in ink — not green, which says "running" and nothing else.
+// button per view, in the blue every page uses for it — not green, which says
+// "running" and nothing else.
 export const HEADER_PRIMARY =
-  'rounded border border-ink bg-ink px-2.5 py-1 text-xs font-medium text-ground transition hover:bg-ink/85'
+  'rounded border border-action bg-action px-2.5 py-1 text-xs font-medium text-ground transition hover:bg-action/90'
 // A button that matters inside its own card, below the page's one primary.
 export const RAISED =
   'rounded border border-edge-strong bg-raised px-2.5 py-1 text-xs transition hover:border-ink/30'

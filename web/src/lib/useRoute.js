@@ -8,6 +8,8 @@ import { useCallback, useEffect, useState } from 'react'
 //   #/projects/:name         one project
 //   #/containers?status=…    every container, optionally filtered
 //   #/containers/:name       one container
+//   #/containers/:name/:part one part of its page — domains, databases,
+//                            snapshots, activity
 //   #/containers/:name/services/:service   one service in it
 //   #/containers/:name/services/:service/:part   one part of its page —
 //                            configuration, domains, logs… — so each is linkable
@@ -24,7 +26,8 @@ export function parse(hash) {
     return { section, tab: name === 'certificates' ? 'certificates' : 'domains', name: null, service: null, query }
   }
   const service = section === 'containers' && parts[2] === 'services' ? parts[3] ?? null : null
-  return { section, name, service, tab: service ? parts[4] ?? null : null, query }
+  const part = section === 'containers' && !service && parts[2] !== 'services' ? parts[2] ?? null : null
+  return { section, name, service, tab: service ? parts[4] ?? null : null, part, query }
 }
 
 export function href(section, name, query) {
@@ -32,6 +35,12 @@ export function href(section, name, query) {
   if (name) out += '/' + encodeURIComponent(name)
   const search = new URLSearchParams(Object.entries(query ?? {}).filter(([, v]) => v)).toString()
   return search ? `${out}?${search}` : out
+}
+
+// containerHref is the page of one container, or one part of it.
+export function containerHref(container, part) {
+  const page = href('containers', container)
+  return part ? `${page}/${encodeURIComponent(part)}` : page
 }
 
 // serviceHref is the page of one service: under its container, because a
