@@ -14,6 +14,12 @@ descargó.
 
 ## No publicado
 
+### v0.39.0 — 2026-11-07
+- feat: a deployment says it worked only when its readiness check passed, and finished otherwise
+- feat: a service's and a container's page in tabs, with how deployments happen beside them
+- feat: settings in sections with what this host runs, a sign-in card, row actions in a menu, and renewing a certificate with croft
+- fix: a page with tab counts no longer scrolls sideways on a phone
+
 ### v0.38.0 — 2026-11-06
 - fix: the panel hears when nothing listens behind a domain
 - feat: a domain says what its front page answers, for services as well as sites
