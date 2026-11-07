@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import Command from './Command.jsx'
 import { readJSON, humane } from '../lib/api.js'
+import { SECONDARY } from '../lib/ui.js'
 
 // unreachable is its own screen. Taken for "signed out", a daemon that is down
 // showed a sign-in form that could never work, and the person retyped a
@@ -60,7 +61,7 @@ export default function Login({ hasUsers, unreachable, reason, onRetry, onSigned
             <button
               onClick={retry}
               disabled={retrying}
-              className="mt-3 rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30 disabled:opacity-40"
+              className={`mt-3 ${SECONDARY}`}
             >
               {retrying ? 'Trying…' : 'Try again'}
             </button>

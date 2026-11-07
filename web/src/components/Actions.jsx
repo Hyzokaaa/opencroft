@@ -86,7 +86,7 @@ export default function Actions({ actions, label = 'Actions', folded = false }) 
           aria-haspopup="true"
           aria-expanded={Boolean(at)}
           aria-controls={id}
-          className="flex size-8 items-center justify-center rounded border border-edge text-muted transition hover:text-ink"
+          className="flex size-9 items-center justify-center rounded-md border border-edge text-muted transition hover:bg-raised hover:text-ink"
         >
           &hellip;
         </button>

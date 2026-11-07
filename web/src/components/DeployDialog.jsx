@@ -1,5 +1,6 @@
 import { useId, useState } from 'react'
 import { useDialog, dialogProps } from '../lib/useDialog.js'
+import { PRIMARY } from '../lib/ui.js'
 import { Discard } from './PlanDialog.jsx'
 import PlanDialog from './PlanDialog.jsx'
 import EnvEditor, { toObject, invalidKeys } from './EnvEditor.jsx'
@@ -280,7 +281,7 @@ function Source({ value, name, onChange, error, onSubmit }) {
         <p className="text-xs text-faint">Nothing is built yet — only fetched, so it can be read.</p>
         <button
           onClick={onSubmit}
-          className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30"
+          className={PRIMARY}
         >
           Inspect the repository
         </button>
@@ -334,7 +335,7 @@ function Found({ service, why, onChange, onDeploy, onEditSource, peers }) {
         <button
           onClick={onDeploy}
           disabled={!runnable || badNames.length > 0}
-          className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30 disabled:opacity-40"
+          className={PRIMARY}
         >
           Deploy&hellip;
         </button>

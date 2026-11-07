@@ -13,7 +13,7 @@ import Activity from './Activity.jsx'
 import { ResourceTable, rowsOf } from './Resources.jsx'
 import { Status, Tabs } from './Listing.jsx'
 import { containerHref, href, parse, serviceHref } from '../lib/useRoute.js'
-import { PRIMARY as PRIMARY_BUTTON, SECONDARY as SECONDARY_BUTTON } from '../lib/ui.js'
+import { PRIMARY as PRIMARY_BUTTON, SECONDARY as SECONDARY_BUTTON, DANGER as DANGER_BUTTON } from '../lib/ui.js'
 import { OWNERSHIP, SEVERITY, VERBS, remediesFor } from '../lib/vocabulary.js'
 import { byService, reachingContainer } from '../lib/domains.js'
 import { servingOf } from '../lib/serving.js'
@@ -31,10 +31,13 @@ import { readJSON } from '../lib/api.js'
 //
 // Each service has a page of its own, where everything done to it is done —
 // its domains included. Here it is a row that says how it is and leads there.
-// The parts of its page. Overview is what it holds, as the project page
-// lists it; the rest are what used to be one long scroll under it.
+
+// The parts of its page. The first is what it holds — services, sites,
+// databases and what croft found — as the project page lists it, and named
+// for that: called Overview, it read as if services had no tab of their own
+// beside Databases. The rest used to be one long scroll under it.
 const PARTS = [
-  { id: 'overview', label: 'Overview' },
+  { id: 'overview', label: 'Resources' },
   { id: 'domains', label: 'Domains' },
   { id: 'databases', label: 'Databases' },
   { id: 'snapshots', label: 'Snapshots' },
@@ -298,7 +301,7 @@ export default function Container({
             </p>
             <button
               onClick={() => onDestroyContainer(container.name)}
-              className="rounded border border-problem/50 px-2.5 py-1 text-xs text-problem transition hover:bg-problem/10"
+              className={DANGER_BUTTON}
             >
               {VERBS.destroy} container&hellip;
             </button>
@@ -849,7 +852,7 @@ function Empty({ onDeploy, blockedId }) {
       <Gated
         reasonId={blockedId}
         onClick={onDeploy}
-        className="mt-3 rounded border border-edge-strong bg-raised px-2.5 py-1 text-xs transition hover:border-ink/30"
+        className={`mt-3 ${PRIMARY_BUTTON}`}
       >
         Deploy a service
       </Gated>

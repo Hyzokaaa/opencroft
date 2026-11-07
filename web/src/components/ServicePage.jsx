@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from 'react'
 import Card from './Card.jsx'
 import Chip from './Chip.jsx'
 import Gated from './Gated.jsx'
+import Actions from './Actions.jsx'
 import CopyButton from './CopyButton.jsx'
 import PlanDialog from './PlanDialog.jsx'
 import DomainList from './DomainList.jsx'
@@ -320,7 +321,7 @@ export default function ServicePage({
                 Logs
               </a>
             )}
-            {verbs.map((v) => (
+            {verbs.filter((v) => v.key !== 'stop').map((v) => (
               <Gated
                 key={v.key}
                 reason={v.reason}
@@ -333,6 +334,12 @@ export default function ServicePage({
                 {v.label}
               </Gated>
             ))}
+            {/* Stopping takes the service down for everybody using it. It sat
+                between Restart and Redeploy, one slip from either; it is a
+                menu away instead, which is still one click and a look. */}
+            {up && verbs.some((v) => v.key === 'stop') && (
+              <Actions folded label={`More for ${name}`} actions={verbs.filter((v) => v.key === 'stop').map((v) => ({ label: `${v.label}…`, onClick: v.onClick, danger: true }))} />
+            )}
             {situation.primary === 'add-domain' && (
               <button onClick={addDomain} className={HEADER_PRIMARY}>
                 Add domain

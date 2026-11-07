@@ -303,7 +303,7 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
               <button
                 onClick={next.onClick}
                 autoFocus
-                className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30"
+                className={PRIMARY}
               >
                 {next.label}
               </button>
@@ -446,13 +446,13 @@ export function Discard({ onKeep, onDiscard, verb = 'Discard' }) {
       <button
         autoFocus
         onClick={onKeep}
-        className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30"
+        className={PRIMARY}
       >
         Keep editing
       </button>
       <button
         onClick={onDiscard}
-        className="rounded border border-problem/50 px-3 py-1.5 text-xs text-problem transition hover:bg-problem/10"
+        className={DANGER}
       >
         {verb}
       </button>

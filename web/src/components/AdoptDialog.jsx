@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import PlanDialog from './PlanDialog.jsx'
 import { Field, Frame, split } from './DeployDialog.jsx'
 import { readJSON, humane } from '../lib/api.js'
+import { PRIMARY } from '../lib/ui.js'
 
 // Taking on something croft found: a unit running, or a site its web server
 // serves. What it can read off the machine is shown as fact — where the code
@@ -161,7 +162,7 @@ export default function AdoptDialog({ container, subject, onClose, onFinished })
         <button
           onClick={() => setAdopting(true)}
           disabled={!found || Boolean(found.problem) || !answer?.name.trim()}
-          className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30 disabled:opacity-40"
+          className={PRIMARY}
         >
           Show me the plan
         </button>

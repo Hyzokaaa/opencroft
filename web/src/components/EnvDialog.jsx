@@ -3,6 +3,7 @@ import PlanDialog, { Discard } from './PlanDialog.jsx'
 import EnvEditor, { fromObject, toObject, invalidKeys } from './EnvEditor.jsx'
 import { Frame } from './DeployDialog.jsx'
 import { readJSON, humane } from '../lib/api.js'
+import { PRIMARY } from '../lib/ui.js'
 
 // A service's environment, read from the file it lives in and written back to
 // it. The file is the only copy: an edit made over ssh is what this shows the
@@ -117,7 +118,7 @@ export default function EnvDialog({ container, service, peers, onClose, onFinish
                 onClick={() => setSaving(true)}
                 // Nothing changed is nothing to plan.
                 disabled={!found || !dirty || invalid.length > 0}
-                className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30 disabled:opacity-40"
+                className={PRIMARY}
               >
                 Show me the plan
               </button>

@@ -4,7 +4,7 @@ import Chip from './Chip.jsx'
 import Activity from './Activity.jsx'
 import { StatusDot } from './InstanceTable.jsx'
 import { ResourceTable, rowsOf, useResources } from './Resources.jsx'
-import { PRIMARY, QUIET, SECONDARY, GHOST } from '../lib/ui.js'
+import { PRIMARY, QUIET, SECONDARY, DANGER } from '../lib/ui.js'
 import Actions from './Actions.jsx'
 import { KindIcon, PlusIcon } from './Icon.jsx'
 import { Status } from './Listing.jsx'
@@ -412,7 +412,7 @@ export default function ProjectPage({ name, data, projects, problems, commandMod
         <Card title="Danger zone">
           <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
             <p className="text-xs text-muted">The project is empty. Removing it deletes its declaration and nothing else.</p>
-            <button onClick={() => actions.removeProject(project)} className="rounded border border-problem/50 px-2.5 py-1 text-xs text-problem transition hover:bg-problem/10">
+            <button onClick={() => actions.removeProject(project)} className={DANGER}>
               Remove project&hellip;
             </button>
           </div>
