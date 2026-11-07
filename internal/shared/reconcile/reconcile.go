@@ -5,6 +5,7 @@ package reconcile
 
 import (
 	"fmt"
+	"path"
 	"strings"
 	"time"
 
@@ -137,16 +138,20 @@ func Inspect(is []*instances.Instance, rs []*routes.Route, cs []*certificates.Ce
 		}
 	}
 
-	return append(findings, inspectCertificates(cs, now)...)
+	return append(findings, inspectCertificates(cs, rs, now)...)
 }
 
 // inspectCertificates is separate because a certificate is not attached to a
-// container: it belongs to a domain, and expires whether or not anything is
-// pointing at it.
-func inspectCertificates(cs []*certificates.Certificate, now time.Time) []Finding {
+// container: it belongs to a domain. Only one a site is served with is worth a
+// warning: the files a renewal left behind, or certbot's copy of a name croft
+// took over, expire without anybody noticing — and rightly so.
+func inspectCertificates(cs []*certificates.Certificate, rs []*routes.Route, now time.Time) []Finding {
 	findings := []Finding{}
 
 	for _, certificate := range cs {
+		if Unused(certificate, rs) {
+			continue
+		}
 		days := certificate.DaysLeft(now)
 
 		switch {
@@ -186,4 +191,60 @@ func inspectCertificates(cs []*certificates.Certificate, now time.Time) []Findin
 		}
 	}
 	return findings
+}
+
+// Unused is whether no site on the host is served with this certificate.
+//
+// A certificate is found by its files, and the files of one nobody serves any
+// more stay on disk: certbot's copy of a name croft took over, for instance,
+// which certbot stops renewing and croft never deletes. Matched by name, it
+// warned about an expiry no visitor would ever see, beside the certificate
+// actually served, two months from it.
+//
+// What a site is served with is read from its ssl_certificate line. Where
+// that could not be read, a certificate that covers the name is assumed to
+// be the one: a false warning costs a look, a missing one costs the site.
+func Unused(certificate *certificates.Certificate, rs []*routes.Route) bool {
+	if certificate.Path == "" {
+		return false
+	}
+	dir := path.Dir(certificate.Path)
+
+	type served struct{ name, dir string }
+	var all []served
+	for _, r := range rs {
+		if r.SSL {
+			all = append(all, served{r.Domain, r.Certificates})
+		}
+		for _, a := range r.Aliases {
+			if a.SSL {
+				all = append(all, served{a.Domain, a.Certificates})
+			}
+		}
+	}
+
+	for _, s := range all {
+		if s.dir == dir {
+			return false
+		}
+		if s.dir == "" && covers(certificate, s.name) {
+			return false
+		}
+	}
+	return true
+}
+
+func covers(certificate *certificates.Certificate, name string) bool {
+	for _, n := range append([]string{certificate.Domain}, certificate.Names...) {
+		if n == name {
+			return true
+		}
+		if base, ok := strings.CutPrefix(n, "*."); ok {
+			label, found := strings.CutSuffix(name, "."+base)
+			if found && label != "" && !strings.Contains(label, ".") {
+				return true
+			}
+		}
+	}
+	return false
 }

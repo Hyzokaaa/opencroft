@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { href } from '../lib/useRoute.js'
-import { allNames } from '../lib/domains.js'
+import { allNames, expiring as expiringOf } from '../lib/domains.js'
 import Command from './Command.jsx'
 import GoTo, { useGoTo } from './GoTo.jsx'
 import CopyButton from './CopyButton.jsx'
@@ -204,7 +204,7 @@ function Rail({ data, host, commandMode, section, tab, open, onGoTo }) {
                   <ul className="ml-4 mt-px space-y-px border-l border-edge pl-2">
                     {s.children.map((c) => {
                       const on = here && c.id === tab
-                      const expiring = (data?.certificates ?? []).filter((x) => x.daysLeft < 21)
+                      const expiring = expiringOf(data?.certificates ?? [])
                       const expired = expiring.some((x) => x.daysLeft < 0)
                       return (
                         <li key={c.id}>

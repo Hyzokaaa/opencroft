@@ -38,6 +38,9 @@ type CertificateView struct {
 	Path       string   `json:"path"`
 	Managed    bool     `json:"managed"`
 	SelfSigned bool     `json:"selfSigned"`
+	// Unused is a certificate no site is served with: files left behind,
+	// listed so they can be found, and not counted as expiring.
+	Unused bool `json:"unused,omitempty"`
 }
 
 type RouteView struct {
@@ -68,6 +71,9 @@ type AliasView struct {
 	Domain  string `json:"domain"`
 	SSL     bool   `json:"ssl"`
 	Waiting string `json:"waiting,omitempty"`
+	// Certificates is the directory its certificate is read from, so the
+	// panel shows the one it is served with rather than any with its name.
+	Certificates string `json:"certificates,omitempty"`
 }
 
 type PathView struct {
@@ -188,7 +194,7 @@ func (q *OverviewQuery) Execute(ctx context.Context) (OverviewResponse, error) {
 	for _, r := range routes {
 		aliases := make([]AliasView, len(r.Aliases))
 		for i, a := range r.Aliases {
-			aliases[i] = AliasView{Domain: a.Domain, SSL: a.SSL, Waiting: a.Waiting}
+			aliases[i] = AliasView{Domain: a.Domain, SSL: a.SSL, Waiting: a.Waiting, Certificates: a.Certificates}
 		}
 		paths := make([]PathView, len(r.Paths))
 		for i, p := range r.Paths {
@@ -207,6 +213,7 @@ func (q *OverviewQuery) Execute(ctx context.Context) (OverviewResponse, error) {
 			Domain: c.Domain, Names: c.Names, Issuer: c.Issuer,
 			Expires: c.NotAfter.Format(time.RFC3339), DaysLeft: c.DaysLeft(now),
 			Path: c.Path, Managed: c.Managed, SelfSigned: c.SelfSigned,
+			Unused: reconcile.Unused(c, routes),
 		})
 	}
 

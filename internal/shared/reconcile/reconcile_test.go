@@ -105,6 +105,8 @@ func TestAHandEditedFileIsNeverAnError(t *testing.T) {
 	}
 }
 
+// A certificate a site is served with is warned about before it expires,
+// louder as the day comes.
 func TestCertificatesAreReportedBeforeTheyExpire(t *testing.T) {
 	now := time.Now()
 
@@ -121,10 +123,11 @@ func TestCertificatesAreReportedBeforeTheyExpire(t *testing.T) {
 
 	for label, test := range cases {
 		t.Run(label, func(t *testing.T) {
-			findings := reconcile.Inspect(nil, nil, []*certificates.Certificate{
+			findings := reconcile.Inspect(nil, []*routes.Route{served("app.example.com", "/var/lib/croft/certificates/app.example.com")}, []*certificates.Certificate{
 				certificates.NewCertificate(certificates.CertificateProps{
 					Domain:   "app.example.com",
 					NotAfter: now.AddDate(0, 0, test.days),
+					Path:     "/var/lib/croft/certificates/app.example.com/fullchain.pem",
 					Managed:  true,
 				}),
 			})
@@ -143,5 +146,66 @@ func TestCertificatesAreReportedBeforeTheyExpire(t *testing.T) {
 				t.Errorf("severity %q, wanted %q", found.Severity, test.want)
 			}
 		})
+	}
+}
+
+// served is a site on https, read from a certificate directory. It proxies
+// to the loopback, so no container has to exist for it.
+func served(domain, dir string) *routes.Route {
+	r := route(domain, "127.0.0.1", routeEnums.StateManaged)
+	r.SSL = true
+	r.Certificates = dir
+	return r
+}
+
+func certificateAt(domain, dir string, days int, names ...string) *certificates.Certificate {
+	return certificates.NewCertificate(certificates.CertificateProps{
+		Domain: domain, Names: names, NotAfter: time.Now().AddDate(0, 0, days),
+		Path: dir + "/fullchain.pem", Managed: true,
+	})
+}
+
+// What happened on the test host: croft took the name over with its
+// wildcard, certbot stopped renewing its own copy, and its files stayed. The
+// panel warned that dev's certificate expired in nine days while dev was
+// served with one good for two months more.
+func TestACertificateNoSiteServesIsNotWarnedAbout(t *testing.T) {
+	findings := reconcile.Inspect(nil,
+		[]*routes.Route{served("dev.example.com", "/var/lib/croft/certificates/_.example.com")},
+		[]*certificates.Certificate{
+			certificateAt("dev.example.com", "/etc/letsencrypt/live/dev.example.com", 9, "dev.example.com"),
+			certificateAt("*.example.com", "/var/lib/croft/certificates/_.example.com", 52, "*.example.com", "example.com"),
+		})
+
+	if len(findings) != 0 {
+		t.Errorf("warned about a certificate nothing serves: %+v", findings)
+	}
+}
+
+// The one a site is served with is still watched, whichever name it carries.
+func TestTheCertificateASiteIsServedWithIsWatched(t *testing.T) {
+	findings := reconcile.Inspect(nil,
+		[]*routes.Route{served("dev.example.com", "/var/lib/croft/certificates/_.example.com")},
+		[]*certificates.Certificate{
+			certificateAt("*.example.com", "/var/lib/croft/certificates/_.example.com", 5, "*.example.com"),
+		})
+
+	if f, ok := kinds(findings)["certificate-expiring"]; !ok || f.Subject != "*.example.com" {
+		t.Errorf("the wildcard dev is served with expires in 5 days, unsaid: %+v", findings)
+	}
+}
+
+// A vhost laid out some other way says nothing of where its certificate is.
+// Then the one that covers its name is taken for it: staying quiet about the
+// certificate a site actually uses is the failure that matters.
+func TestWhenTheFileSaysNothingTheCertificateForTheNameIsWatched(t *testing.T) {
+	findings := reconcile.Inspect(nil,
+		[]*routes.Route{served("shop.example.com", "")},
+		[]*certificates.Certificate{
+			certificateAt("shop.example.com", "/etc/ssl/shop", 10, "shop.example.com"),
+		})
+
+	if _, ok := kinds(findings)["certificate-expiring"]; !ok {
+		t.Errorf("a site whose certificate could not be read lost its warning: %+v", findings)
 	}
 }

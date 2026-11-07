@@ -5,7 +5,7 @@ import { PageHead, Toolbar, matches } from './Listing.jsx'
 import { useResources } from './Resources.jsx'
 import { PRIMARY } from '../lib/ui.js'
 import { serviceHref } from '../lib/useRoute.js'
-import { allNames, answerOf, certificateFor, portOf } from '../lib/domains.js'
+import { allNames, answerOf, expiring, portOf, servedWith } from '../lib/domains.js'
 
 // Every name nginx serves on this host, and what a visitor typing it gets.
 // Answers is asked of the container itself, by the name, so it tests this
@@ -34,12 +34,12 @@ export default function DomainsPage({ data, publicAddress, query, tableProps, on
   const names = allNames(data.routes)
   const attention = (n) => {
     const answer = answerOf(n)
-    const covering = n.ssl ? certificateFor(n.domain, certificates) : null
+    const covering = n.ssl ? servedWith(n, certificates) : null
     return answer.tone === 'problem' || answer.tone === 'caution' || (covering && covering.daysLeft < 21) || tableProps.problems.has(n.domain)
   }
   const byHand = (n) => n.route.state !== 'managed'
   const failing = names.filter((n) => answerOf(n).tone === 'problem').length
-  const expiring = certificates.filter((c) => c.daysLeft < 21).length
+  const expiringSoon = expiring(certificates).length
 
   const filters = [
     { id: 'all', label: 'All', count: names.length },
@@ -65,8 +65,8 @@ export default function DomainsPage({ data, publicAddress, query, tableProps, on
           <>
             {names.length} name{names.length === 1 ? '' : 's'}
             {failing > 0 && <span className="text-problem"> · {failing} not serving</span>}
-            {expiring > 0 && (
-              <span className="text-caution"> · {expiring} certificate{expiring === 1 ? '' : 's'} expire{expiring === 1 ? 's' : ''} within 21 days</span>
+            {expiringSoon > 0 && (
+              <span className="text-caution"> · {expiringSoon} certificate{expiringSoon === 1 ? '' : 's'} expire{expiringSoon === 1 ? 's' : ''} within 21 days</span>
             )}
             {publicAddress && <> · this host is at <span className="font-mono">{publicAddress}</span></>}
           </>

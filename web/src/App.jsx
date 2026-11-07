@@ -841,7 +841,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
             <CertificatesPage
               certificates={data.certificates ?? []}
               onWildcard={wildcard}
-              renewable={(c) => data.routes.find((r) => r.domain === c.domain && r.ssl && r.state === 'managed')}
+              renewable={(c) => data.routes.find((r) => r.ssl && r.state === 'managed' && c.path?.startsWith(r.certificates + '/'))}
               onRenew={enableTLS}
             />
           )}

@@ -304,7 +304,10 @@ func seedDemo(ctx context.Context, instances *runtime.MemoryInstanceRepository,
 			Paths:        []routeEntities.PathRoute{{Prefix: "/api/", Target: "10.146.38.201", Port: 3000, Strip: true}},
 			State:        routeEnums.StateManaged},
 		{Domain: "blog.example.com", Target: "10.146.38.202", Port: 8080, State: routeEnums.StateManaged},
-		{Domain: "old.example.com", Target: "10.146.38.51", Port: 80, State: routeEnums.StateUnmanaged,
+		// Found, on https with certbot's certificate a week from expiring: what
+		// the warnings are for.
+		{Domain: "old.example.com", Target: "10.146.38.51", Port: 80, SSL: true,
+			Certificates: "/etc/letsencrypt/live/old.example.com", State: routeEnums.StateUnmanaged,
 			File: "/etc/nginx/sites-enabled/old.example.com"},
 	} {
 		_ = routes.Write(ctx, routeEntities.NewRoute(route))

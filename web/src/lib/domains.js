@@ -98,7 +98,7 @@ export function stateOf(name, certificates = []) {
       ? { key: 'http', label: 'http only', tone: 'text-caution', reason: 'Waiting for its certificate. Until then it answers over http.' }
       : { key: 'http', label: 'http only', tone: 'text-muted' }
   }
-  const certificate = certificateFor(name.domain, certificates)
+  const certificate = servedWith(name, certificates)
   if (certificate && certificate.daysLeft < 21) {
     return {
       key: 'https', tone: certificate.daysLeft < 7 ? 'text-problem' : 'text-caution',
@@ -106,6 +106,23 @@ export function stateOf(name, certificates = []) {
     }
   }
   return { key: 'https', label: 'https', tone: 'text-muted' }
+}
+
+// servedWith is the certificate a name is actually served with: the one in
+// the directory its vhost reads. Matched by name alone, a copy certbot left
+// behind once croft took the name over was shown expiring in nine days
+// beside the wildcard the site really uses. Where the vhost does not say,
+// the one that covers the name and some site uses is the best guess.
+export function servedWith(name, certificates = []) {
+  const dir = name.alias ? name.alias.certificates : name.route.certificates
+  const exact = dir && certificates.find((c) => c.path?.startsWith(dir + '/'))
+  return exact || certificateFor(name.domain, certificates.filter((c) => !c.unused))
+}
+
+// expiring is the certificates some site is served with that run out within
+// three weeks — the ones a warning is for.
+export function expiring(certificates = []) {
+  return certificates.filter((c) => !c.unused && c.daysLeft < 21)
 }
 
 // certificateFor is the certificate a name is served with, if one on the host

@@ -2,7 +2,7 @@ import Chip from './Chip.jsx'
 import Actions from './Actions.jsx'
 import { OWNERSHIP, VERBS } from '../lib/vocabulary.js'
 import { href } from '../lib/useRoute.js'
-import { allNames, answerOf, certificateFor } from '../lib/domains.js'
+import { allNames, answerOf, servedWith } from '../lib/domains.js'
 import { Status } from './Listing.jsx'
 import { nameActions } from './DomainList.jsx'
 
@@ -174,7 +174,7 @@ function Expiry({ name, certificates }) {
       ? <span className="text-caution">waiting for its certificate</span>
       : <span className="text-faint">http only</span>
   }
-  const covering = certificateFor(name.domain, certificates)
+  const covering = servedWith(name, certificates)
   if (!covering) return <span className="text-faint">&mdash;</span>
   const tone = covering.daysLeft < 7 ? 'text-problem' : covering.daysLeft < 21 ? 'text-caution' : 'text-muted'
   return (
