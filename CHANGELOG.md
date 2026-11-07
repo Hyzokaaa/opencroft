@@ -14,6 +14,12 @@ descargó.
 
 ## No publicado
 
+### v0.40.0 — 2026-11-07
+- feat: one look across the panel — status pills, kind icons, full-size buttons, the plan dialog fits the screen, and warnings coloured by how bad they are
+- feat: a warning says why on a phone too, certificates offer the fix Home does, and empty lists say what will be there
+- feat: the panel says whose session it is
+- feat: stop a service from a menu, a container's resources named as such, and every dialog with the panel's buttons
+
 ### v0.39.1 — 2026-11-07
 - fix: warn about the certificate a site is served with, not any certificate with its name
 
