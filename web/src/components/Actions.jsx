@@ -10,7 +10,11 @@ import { useEffect, useId, useRef, useState } from 'react'
 // closes on a tap outside, on Escape, or once something in it is chosen.
 //
 //   actions: [{ label, onClick, danger? }]
-export default function Actions({ actions, label = 'Actions' }) {
+//
+// folded keeps them in the menu on every screen. In a long list — every
+// container, every domain — a row of buttons on each line is a wall the eye
+// has to read past to find the names, and Stop sat one slip away from Start.
+export default function Actions({ actions, label = 'Actions', folded = false }) {
   const shown = actions.filter(Boolean)
   const [at, setAt] = useState(null)
   const trigger = useRef(null)
@@ -73,8 +77,8 @@ export default function Actions({ actions, label = 'Actions' }) {
 
   return (
     <>
-      <div className="hidden flex-wrap justify-end gap-1.5 sm:flex">{shown.map((a) => button(a))}</div>
-      <div className="flex justify-end sm:hidden">
+      {!folded && <div className="hidden flex-wrap justify-end gap-1.5 sm:flex">{shown.map((a) => button(a))}</div>}
+      <div className={`flex justify-end ${folded ? '' : 'sm:hidden'}`}>
         <button
           ref={trigger}
           onClick={toggle}

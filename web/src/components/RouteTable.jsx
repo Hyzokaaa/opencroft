@@ -127,7 +127,7 @@ export default function RouteTable({ routes, instances, certificates = [], probl
                 <td className="hidden px-4 py-3 font-mono text-xs text-faint xl:table-cell">{r.file}</td>
 
                 <td className="px-4 py-3 text-right">
-                  <Actions label={`Actions for ${name.domain}`} actions={nameActions(name, answer, handlers)} />
+                  <Actions folded label={`Actions for ${name.domain}`} actions={nameActions(name, answer, handlers)} />
                 </td>
               </tr>
             )

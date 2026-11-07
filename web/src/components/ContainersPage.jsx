@@ -160,7 +160,7 @@ export default function ContainersPage({ data, problems, query, onNew, onPower, 
                       <Holds rows={holds.get(i.name)} reading={!resources.containers} />
                     </td>
                     <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                      <Actions label={`Actions for ${i.name}`} actions={actionsOf(i)} />
+                      <Actions folded label={`Actions for ${i.name}`} actions={actionsOf(i)} />
                     </td>
                   </tr>
                 ))}

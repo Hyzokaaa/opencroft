@@ -45,7 +45,7 @@ export default function Login({ hasUsers, unreachable, reason, onRetry, onSigned
   return (
     <div className="flex min-h-screen items-center justify-center px-6">
       <div className="w-full max-w-sm">
-        <h1 className="text-lg font-medium tracking-tight">OpenCroft</h1>
+        <h1 className="text-center text-lg font-medium tracking-tight">OpenCroft</h1>
 
         {/* There is no sign-up: users are created on the host, by someone who
             already has a shell there. */}
@@ -74,7 +74,7 @@ export default function Login({ hasUsers, unreachable, reason, onRetry, onSigned
             <Command lines={['croft user add <name>']} className="mt-3" />
           </div>
         ) : (
-          <form onSubmit={submit} className="mt-4 space-y-3">
+          <form onSubmit={submit} className="mt-4 space-y-3 rounded-lg border border-edge bg-panel p-5">
             <Field
               label="Username"
               value={username}
@@ -99,7 +99,7 @@ export default function Login({ hasUsers, unreachable, reason, onRetry, onSigned
             <button
               type="submit"
               disabled={busy || !username || !password}
-              className="w-full rounded border border-edge-strong bg-raised px-3 py-2 text-sm transition hover:border-ink/30 disabled:opacity-40"
+              className="w-full rounded bg-action px-3 py-2 text-sm font-medium text-ground transition hover:bg-action/90 disabled:opacity-50"
             >
               {busy ? 'Signing in…' : 'Sign in'}
             </button>
@@ -108,8 +108,8 @@ export default function Login({ hasUsers, unreachable, reason, onRetry, onSigned
 
         <p className="mt-6 text-xs text-faint">
           Forgot the password? Reset it on the host: <span className="font-mono">croft user rm</span>{' '}
-          then <span className="font-mono">croft user add</span>. Nothing here can be recovered by
-          email, because there is no email.
+          then <span className="font-mono">croft user add</span>. There is no email, so nothing can be
+          recovered by email.
         </p>
       </div>
     </div>

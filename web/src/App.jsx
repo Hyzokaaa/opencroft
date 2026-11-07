@@ -838,13 +838,18 @@ function Dashboard({ onSignOut, onSessionLost }) {
               onAddDomain={addDomain}
             />
           ) : (
-            <CertificatesPage certificates={data.certificates ?? []} onWildcard={wildcard} />
+            <CertificatesPage
+              certificates={data.certificates ?? []}
+              onWildcard={wildcard}
+              renewable={(c) => data.routes.find((r) => r.domain === c.domain && r.ssl && r.state === 'managed')}
+              onRenew={enableTLS}
+            />
           )}
           <ReadWith commandMode={commandMode} commands={tab === 'certificates' ? ['ls /etc/letsencrypt/live/', 'openssl x509 -enddate -noout -in <file>'] : routeCommands} />
         </>
       )}
 
-      {section === 'settings' && <Settings onExpose={exposePanel} />}
+      {section === 'settings' && <Settings part={name} data={data} host={host} onExpose={exposePanel} />}
 
       {section === 'activity' && (
         <>

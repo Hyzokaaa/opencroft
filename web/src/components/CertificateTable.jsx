@@ -7,7 +7,9 @@ import { PRIMARY } from '../lib/ui.js'
 // that matters is not who issued it — it is how long you have, so the soonest
 // to expire comes first, and who renews it sits beside it: one nobody renews
 // is the one that will expire.
-export default function CertificateTable({ certificates }) {
+// renewable, when given, is the route croft could take a certificate's renewal
+// over through — one it wrote and serves on https — or nothing.
+export default function CertificateTable({ certificates, renewable, onRenew }) {
   if (!certificates.length) {
     return (
       <div className="px-4 py-8 text-center">
@@ -40,6 +42,7 @@ export default function CertificateTable({ certificates }) {
           // ones is the question asked of it: all of them, said.
           const others = (c.names ?? []).filter((n) => n !== c.domain)
           const renewer = renewedBy(c)
+          const takeOver = renewer !== 'croft' && !c.selfSigned ? renewable?.(c) : null
           return (
           <tr key={c.domain} className="border-b border-edge/60 last:border-0">
             <td className="relative px-4 py-3">
@@ -67,6 +70,18 @@ export default function CertificateTable({ certificates }) {
 
             <td className="px-4 py-3 text-xs">
               {renewer ? <span className="text-muted">{renewer}</span> : <span className="text-caution">nobody croft knows of</span>}
+              {/* Offered only where croft wrote the vhost: there it can issue
+                  its own and point the site at it, with a plan to read first.
+                  Two programs renewing one name is how renewal breaks
+                  quietly, so this replaces the other rather than joining it. */}
+              {takeOver && (
+                <button
+                  onClick={() => onRenew(takeOver)}
+                  className="mt-1 block text-left text-muted underline underline-offset-4 transition hover:text-ink"
+                >
+                  Renew with croft&hellip;
+                </button>
+              )}
             </td>
             <td className="hidden px-4 py-3 text-xs text-muted sm:table-cell">{c.issuer || '—'}</td>
             <td className="hidden px-4 py-3 break-all font-mono text-xs text-faint lg:table-cell">{c.path}</td>
@@ -98,7 +113,7 @@ function Remaining({ days }) {
 
 // CertificatesPage is every certificate on the host, those expiring within
 // 21 days apart and first: that group is the reason to open the page.
-export function CertificatesPage({ certificates, onWildcard }) {
+export function CertificatesPage({ certificates, onWildcard, renewable, onRenew }) {
   const soon = certificates.filter((c) => c.daysLeft < 21)
   const rest = certificates.filter((c) => c.daysLeft >= 21)
   const nobody = certificates.filter((c) => !renewedBy(c) && !c.selfSigned).length
@@ -133,7 +148,7 @@ export function CertificatesPage({ certificates, onWildcard }) {
                 Expire within 21 days <span className="text-faint">{soon.length}</span>
               </h2>
               <div className="overflow-hidden rounded-lg border border-edge bg-panel">
-                <CertificateTable certificates={soon} />
+                <CertificateTable certificates={soon} renewable={renewable} onRenew={onRenew} />
               </div>
             </section>
           )}
@@ -145,7 +160,7 @@ export function CertificatesPage({ certificates, onWildcard }) {
                 </h2>
               )}
               <div className="overflow-hidden rounded-lg border border-edge bg-panel">
-                <CertificateTable certificates={rest} />
+                <CertificateTable certificates={rest} renewable={renewable} onRenew={onRenew} />
               </div>
             </section>
           )}
