@@ -137,7 +137,7 @@ export default function Shell({ data, host, section, tab, crumbs, commandMode, o
           </div>
         </header>
 
-        <main className="flex-1 px-4 py-5 md:px-6">
+        <main className="min-w-0 flex-1 px-4 py-5 md:px-6">
           <div className="mx-auto max-w-[1680px] space-y-4">{children}</div>
         </main>
       </div>

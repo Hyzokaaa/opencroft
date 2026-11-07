@@ -111,7 +111,7 @@ export function Tabs({ parts, part, to, badges = {}, label }) {
 
   return (
     <nav aria-label={label} className="min-w-0">
-      <ul ref={list} className="-mx-4 flex gap-1 overflow-x-auto border-b border-edge px-4 md:mx-0 md:px-0">
+      <ul ref={list} className="relative -mx-4 flex gap-1 overflow-x-auto border-b border-edge px-4 md:mx-0 md:px-0">
         {parts.map((p) => (
           <li key={p.id} className="shrink-0">
             <a
