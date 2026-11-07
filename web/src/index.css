@@ -46,11 +46,21 @@ body {
   font-feature-settings: "tnum";
 }
 
-/* Focus was missing everywhere. A control panel is driven from the keyboard. */
+/* Focus was missing everywhere. A control panel is driven from the keyboard.
+   In the action blue: violet means "edited by hand", and a focused row read as
+   adopted. */
 :focus-visible {
-  outline: 2px solid var(--color-yours);
+  outline: 2px solid var(--color-action);
   outline-offset: 2px;
   border-radius: 2px;
+}
+
+/* A placeholder is an example, not a value: in the sans face and faint, it
+   no longer reads as something already typed into a monospace field. */
+::placeholder {
+  color: var(--color-faint);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  opacity: 1;
 }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }

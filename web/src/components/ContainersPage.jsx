@@ -33,7 +33,10 @@ export default function ContainersPage({ data, problems, query, onNew, onPower, 
 
   const instances = data.instances.filter((i) => !query.project || i.project === query.project)
   const running = instances.filter((i) => i.status === 'running').length
-  const troubled = instances.filter((i) => troubleOf(i, problems)).length
+  // Split by how bad, as the rows are: a red count over amber rows said two
+  // things about the same container.
+  const urgent = instances.filter((i) => troubleOf(i, problems)?.severity === 'error').length
+  const lookAt = instances.filter((i) => troubleOf(i, problems) && troubleOf(i, problems).severity !== 'error').length
   const filters = [
     { id: 'all', label: 'All', count: instances.length },
     { id: 'running', label: 'Running', count: running },
@@ -45,12 +48,19 @@ export default function ContainersPage({ data, problems, query, onNew, onPower, 
       matches(search, [i.name, i.project, i.address, i.image, ...(holds.get(i.name) ?? []).map((r) => r.name)]),
   )
 
-  const statusOf = (i) =>
-    troubleOf(i, problems)
-      ? { label: i.status === 'running' ? 'needs attention' : i.status, tone: 'problem', explain: 'Home says what is wrong with it, under Needs attention.' }
+  // The finding itself is the reason, said where the row is.
+  const statusOf = (i) => {
+    const finding = troubleOf(i, problems)
+    return finding
+      ? {
+          label: finding.severity === 'error' ? 'needs attention' : 'to look at',
+          tone: finding.severity === 'error' ? 'problem' : 'caution',
+          explain: `${finding.subject}: ${finding.message}${finding.hint ? ` ${finding.hint}` : ''}`,
+        }
       : i.status === 'running'
         ? { label: 'running', tone: 'running' }
         : { label: i.status, tone: 'muted' }
+  }
 
   const actionsOf = (i) => [
     { label: i.status === 'running' ? 'Stop' : 'Start', onClick: () => onPower(i, i.status === 'running') },
@@ -68,7 +78,8 @@ export default function ContainersPage({ data, problems, query, onNew, onPower, 
         summary={
           <>
             {plural(instances.length, 'container')} · {running} running · {instances.length - running} stopped
-            {troubled > 0 && <span className="text-problem"> · {troubled} need{troubled === 1 ? 's' : ''} attention</span>}
+            {urgent > 0 && <span className="text-problem"> · {urgent} need{urgent === 1 ? 's' : ''} attention</span>}
+            {lookAt > 0 && <span className="text-caution"> · {lookAt} to look at</span>}
             {query.project && (
               <>
                 {' '}· in <span className="font-mono">{query.project}</span> ·{' '}
@@ -119,7 +130,7 @@ export default function ContainersPage({ data, problems, query, onNew, onPower, 
                     className="cursor-pointer transition-colors hover:bg-white/[0.03]"
                   >
                     <td className="relative px-4 py-3">
-                      {troubleOf(i, problems) && <span className="absolute left-0 top-0 h-full w-[2px] bg-problem" />}
+                      {troubleOf(i, problems) && <span className={`absolute left-0 top-0 h-full w-[2px] ${troubleOf(i, problems).severity === 'error' ? 'bg-problem' : 'bg-caution'}`} />}
                       <div className="flex flex-wrap items-center gap-2">
                         <a
                           href={href('containers', i.name)}
@@ -211,8 +222,10 @@ function Holds({ rows, reading }) {
   )
 }
 
+// troubleOf is the finding about a container or its domain, if any. problems
+// maps each subject to its worst finding.
 function troubleOf(i, problems) {
-  return problems.has(i.name) || (i.domain && problems.has(i.domain))
+  return problems.get(i.name) ?? (i.domain ? problems.get(i.domain) : undefined)
 }
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`

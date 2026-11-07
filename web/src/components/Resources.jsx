@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Chip from './Chip.jsx'
 import Chevron from './Chevron.jsx'
+import { KindIcon } from './Icon.jsx'
 import { Toolbar, Status, matches } from './Listing.jsx'
 import { containerHref, href, serviceHref } from '../lib/useRoute.js'
 import { portOf, reaching } from '../lib/domains.js'
@@ -110,6 +111,7 @@ export function rowsOf(containers, instances, routes) {
         key: `${c.name}/u/${unit.name}`,
         kind: 'found',
         name: unit.name,
+        icon: 'service',
         description: 'A unit croft found running here and did not deploy.',
         container: c.name,
         status: up ? unitStatus(unit.state) : stopped,
@@ -122,6 +124,7 @@ export function rowsOf(containers, instances, routes) {
         key: `${c.name}/w/${site.root}`,
         kind: 'found',
         name: site.domains?.[0] ?? site.root,
+        icon: 'site',
         description: `A site the container's web server serves from ${site.root}, not taken on yet.`,
         container: c.name,
         status: up ? { label: 'not checked', tone: 'muted', explain: 'Croft asks a site for its page once it is adopted.' } : stopped,
@@ -167,22 +170,18 @@ const KINDS = [
 
 const KIND_LABEL = { service: 'Service', site: 'Site', database: 'Database', found: 'Found', empty: '—', unread: '—' }
 
-// Not icons from a set nobody here maintains: a letter in a box says the
-// kind as well, and reads the same in every font the panel falls back to.
-function Glyph({ kind }) {
-  const letter = { service: 'S', site: 'W', database: 'D', found: '?', empty: '·', unread: '!' }[kind]
-  return (
-    <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center rounded-md border border-edge-strong bg-raised font-mono text-xs text-muted">
-      {letter}
-    </span>
-  )
+// What a row is, drawn: a found unit is a service and a found site a site —
+// the "found here" chip says whose they are, not what.
+function Glyph({ row, muted }) {
+  const kind = row.icon ?? row.kind
+  return <KindIcon kind={kind} className={`mt-0.5 size-4 ${muted ? 'text-faint' : 'text-muted'}`} />
 }
 
 function Domain({ name }) {
   if (!name) return <span className="text-faint">—</span>
   return (
-    <span className="font-mono text-xs text-muted">
-      {name.ssl ? 'https://' : 'http://'}
+    <span className="font-mono text-xs">
+      <span className="text-faint">{name.ssl ? 'https://' : 'http://'}</span>
       {name.domain}
     </span>
   )
@@ -214,6 +213,7 @@ export function ResourceTable({ rows, reading, error, showContainer = true, empt
         filters={kinds.length > 2 ? kinds : null}
         filter={kind}
         onFilter={setKind}
+        shown={rows && rows.length > 0 ? summaryOf(shown, rows, showContainer) : null}
       />
 
       {error && (
@@ -232,25 +232,26 @@ export function ResourceTable({ rows, reading, error, showContainer = true, empt
         ) : (
           <>
             <table className="hidden w-full text-left text-sm md:table">
-              <thead className="border-b border-edge text-xs text-muted">
+              <thead className="border-b border-edge text-xs text-faint">
                 <tr>
-                  <th className="px-4 py-2.5 font-normal">Resource</th>
-                  <th className="px-4 py-2.5 font-normal">Type</th>
-                  <th className="px-4 py-2.5 font-normal">Status</th>
-                  <th className="px-4 py-2.5 font-normal">Domain</th>
-                  {showContainer && <th className="px-4 py-2.5 font-normal">Container</th>}
+                  <th className="px-4 py-2 font-medium">Resource</th>
+                  <th className="px-4 py-2 font-medium">Type</th>
+                  <th className="px-4 py-2 font-medium">Status</th>
+                  <th className="px-4 py-2 font-medium">Domain</th>
+                  {showContainer && <th className="px-4 py-2 font-medium">Container</th>}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-edge/60">
+              <tbody className="divide-y divide-edge">
                 {shown.map((r) => (
                   <tr
                     key={r.key}
                     onClick={() => (location.hash = r.to)}
                     className={`cursor-pointer transition-colors hover:bg-white/[0.03] ${r.status.label === 'container stopped' ? 'opacity-60' : ''}`}
                   >
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <Glyph kind={r.kind} />
+                    <td className="relative px-4 py-3">
+                      {r.status.tone === 'problem' && <span className="absolute left-0 top-0 h-full w-[2px] bg-problem" />}
+                      <div className="flex items-start gap-3">
+                        <Glyph row={r} muted={r.status.label === 'container stopped'} />
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <a href={r.to} onClick={(e) => e.stopPropagation()} className="font-mono text-sm font-medium underline-offset-4 hover:underline">
@@ -283,7 +284,7 @@ export function ResourceTable({ rows, reading, error, showContainer = true, empt
               {shown.map((r) => (
                 <li key={r.key} className={r.status.label === 'container stopped' ? 'opacity-60' : ''}>
                   <a href={r.to} className="flex min-h-14 items-center gap-3 px-4 py-3">
-                    <Glyph kind={r.kind} />
+                    <Glyph row={r} muted={r.status.label === 'container stopped'} />
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex items-center justify-between gap-2">
                         <span className="truncate font-mono text-sm font-medium">{r.name}</span>
@@ -303,16 +304,22 @@ export function ResourceTable({ rows, reading, error, showContainer = true, empt
           </>
         )}
       </div>
-      {/* Counted as resources: an empty container or one that could not be
-          read is a row, not something it runs. */}
-      {rows && rows.length > 0 && (
-        <p className="text-xs text-faint">
-          {countOf(shown) === countOf(rows) ? plural(countOf(rows)) : `${countOf(shown)} of ${plural(countOf(rows))}`}
-        </p>
-      )}
     </section>
   )
 }
 
 const countOf = (rows) => rows.filter((r) => r.kind !== 'empty' && r.kind !== 'unread').length
 const plural = (n) => `${n} resource${n === 1 ? '' : 's'}`
+
+// summaryOf counts what a table shows in the words its rows use. An empty
+// container is a row and not a resource, so three rows over "1 resource"
+// read as a mistake; the containers are counted too wherever they are listed.
+function summaryOf(shown, rows, withContainers) {
+  const containers = (list) => new Set(list.map((r) => r.container)).size
+  const of = (list) => {
+    const n = countOf(list)
+    const where = withContainers ? ` in ${containers(list)} container${containers(list) === 1 ? '' : 's'}` : ''
+    return `${plural(n)}${where}`
+  }
+  return shown.length === rows.length ? of(rows) : `${countOf(shown)} of ${of(rows)}`
+}

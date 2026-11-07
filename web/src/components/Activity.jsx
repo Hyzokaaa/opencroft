@@ -70,20 +70,20 @@ export default function Activity({ commandMode, containers, subject, title, limi
 }
 
 const OUTCOME = {
-  running: { label: 'running', tone: 'border-caution/40 text-caution' },
+  running: { label: 'Running', tone: 'border-caution/40 text-caution' },
   // Green says "running" on this panel and nothing else. A job that worked
   // is a fact about the past: a tick, in the neutral tone.
   worked: {
-    label: '✓ worked',
+    label: '✓ Worked',
     tone: 'border-edge-strong text-ink',
     explain: 'Every step ran, and the readiness check answered as it should.',
   },
   // Every step ran, which is not the same claim: nothing asked the result
   // whether it serves.
-  finished: { label: '✓ finished', tone: 'border-edge-strong text-muted', explain: 'Every step ran.' },
-  failed: { label: 'failed', tone: 'border-problem/40 text-problem' },
+  finished: { label: '✓ Finished', tone: 'border-edge-strong text-muted', explain: 'Every step ran.' },
+  failed: { label: 'Failed', tone: 'border-problem/40 text-problem' },
   interrupted: {
-    label: 'interrupted',
+    label: 'Interrupted',
     tone: 'border-edge-strong text-muted',
     explain:
       'The panel restarted while this was running, so how it ended was never seen. What it did is on the machine, and the snapshot it took first is still there.',
@@ -136,7 +136,7 @@ function Row({ job, open, onToggle }) {
       <div className="px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <Chip label={outcome.label} tone={outcome.tone} explain={outcome.explain} />
+            <Chip pill label={outcome.label} tone={outcome.tone} explain={outcome.explain} dot={{ running: 'bg-caution animate-pulse', failed: 'bg-problem' }[job.status]} />
             <span className="text-sm">{kindOf(job)}</span>
             <span className="font-mono text-sm">{service ?? container}</span>
             {service && <span className="font-mono text-xs text-muted">in {container}</span>}

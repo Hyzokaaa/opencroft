@@ -5,6 +5,7 @@ import Command from './Command.jsx'
 import GoTo, { useGoTo } from './GoTo.jsx'
 import CopyButton from './CopyButton.jsx'
 import { primaryAddress } from './AgentDown.jsx'
+import { SearchIcon } from './Icon.jsx'
 
 // Five places. Projects are the home page rather than a section beside it,
 // because "is my thing working?" is asked of a project — the web, its API and
@@ -27,7 +28,8 @@ export { SECTIONS }
 
 // crumbs is where you are, from the section down: [{ label, href }], the
 // last one being this page.
-export default function Shell({ data, host, section, tab, crumbs, commandMode, onToggleCommands, freshness, onReload, stale, running, onSignOut, children }) {
+// projects hang under Home in the menu, project being the one open now.
+export default function Shell({ data, host, section, tab, crumbs, commandMode, onToggleCommands, freshness, onReload, stale, running, onSignOut, projects, project, children }) {
   const [navOpen, setNavOpen] = useState(false)
   const [goingTo, setGoingTo] = useGoTo()
 
@@ -50,7 +52,7 @@ export default function Shell({ data, host, section, tab, crumbs, commandMode, o
       {navOpen && (
         <div className="fixed inset-0 z-10 bg-black/50 md:hidden" onClick={() => setNavOpen(false)} aria-hidden="true" />
       )}
-      <Rail data={data} host={host} commandMode={commandMode} section={section} tab={tab} open={navOpen} onGoTo={() => setGoingTo(true)} />
+      <Rail data={data} host={host} commandMode={commandMode} section={section} tab={tab} open={navOpen} projects={projects} project={project} onSignOut={onSignOut} onGoTo={() => setGoingTo(true)} />
       {goingTo && <GoTo data={data} onClose={() => setGoingTo(false)} />}
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -70,13 +72,14 @@ export default function Shell({ data, host, section, tab, crumbs, commandMode, o
             <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2">
               {/* On a phone only the page and the one above it fit: the rest
                   were cut to a letter each, which said nothing. */}
-              <span className="hidden truncate font-mono text-xs text-muted sm:inline">local</span>
               {crumbs.map((crumb, i) => {
                 const last = i === crumbs.length - 1
                 const near = i >= crumbs.length - 2
                 return (
                   <span key={crumb.href ?? crumb.label} className={`${near ? 'flex' : 'hidden sm:flex'} min-w-0 items-center gap-2`}>
-                    <span className={`text-faint ${i === crumbs.length - 2 || crumbs.length === 1 ? 'hidden sm:inline' : ''}`} aria-hidden="true">/</span>
+                    {i > 0 && (
+                      <span className={`text-faint ${i === crumbs.length - 1 ? '' : 'hidden sm:inline'}`} aria-hidden="true">/</span>
+                    )}
                     {last ? (
                       <span className={`truncate text-sm ${crumb.mono ? 'font-mono' : ''}`} aria-current="page">
                         {crumb.label}
@@ -115,7 +118,7 @@ export default function Shell({ data, host, section, tab, crumbs, commandMode, o
                   : 'border-edge text-muted hover:border-edge-strong hover:text-ink'
               }`}
             >
-              $_<span className="hidden font-sans sm:inline"> Commands</span>
+              $_<span className="hidden font-sans xl:inline"> Commands</span>
             </button>
 
             <button
@@ -126,13 +129,6 @@ export default function Shell({ data, host, section, tab, crumbs, commandMode, o
             >
               <span className={`size-1.5 rounded-full ${stale ? "bg-caution" : "bg-running"}`} />
               <span className="hidden sm:inline">{freshness}</span>
-            </button>
-
-            <button
-              onClick={onSignOut}
-              className="rounded border border-edge px-2 py-1 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
-            >
-              Sign out
             </button>
           </div>
         </header>
@@ -145,7 +141,7 @@ export default function Shell({ data, host, section, tab, crumbs, commandMode, o
   )
 }
 
-function Rail({ data, host, commandMode, section, tab, open, onGoTo }) {
+function Rail({ data, host, commandMode, section, tab, open, projects, project, onSignOut, onGoTo }) {
   // Hidden off-screen on a phone is still reachable by Tab unless it is inert.
   const [narrow, setNarrow] = useState(() => matchMedia('(max-width: 767px)').matches)
   useEffect(() => {
@@ -174,8 +170,9 @@ function Rail({ data, host, commandMode, section, tab, open, onGoTo }) {
         <HostAddress host={host ?? data?.host} commandMode={commandMode} />
 
         <div className="px-2 pt-2">
-          <button onClick={onGoTo} className="flex w-full items-center justify-between rounded-md border border-edge px-3 py-1.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink">
-            Go to&hellip;
+          <button onClick={onGoTo} aria-keyshortcuts="Control+K" className="flex h-9 w-full items-center gap-2 rounded-md border border-field-edge bg-ground px-2.5 text-left text-xs text-muted transition hover:text-ink">
+            <SearchIcon />
+            <span className="flex-1">Go to&hellip;</span>
             <kbd className="rounded border border-edge px-1 font-mono text-[10px] text-faint">Ctrl K</kbd>
           </button>
         </div>
@@ -187,7 +184,7 @@ function Rail({ data, host, commandMode, section, tab, open, onGoTo }) {
             // Only one entry is the current page: on a child's page the
             // parent is lit, not marked.
             const child = here && s.children?.find((c) => c.id === tab)
-            const active = here && !child
+            const active = here && !child && !(s.id === 'home' && project)
             return (
               <li key={s.id}>
                 <a
@@ -200,6 +197,29 @@ function Rail({ data, host, commandMode, section, tab, open, onGoTo }) {
                   <span>{s.label}</span>
                   {count !== undefined && <span className="text-xs text-faint">{count}</span>}
                 </a>
+                {/* A project is asked about by name more than any section is:
+                    each is one click away, under the home page that lists
+                    them. */}
+                {s.id === 'home' && projects?.length > 0 && (
+                  <ul className="ml-4 mt-px space-y-px border-l border-edge pl-2">
+                    {projects.map((p) => {
+                      const on = project === p.name
+                      return (
+                        <li key={p.name}>
+                          <a
+                            href={href('projects', p.name)}
+                            aria-current={on ? 'page' : undefined}
+                            className={`block truncate rounded px-2 py-1 font-mono text-xs transition ${
+                              on ? 'bg-raised text-ink' : 'text-muted hover:bg-white/[0.03] hover:text-ink'
+                            }`}
+                          >
+                            {p.name}
+                          </a>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
                 {s.children && (
                   <ul className="ml-4 mt-px space-y-px border-l border-edge pl-2">
                     {s.children.map((c) => {
@@ -246,8 +266,16 @@ function Rail({ data, host, commandMode, section, tab, open, onGoTo }) {
               demo data
             </span>
           )}
-          <p className="font-mono">runtime: {data?.runtime ?? '—'}</p>
-          <p className="font-mono">croft {data?.version ?? 'dev'}</p>
+          <div className="flex items-center justify-between gap-2">
+            <a href={href('settings', 'about')} className="font-mono transition hover:text-ink">
+              croft {data?.version ?? 'dev'} · {data?.runtime ?? '—'}
+            </a>
+            {/* Down here with the rest about this session, not beside the
+                page's own controls, where it sat one slip from Refresh. */}
+            <button onClick={onSignOut} className="text-xs text-muted transition hover:text-ink">
+              Sign out
+            </button>
+          </div>
         </div>
       </div>
     </nav>

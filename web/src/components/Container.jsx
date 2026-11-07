@@ -861,13 +861,11 @@ function Empty({ onDeploy, blockedId }) {
 // and nobody could tell which button the page was pointing at: one solid
 // button per view, in the blue every page uses for it — not green, which says
 // "running" and nothing else.
-export const HEADER_PRIMARY =
-  'rounded border border-action bg-action px-2.5 py-1 text-xs font-medium text-ground transition hover:bg-action/90'
+export const HEADER_PRIMARY = PRIMARY_BUTTON
 // A button that matters inside its own card, below the page's one primary.
 export const RAISED =
   'rounded border border-edge-strong bg-raised px-2.5 py-1 text-xs transition hover:border-ink/30'
-export const HEADER_SECONDARY =
-  'rounded border border-edge px-2.5 py-1 text-xs text-muted transition hover:border-edge-strong hover:text-ink'
+export const HEADER_SECONDARY = SECONDARY_BUTTON
 export const PRIMARY =
   'rounded border border-edge-strong bg-raised px-2 py-0.5 text-xs transition hover:border-ink/30'
 export const SECONDARY =

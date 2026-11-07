@@ -4,7 +4,10 @@ import Chip from './Chip.jsx'
 import Activity from './Activity.jsx'
 import { StatusDot } from './InstanceTable.jsx'
 import { ResourceTable, rowsOf, useResources } from './Resources.jsx'
-import { PRIMARY, QUIET, SECONDARY } from '../lib/ui.js'
+import { PRIMARY, QUIET, SECONDARY, GHOST } from '../lib/ui.js'
+import Actions from './Actions.jsx'
+import { KindIcon, PlusIcon } from './Icon.jsx'
+import { Status } from './Listing.jsx'
 import RouteTable from './RouteTable.jsx'
 import { href } from '../lib/useRoute.js'
 import { allNames } from '../lib/domains.js'
@@ -94,16 +97,22 @@ export function ProjectCards({ data, projects, error, agentDown, problems, actio
 
   return (
     <section aria-labelledby="projects-heading" className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 id="projects-heading" className="text-sm font-medium">Projects</h2>
-        <div className="flex items-center gap-4">
-          <button onClick={() => actions.newContainer()} className={QUIET}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 id="projects-heading" className="text-xl font-medium">Projects</h1>
+          <p className="mt-1 text-xs text-muted">
+            {projects.length} project{projects.length === 1 ? '' : 's'}
+            {rows && <> · {rows.filter((r) => r.kind !== 'empty' && r.kind !== 'unread').length} resources in {data.instances.length} container{data.instances.length === 1 ? '' : 's'}</>}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => actions.newContainer()} className={SECONDARY}>
             New container
           </button>
           {/* With no containers yet, the first step is the one above the
               list, and it alone stands out. */}
-          <button onClick={actions.newProject} className={data.instances.length ? PRIMARY : SECONDARY}>
-            <span aria-hidden="true">+</span> New project
+          <button onClick={actions.newProject} className={PRIMARY}>
+            <PlusIcon /> New project
           </button>
         </div>
       </div>
@@ -134,9 +143,11 @@ export function ProjectCards({ data, projects, error, agentDown, problems, actio
           they hold, the same way, rather than as bare names. */}
       {loose.length > 0 && (
         <section aria-labelledby="others-heading" className="space-y-3 pt-3">
-          <div className="flex flex-wrap items-baseline gap-2">
+          <div>
             <h2 id="others-heading" className="text-sm font-medium">Other containers</h2>
-            <span className="text-xs text-faint">{loose.length}, in no project</span>
+            <p className="mt-0.5 text-xs text-muted">
+              In no project: {loose.length} container{loose.length === 1 ? '' : 's'}. Moving one into a project takes what it holds with it.
+            </p>
           </div>
           <ResourceTable
             rows={rows?.filter((r) => loose.some((i) => i.name === r.container)) ?? null}
@@ -149,81 +160,104 @@ export function ProjectCards({ data, projects, error, agentDown, problems, actio
   )
 }
 
+// ProjectCard is one project on the home page: what it runs, each with how it
+// is, what is wrong with it said first and in red, and the containers it is
+// made of at the foot. Its actions fold into a menu: the card is read far
+// more often than it is changed.
 function ProjectCard({ project, containers, routes, problems, actions, others, rows }) {
-  const domains = domainsOf(containers, routes)
   const troubled = containers.filter((c) => problems.has(c.name) || (c.domain && problems.has(c.domain)))
+  const failing = (rows ?? []).filter((r) => r.status.tone === 'problem')
+  // A container in trouble whose resources all look fine is in trouble for
+  // something else — its domain, its certificate — and is named on its own.
+  const otherwise = troubled.filter((c) => !failing.some((r) => r.container === c.name))
+  const domains = domainsOf(containers, routes)
 
   return (
-    <Card
-      title={
-        <a href={href('projects', project.name)} className="underline-offset-4 hover:underline">
-          {project.name}
-        </a>
-      }
-      count={rows ? `${rows.filter((r) => r.kind !== "empty" && r.kind !== "unread").length} resources · ${containers.length} containers` : containers.length}
-      action={
-        <div className="flex gap-3">
-          {!project.declared && (
-            <button onClick={() => actions.declareProject(project)} className={SMALL}>
-              Declare
-            </button>
-          )}
-          <button onClick={() => actions.addToProject(project, others)} className={SMALL}>
-            Add a container&hellip;
-          </button>
-          <button onClick={() => actions.newContainer(project.name)} className={SMALL}>
-            New container
-          </button>
+    <section className="flex flex-col overflow-hidden rounded-lg border border-edge bg-panel">
+      <header className="flex items-start justify-between gap-3 px-4 pt-3.5 pb-3">
+        <div className="min-w-0">
+          <h3 className="flex flex-wrap items-center gap-2">
+            <a href={href('projects', project.name)} className="font-mono text-base underline-offset-4 hover:underline">
+              {project.name}
+            </a>
+            {/* Found on containers, declared nowhere on this host: most often
+                it arrived with a migrated container. */}
+            {!project.declared && (
+              <Chip
+                label="not declared here"
+                tone="border-caution/40 text-caution"
+                explain="Named by a container's label. Declaring it keeps it when it is empty."
+              />
+            )}
+          </h3>
+          {project.description && <p className="mt-0.5 text-xs text-muted">{project.description}</p>}
         </div>
-      }
-    >
-      <div className="space-y-3 px-4 py-3">
-        {troubled.length > 0 && (
-          <p className="text-xs text-problem">
-            Needs attention:{" "}
-            {troubled.map((c, i) => (
-              <span key={c.name}>
-                {i > 0 && ", "}
-                <a href={href("containers", c.name)} className="font-mono underline underline-offset-4">{c.name}</a>
-              </span>
-            ))}
-          </p>
-        )}
-        {(rows ?? []).filter((r) => r.status.tone === 'problem').map((r) => (
-          <p key={r.key} className="text-xs text-problem">
-            <a href={r.to} className="font-mono underline underline-offset-4">{r.name}</a> {r.status.label}
-            <span className="text-muted"> in {r.container}</span>
-          </p>
-        ))}
-        {project.description && <p className="text-xs text-muted">{project.description}</p>}
-        {/* Found on containers, declared nowhere on this host: most often it
-            arrived with a migrated container. */}
-        {!project.declared && (
-          <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
-            <Chip label="not declared here" tone="border-caution/40 text-caution" />
-            Named by a container&rsquo;s label. Declaring it keeps it when it is empty.
-          </p>
-        )}
+        <Actions
+          folded
+          label={`Actions for ${project.name}`}
+          actions={[
+            !project.declared && { label: 'Declare', onClick: () => actions.declareProject(project) },
+            { label: 'Add a container…', onClick: () => actions.addToProject(project, others) },
+            { label: 'New container', onClick: () => actions.newContainer(project.name) },
+          ]}
+        />
+      </header>
 
+      {(failing.length > 0 || otherwise.length > 0) && (
+        <ul className="border-y border-problem/20 bg-problem/[0.06] text-xs text-problem">
+          {failing.map((r) => (
+            <li key={r.key} className="border-l-2 border-problem px-4 py-1.5">
+              <a href={r.to} className="font-mono underline-offset-4 hover:underline">{r.name}</a> is {r.status.label}
+              <span className="text-muted"> in {r.container}</span>
+            </li>
+          ))}
+          {otherwise.map((c) => (
+            <li key={c.name} className="border-l-2 border-problem px-4 py-1.5">
+              <a href={href('containers', c.name)} className="font-mono underline-offset-4 hover:underline">{c.name}</a> needs
+              attention
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="flex-1 border-t border-edge">
         {containers.length === 0 ? (
-          <p className="text-xs text-muted">No containers yet.</p>
+          <p className="px-4 py-3 text-xs text-muted">No containers yet.</p>
+        ) : rows ? (
+          <ResourceLines rows={rows} />
         ) : (
           // Until what they hold is read, the containers themselves.
-          rows ? <ResourceLines rows={rows} /> : <Members containers={containers} problems={problems} flush />
+          <Members containers={containers} problems={problems} />
         )}
+      </div>
 
-        {domains.length > 0 && (
-          <p className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs text-muted">
-            {domains.map((d) => (
-              <a key={d.key} href={href('containers', d.container)} className="underline-offset-4 hover:text-ink hover:underline">
-                {d.ssl ? 'https://' : 'http://'}
-                {d.label}
+      {(containers.length > 0 || domains.length > 0) && (
+        <footer className="space-y-1.5 border-t border-edge px-4 py-2.5">
+          {domains.length > 0 && (
+            <p className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs">
+              {domains.map((d) => (
+                <a key={d.key} href={href('containers', d.container)} className="text-muted underline-offset-4 hover:text-ink hover:underline">
+                  <span className="text-faint">{d.ssl ? 'https://' : 'http://'}</span>
+                  {d.label}
+                </a>
+              ))}
+            </p>
+          )}
+          <p className="flex flex-wrap gap-x-3 gap-y-1">
+            {containers.map((c) => (
+              <a key={c.name} href={href('containers', c.name)} className="flex items-center gap-1.5 font-mono text-xs text-muted hover:text-ink">
+                <span
+                  aria-hidden="true"
+                  className={`size-2 rounded-full ${c.status === 'running' ? 'bg-running' : 'border border-stopped'}`}
+                />
+                {c.name}
+                <span className="sr-only">, {c.status}</span>
               </a>
             ))}
           </p>
-        )}
-      </div>
-    </Card>
+        </footer>
+      )}
+    </section>
   )
 }
 
@@ -234,30 +268,27 @@ function ResourceLines({ rows }) {
   const order = { problem: 0, caution: 1 }
   const sorted = [...rows].sort((a, b) => (order[a.status.tone] ?? 2) - (order[b.status.tone] ?? 2))
   return (
-    <ul className="divide-y divide-edge/50">
-      {sorted.map((r) => (
-        <li key={r.key}>
-          <a href={r.to} className="flex items-center justify-between gap-3 py-1.5 transition hover:text-ink">
-            <span className="flex min-w-0 items-center gap-2">
-              <span className={`size-2 shrink-0 rounded-full ${DOTS[r.status.tone] ?? DOTS.muted}`} aria-hidden="true" />
-              <span className="truncate font-mono text-sm">{r.name}</span>
-              <span className="truncate text-xs text-faint">{r.kind === 'empty' ? 'empty container' : r.kind}</span>
-            </span>
-            <span className={`shrink-0 text-xs ${TEXT[r.status.tone] ?? TEXT.muted}`}>{r.status.label}</span>
-          </a>
-        </li>
-      ))}
+    <ul className="divide-y divide-edge">
+      {sorted.map((r) => {
+        const stopped = r.status.label === 'container stopped'
+        return (
+          <li key={r.key}>
+            <a href={r.to} className="flex items-center justify-between gap-3 px-4 py-2 transition hover:bg-white/[0.03]">
+              <span className="flex min-w-0 items-center gap-2.5">
+                <KindIcon kind={r.icon ?? r.kind} className={`size-4 ${stopped ? 'text-faint' : 'text-muted'}`} />
+                <span className={`truncate font-mono text-sm ${stopped ? 'text-muted' : ''}`}>
+                  {r.kind === 'empty' ? <span className="font-sans text-muted">Nothing deployed in {r.container}</span> : r.name}
+                </span>
+                {r.chips.filter((c) => c.label === 'found here').map((c) => <Chip key={c.label} {...c} />)}
+              </span>
+              <Status status={{ ...r.status, explain: undefined }} />
+            </a>
+          </li>
+        )
+      })}
     </ul>
   )
 }
-
-const DOTS = {
-  running: 'bg-running',
-  problem: 'bg-problem ring-2 ring-problem/25',
-  caution: 'border border-caution',
-  muted: 'border border-stopped',
-}
-const TEXT = { running: 'text-running', problem: 'text-problem', caution: 'text-caution', muted: 'text-muted' }
 
 // Members is one line per container: its state, its name, how its
 // neighbours reach it. The same row in every card, grouped or not.

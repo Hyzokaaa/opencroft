@@ -20,9 +20,9 @@ import { useServices, useDatabases } from '../lib/useContainer.js'
 import { href, serviceHref } from '../lib/useRoute.js'
 import { VERBS } from '../lib/vocabulary.js'
 import { portOf, reaching, stateOf } from '../lib/domains.js'
-import { servingOf } from '../lib/serving.js'
+import { servingOf, toneOf } from '../lib/serving.js'
 import { readJSON } from '../lib/api.js'
-import { Tabs } from './Listing.jsx'
+import { Status, Tabs } from './Listing.jsx'
 
 // One service: what it is doing, what reaches it, and everything done to it.
 //
@@ -263,12 +263,14 @@ export default function ServicePage({
       : { key: 'redeploy', label: 'Redeploy', onClick: () => onRedeploy(container, service) },
   ].filter(Boolean)
 
-  const snapshotCount = (data?.snapshots ?? []).filter((s) => s.includes(`-${name}-`)).length
   const subject = `${container.name}/${name}`
+  // The tab counts what it is named for. It counted snapshots, and said 2
+  // over a history that said none.
+  const deployCount = (jobsReading?.jobs ?? []).filter((j) => j.subject === subject && DEPLOYS.has(j.kind)).length
   const badges = {
     configuration: changed ? { dot: true, sr: 'not saved' } : null,
     domains: { text: String(names.length) },
-    deployments: snapshotCount ? { text: String(snapshotCount), sr: `${snapshotCount} snapshots` } : null,
+    deployments: deployCount ? { text: String(deployCount), sr: `${deployCount} deployments` } : null,
   }
 
   return (
@@ -619,17 +621,10 @@ export default function ServicePage({
 // How it is, in a word and not only a colour: running is the one green.
 // A site's word comes from asking for its page, since it has no process.
 function StatePill({ up, state, page }) {
-  if (!up) return <Chip label="container stopped" tone="border-edge-strong text-muted" />
-  if (page) {
-    const tone =
-      page.state === 'active' ? 'border-running/40 text-running'
-        : page.state === 'failed' ? 'border-problem/40 text-problem'
-          : page.caution ? 'border-caution/40 text-caution'
-          : 'border-edge-strong text-muted'
-    return <Chip label={page.label} tone={tone} explain={`Its front page ${page.sentence}`} />
-  }
-  if (state === 'active') return <Chip label="running" tone="border-running/40 text-running" />
-  return <Chip label={state || 'unknown'} tone="border-problem/40 text-problem" />
+  if (!up) return <Status status={{ label: 'container stopped', tone: 'muted' }} />
+  if (page) return <Status status={{ label: page.label, tone: toneOf(page), explain: `Its front page ${page.sentence}` }} />
+  if (state === 'active') return <Status status={{ label: 'running', tone: 'running' }} />
+  return <Status status={{ label: state || 'unknown', tone: 'problem' }} />
 }
 
 // What it is and where it stands, on one screen: the facts somebody asks for

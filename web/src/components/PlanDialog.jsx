@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useDialog, dialogProps } from '../lib/useDialog.js'
+import { DANGER, GHOST, PRIMARY } from '../lib/ui.js'
 import { readJSON, humane } from '../lib/api.js'
 
 // Three states, in order: fill in the form, read the plan, watch it run.
@@ -176,16 +177,19 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/60 px-4 py-10">
-      <div {...dialogProps(dialog)} className="w-full max-w-2xl rounded-lg border border-edge bg-panel shadow-2xl outline-none">
-        <header className="flex items-center justify-between border-b border-edge px-5 py-3">
+    // The dialog fits the screen and its body scrolls inside it: with the
+    // page scrolling instead, a plan of seven steps put the button that runs
+    // it below the fold, out of sight of the plan it confirms.
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4">
+      <div {...dialogProps(dialog)} className="flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col rounded-lg border border-edge bg-panel shadow-2xl outline-none">
+        <header className="flex shrink-0 items-center justify-between border-b border-edge px-5 py-3">
           <h2 id={dialog.titleId} className="text-sm font-medium">{request.title}</h2>
           <button onClick={leave} className="text-muted hover:text-ink" aria-label="Close">
             ✕
           </button>
         </header>
 
-        <div className="px-5 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           {stage === 'form' && (
             <Form
               id={formId}
@@ -259,13 +263,10 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
           )}
         </div>
 
-        <footer className="flex items-center justify-between gap-3 border-t border-edge px-5 py-3">
+        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-edge px-5 py-3">
           <div className="flex min-w-0 items-center gap-3">
             {back && (stage === 'plan' || (stage === 'error' && !steps.length)) && (
-              <button
-                onClick={back}
-                className="rounded border border-edge px-3 py-1.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
-              >
+              <button onClick={back} className={GHOST}>
                 &larr; Back
               </button>
             )}
@@ -284,10 +285,7 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
             <Discard onKeep={() => setAsking(false)} onDiscard={onClose} />
           ) : (
           <div className="flex shrink-0 gap-2">
-            <button
-              onClick={leave}
-              className="rounded border border-edge px-3 py-1.5 text-xs text-muted transition hover:border-edge-strong hover:text-ink"
-            >
+            <button onClick={leave} className={GHOST}>
               {done || failed || stage === 'blocked' ? 'Close' : running ? 'Leave it running' : 'Cancel'}
             </button>
 
@@ -295,7 +293,7 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
               <button
                 onClick={stop}
                 disabled={stopping}
-                className="rounded border border-problem/50 bg-problem/10 px-3 py-1.5 text-xs text-problem transition hover:bg-problem/15 disabled:opacity-40"
+                className={`${DANGER} disabled:opacity-40`}
               >
                 {stopping ? 'Stopping…' : 'Stop it'}
               </button>
@@ -317,7 +315,7 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
                 form={formId}
                 // A checkbox left unticked and a field marked optional are answers too.
                 disabled={!ready}
-                className="rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30 disabled:opacity-40"
+                className={PRIMARY}
               >
                 Show me the plan
               </button>
@@ -327,11 +325,7 @@ export default function PlanDialog({ request, onClose, onFinished, onResult, onB
               <button
                 onClick={run}
                 disabled={unconfirmed}
-                className={`rounded border px-3 py-1.5 text-xs transition disabled:opacity-40 ${
-                  request.destructive
-                    ? 'border-problem/50 bg-problem/10 text-problem hover:bg-problem/15'
-                    : 'border-edge-strong bg-raised hover:border-ink/30'
-                }`}
+                className={request.destructive ? `${DANGER} disabled:opacity-40` : PRIMARY}
               >
                 {request.verb ?? 'Run'} · {steps.length} command{steps.length === 1 ? '' : 's'}
               </button>
@@ -475,8 +469,10 @@ function StepList({ steps }) {
             {i + 1}. {step.describe}
             {step.optional && <span className="text-faint"> — skipped if it fails</span>}
           </p>
+          {/* Wrapped, not scrolled: a command cut off at the edge is a command
+              not read, and reading it is what this dialog is for. */}
           {step.file ? <FileStep step={step} /> : (
-            <pre className="mt-1 overflow-x-auto font-mono text-xs text-ink">{step.argv.join(' ')}</pre>
+            <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-xs text-ink">{step.argv.join(' ')}</pre>
           )}
         </li>
       ))}
@@ -492,7 +488,7 @@ function FileStep({ step }) {
 
   return (
     <>
-      <pre className="mt-1 overflow-x-auto font-mono text-xs text-ink">{`cat > ${step.file}`}</pre>
+      <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-xs text-ink">{`cat > ${step.file}`}</pre>
       <button
         onClick={() => setOpen(!open)}
         aria-expanded={open}
@@ -567,7 +563,7 @@ export function Progress({ steps, events, error, done }) {
                 {working && <span className="text-faint"> &mdash; running</span>}
               </p>
               {entry.command && (
-                <pre className="overflow-x-auto font-mono text-[11px] text-faint">{entry.command}</pre>
+                <pre className="whitespace-pre-wrap break-words font-mono text-[11px] text-faint">{entry.command}</pre>
               )}
               {/* What the step said while it worked. Obtaining a certificate
                   talks to the authority and waits for DNS; that is one step

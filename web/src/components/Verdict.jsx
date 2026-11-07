@@ -1,9 +1,16 @@
 import { href } from '../lib/useRoute.js'
+import { PRIMARY } from '../lib/ui.js'
 
 // One headline, not four decorative counters. The counters that remain are
 // filters: each opens the list it counts, already narrowed to it. A number you
 // cannot act on is wallpaper.
+//
+// It takes the colour of the worst thing it counts: a red headline over an
+// amber notice said two different things about the same certificate.
 export default function Verdict({ data, problemCount }) {
+  const errors = data.findings.filter((f) => f.severity === 'error').length
+  const warnings = data.findings.filter((f) => f.severity === 'warning').length
+  const tone = errors ? 'text-problem border-problem' : 'text-caution border-caution'
   const running = data.instances.filter((i) => i.status === 'running').length
   const stopped = data.instances.length - running
   const secured = data.routes.filter((r) => r.ssl).length
@@ -13,30 +20,30 @@ export default function Verdict({ data, problemCount }) {
   if (data.instances.length === 0 && problemCount === 0) {
     return (
       <div className="rounded-lg border border-edge bg-panel px-5 py-4">
-        <span className="text-2xl font-medium">Nothing here yet</span>
+        <span className="text-lg font-medium">Nothing here yet</span>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-edge bg-panel px-5 py-4">
+    <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-edge bg-panel px-4 py-3">
       <div className="flex items-center gap-3">
         {problemCount > 0 ? (
           <>
-            <span className="flex size-6 items-center justify-center rounded-full border border-problem font-mono text-xs font-bold text-problem">
+            <span className={`flex size-5 items-center justify-center rounded-full border font-mono text-[11px] font-bold ${tone}`}>
               !
             </span>
-            <span className="text-2xl font-medium text-problem">
-              {problemCount} problem{problemCount === 1 ? '' : 's'}
+            <span className={`text-lg font-medium ${tone.split(' ')[0]}`}>
+              {[errors && `${errors} problem${errors === 1 ? '' : 's'}`, warnings && `${warnings} to look at`].filter(Boolean).join(' · ')}
             </span>
           </>
         ) : (
           <>
             {/* Green says "running" on this panel and nothing else. */}
-            <span aria-hidden="true" className="flex size-6 items-center justify-center rounded-full border border-edge-strong text-xs text-muted">
+            <span aria-hidden="true" className="flex size-5 items-center justify-center rounded-full border border-edge-strong text-[11px] text-muted">
               ✓
             </span>
-            <span className="text-2xl font-medium">All good</span>
+            <span className="text-lg font-medium">All good</span>
           </>
         )}
       </div>
@@ -56,7 +63,7 @@ function Pill({ label, value, to }) {
   return (
     <a
       href={to}
-      className="rounded border border-edge px-2.5 py-1.5 transition hover:border-edge-strong hover:bg-white/[0.03]"
+      className="rounded-md border border-edge px-2.5 py-1.5 transition hover:border-edge-strong hover:bg-white/[0.03]"
     >
       <span className="font-medium">{value}</span> <span className="text-muted">{label}</span>
     </a>
@@ -78,7 +85,7 @@ export function StartHere({ onNewContainer }) {
       </ol>
       <button
         onClick={onNewContainer}
-        className="mt-3 rounded border border-edge-strong bg-raised px-3 py-1.5 text-xs transition hover:border-ink/30"
+        className={`mt-3 ${PRIMARY}`}
       >
         New container
       </button>

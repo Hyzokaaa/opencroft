@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Chip from './Chip.jsx'
 import Command from './Command.jsx'
+import { SearchIcon } from './Icon.jsx'
 
 // What every list page is made of, so they read the same: a heading that
 // says what is there and how it is, one way to make more, a search and a
@@ -23,28 +24,35 @@ export function PageHead({ title, mono, summary, children }) {
 // Toolbar is a search and, when there is more than one way to narrow, the
 // filters. Each filter says how many rows it would leave, so an empty one is
 // known before it is pressed.
-export function Toolbar({ query, onQuery, placeholder, filters, filter, onFilter }) {
+// shown, when given, says how many rows are left of how many: a search that
+// leaves nothing is told apart from a list that is empty.
+export function Toolbar({ query, onQuery, placeholder, filters, filter, onFilter, shown }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <label className="relative w-full min-w-0 sm:w-auto sm:max-w-sm sm:flex-1">
+      <label className="relative w-full min-w-0 sm:w-72">
         <span className="sr-only">{placeholder}</span>
+        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint">
+          <SearchIcon />
+        </span>
         <input
           type="search"
           value={query}
           onChange={(e) => onQuery(e.target.value)}
           placeholder={placeholder}
-          className="h-9 w-full rounded-md border border-field-edge bg-panel px-3 text-sm placeholder:text-faint"
+          className="h-9 w-full rounded-md border border-field-edge bg-ground pl-8 pr-3 text-sm placeholder:text-faint focus:border-yours focus:outline-none"
         />
       </label>
+      {/* One control with its options inside it: which of them is on is read
+          at a glance, as with any switch. */}
       {filters && filters.length > 1 && (
-        <div role="group" aria-label="Show" className="flex flex-wrap gap-1">
+        <div role="group" aria-label="Show" className="flex max-w-full items-center overflow-x-auto rounded-md border border-edge p-0.5 text-xs">
           {filters.map((f) => (
             <button
               key={f.id}
               onClick={() => onFilter(f.id)}
               aria-pressed={filter === f.id}
-              className={`h-9 rounded-md border px-3 text-xs transition ${
-                filter === f.id ? 'border-edge-strong bg-raised text-ink' : 'border-edge text-muted hover:text-ink'
+              className={`shrink-0 whitespace-nowrap rounded px-2.5 py-1.5 transition ${
+                filter === f.id ? 'bg-raised text-ink' : 'text-muted hover:text-ink'
               }`}
             >
               {f.label}
@@ -53,6 +61,7 @@ export function Toolbar({ query, onQuery, placeholder, filters, filter, onFilter
           ))}
         </div>
       )}
+      {shown && <span role="status" className="ml-auto text-xs text-faint">{shown}</span>}
     </div>
   )
 }
@@ -60,22 +69,19 @@ export function Toolbar({ query, onQuery, placeholder, filters, filter, onFilter
 // The same four tones everywhere: green is running, or a page that came
 // back, and nothing else.
 export const TONES = {
-  running: { pill: 'border-running/40 text-running', dot: 'bg-running' },
-  problem: { pill: 'border-problem/40 text-problem', dot: 'bg-problem ring-2 ring-problem/25' },
-  caution: { pill: 'border-caution/40 text-caution', dot: 'border border-caution' },
+  running: { pill: 'border-running/30 text-running', dot: 'bg-running' },
+  problem: { pill: 'border-problem/40 text-problem', dot: 'bg-problem' },
+  caution: { pill: 'border-caution/40 text-caution', dot: 'bg-caution' },
   muted: { pill: 'border-edge-strong text-muted', dot: 'border border-stopped' },
 }
 
-// Status is a dot and a word — never the colour alone — with the reason one
-// tap away when there is one.
+// Status is a dot and a word in one pill — never the colour alone — with the
+// reason one tap away when there is one. The word starts with a capital, as
+// a state does in a sentence of its own.
 export function Status({ status }) {
   const tone = TONES[status.tone] ?? TONES.muted
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${tone.dot}`} />
-      <Chip label={status.label} tone={tone.pill} explain={status.explain} />
-    </span>
-  )
+  const label = status.label ? status.label[0].toUpperCase() + status.label.slice(1) : status.label
+  return <Chip pill label={label} tone={tone.pill} dot={tone.dot} explain={status.explain} />
 }
 
 // matches is whether any of the values contains what was typed.
@@ -102,16 +108,32 @@ export function Tabs({ parts, part, to, badges = {}, label }) {
   // On a phone the row is wider than the screen: the part being shown is
   // brought into view, rather than left past the edge.
   const list = useRef(null)
+  // more is whether tabs are hidden past the right edge. Cut off with nothing
+  // to say so, Deployments and Logs did not exist on a phone; the row fades
+  // out there instead, the way a list that goes on does.
+  const [more, setMore] = useState(false)
+  const measure = () => {
+    const ul = list.current
+    if (ul) setMore(ul.scrollLeft + ul.clientWidth < ul.scrollWidth - 4)
+  }
   useEffect(() => {
     const ul = list.current
     const here = ul?.querySelector('[aria-current="page"]')
-    if (!ul || !here || ul.scrollWidth <= ul.clientWidth) return
-    ul.scrollLeft = here.parentElement.offsetLeft - ul.offsetLeft - 16
+    if (ul && here && ul.scrollWidth > ul.clientWidth) ul.scrollLeft = here.parentElement.offsetLeft - ul.offsetLeft - 16
+    measure()
+    addEventListener('resize', measure)
+    return () => removeEventListener('resize', measure)
   }, [part])
 
   return (
     <nav aria-label={label} className="min-w-0">
-      <ul ref={list} className="relative -mx-4 flex gap-1 overflow-x-auto border-b border-edge px-4 md:mx-0 md:px-0">
+      <ul
+        ref={list}
+        onScroll={measure}
+        className={`relative -mx-4 flex gap-1 overflow-x-auto border-b border-edge px-4 md:mx-0 md:px-0 ${
+          more ? '[mask-image:linear-gradient(to_right,black_75%,transparent)]' : ''
+        }`}
+      >
         {parts.map((p) => (
           <li key={p.id} className="shrink-0">
             <a

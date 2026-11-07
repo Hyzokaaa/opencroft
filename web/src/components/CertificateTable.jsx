@@ -47,7 +47,7 @@ export default function CertificateTable({ certificates, renewable, onRenew }) {
           return (
           <tr key={c.domain} className="border-b border-edge/60 last:border-0">
             <td className="relative px-4 py-3">
-              {c.daysLeft < 21 && !c.unused && <span className="absolute left-0 top-0 h-full w-[2px] bg-problem" />}
+              {c.daysLeft < 21 && !c.unused && <span className={`absolute left-0 top-0 h-full w-[2px] ${c.daysLeft < 7 ? 'bg-problem' : 'bg-caution'}`} />}
               <div className="flex flex-wrap items-center gap-2">
                 <span className="break-all font-mono">{c.domain}</span>
                 {c.unused && (

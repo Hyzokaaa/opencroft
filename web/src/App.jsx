@@ -114,13 +114,15 @@ function Dashboard({ onSignOut, onSessionLost }) {
   const running = jobs.filter((j) => j.status === 'running').length
 
   // Subjects named by a problem, so the tables carry the same severity the
-  // findings panel reports. Two truths on one screen is worse than none.
+  // findings panel reports. Two truths on one screen is worse than none. Each
+  // keeps its worst finding, so a row can say why and in the right colour.
   const problems = useMemo(() => {
-    const set = new Set()
+    const by = new Map()
     for (const f of data?.findings ?? []) {
-      if (f.severity !== 'info') set.add(f.subject)
+      if (f.severity === 'info') continue
+      if (!by.has(f.subject) || f.severity === 'error') by.set(f.subject, f)
     }
-    return set
+    return by
   }, [data])
 
   const problemCount = data?.findings.filter((f) => f.severity !== 'info').length ?? 0
@@ -667,7 +669,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
   return (
     <Shell
       data={data}
-      section={section === 'projects' ? 'home' : section}
+      section={section === 'projects' || openedContainer?.project ? 'home' : section}
       tab={tab}
       crumbs={crumbs}
       commandMode={commandMode}
@@ -678,6 +680,8 @@ function Dashboard({ onSignOut, onSessionLost }) {
       host={host}
       running={running}
       onSignOut={onSignOut}
+      projects={projects}
+      project={section === 'projects' ? name : openedContainer?.project ?? null}
     >
       {/* A failed poll must not blank the panel: the moment the daemon is
           shaky is the moment you most need the last known state. */}

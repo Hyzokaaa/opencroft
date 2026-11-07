@@ -2,14 +2,28 @@ import { useId, useState } from 'react'
 
 // This explanation used to live in a title attribute — invisible on touch,
 // invisible to the keyboard, and it happened to hold the product's pitch.
-export default function Chip({ label, tone, explain }) {
+//
+// pill is the shape of a status, with dot the class of the dot inside it: a
+// state reads as one object — a dot and a word — not two things beside each
+// other that wrap apart.
+export default function Chip({ label, tone, explain, pill = false, dot }) {
   const [open, setOpen] = useState(false)
   const id = useId()
+
+  const shape = pill
+    ? 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs leading-4'
+    : 'inline-block rounded border px-1.5 py-px text-[11px] leading-4'
+  const body = (
+    <>
+      {dot && <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${dot}`} />}
+      {label}
+    </>
+  )
 
   // With nothing to explain it is a label, not a control: a button there is
   // one more empty stop on the way through the page with Tab.
   if (!explain) {
-    return <span className={'inline-block rounded border px-1.5 py-px text-[11px] leading-4 ' + (tone ?? '')}>{label}</span>
+    return <span className={`${shape} ${tone ?? ''}`}>{body}</span>
   }
 
   return (
@@ -22,9 +36,9 @@ export default function Chip({ label, tone, explain }) {
         onFocus={() => setOpen(true)}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
-        className={`rounded border px-1.5 py-px text-[11px] leading-4 ${tone}`}
+        className={`${shape} ${tone}`}
       >
-        {label}
+        {body}
       </button>
       {open && explain && (
         <span

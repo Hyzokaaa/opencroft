@@ -38,7 +38,8 @@ export default function RouteTable({ routes, instances, certificates = [], probl
             const r = name.route
             const target = nameFor(r.target)
             const ownership = OWNERSHIP[r.state] ?? OWNERSHIP.managed
-            const problem = problems.has(name.domain)
+            // The worst finding about the name, so its bar is the colour of it.
+            const problem = problems.get?.(name.domain) ?? (problems.has(name.domain) ? { severity: 'error' } : null)
             const lit = highlighted === name.domain || (target && highlighted === target)
             const answer = answerOf(name)
             // What it reaches, when the page knows what listens there: a
@@ -59,7 +60,7 @@ export default function RouteTable({ routes, instances, certificates = [], probl
                 }`}
               >
                 <td className="relative px-4 py-3">
-                  {problem && <span className="absolute left-0 top-0 h-full w-[2px] bg-problem" />}
+                  {problem && <span className={`absolute left-0 top-0 h-full w-[2px] ${problem.severity === 'error' ? 'bg-problem' : 'bg-caution'}`} />}
                   {/* The lock stays beside the name; the chip may wrap under
                       it on a narrow screen. */}
                   <div className="flex items-center gap-2">
@@ -90,15 +91,6 @@ export default function RouteTable({ routes, instances, certificates = [], probl
                       <span className="font-mono">{nameFor(p.target) ?? p.target}</span>
                       <span className="text-faint">:{p.port}</span>
                       {p.strip && <span className="text-faint">without {p.prefix}</span>}
-                      {r.state === 'managed' && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handlers.onRemovePath?.(r, p.prefix) }}
-                          aria-label={`Stop sending ${p.prefix} elsewhere`}
-                          className="min-h-6 rounded px-1 text-faint transition hover:text-problem"
-                        >
-                          ✕
-                        </button>
-                      )}
                     </div>
                   ))}
                 </td>
@@ -127,7 +119,21 @@ export default function RouteTable({ routes, instances, certificates = [], probl
                 <td className="hidden px-4 py-3 font-mono text-xs text-faint xl:table-cell">{r.file}</td>
 
                 <td className="px-4 py-3 text-right">
-                  <Actions folded label={`Actions for ${name.domain}`} actions={nameActions(name, answer, handlers)} />
+                  {/* Undoing a path is in the menu with the rest: as a bare ✕
+                      beside the path it was a 13px target, and the only
+                      destructive control on the page not asked for twice. */}
+                  <Actions
+                    folded
+                    label={`Actions for ${name.domain}`}
+                    actions={[
+                      ...nameActions(name, answer, handlers),
+                      ...(name.entry && r.state === 'managed' ? r.paths ?? [] : []).map((p) => ({
+                        label: `Stop sending ${p.prefix} elsewhere…`,
+                        onClick: () => handlers.onRemovePath?.(r, p.prefix),
+                        danger: true,
+                      })),
+                    ]}
+                  />
                 </td>
               </tr>
             )
