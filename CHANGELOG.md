@@ -14,6 +14,9 @@ descargó.
 
 ## No publicado
 
+### v0.39.1 — 2026-11-07
+- fix: warn about the certificate a site is served with, not any certificate with its name
+
 ### v0.39.0 — 2026-11-07
 - feat: a deployment says it worked only when its readiness check passed, and finished otherwise
 - feat: a service's and a container's page in tabs, with how deployments happen beside them
