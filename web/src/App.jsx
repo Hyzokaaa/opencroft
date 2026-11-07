@@ -49,7 +49,7 @@ export default function App() {
     )
   }
 
-  return <Dashboard onSignOut={signOut} onSessionLost={refreshAuth} />
+  return <Dashboard user={auth.username} onSignOut={signOut} onSessionLost={refreshAuth} />
 }
 
 // The shape a project name has, said in the form rather than by the daemon.
@@ -59,7 +59,7 @@ const CONTAINER_NAME = { pattern: '^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$', invalid: 'L
 // browser — https://, a path — is said to be wrong where it was typed.
 const DOMAIN_PATTERN = '^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z][A-Za-z0-9-]{0,61}[A-Za-z0-9]$'
 
-function Dashboard({ onSignOut, onSessionLost }) {
+function Dashboard({ user, onSignOut, onSessionLost }) {
   const { data, error, agentDown, agentDetail, host, fetchedAt, loading, unauthorized, reload } = useOverview()
 
   // The session can expire while the panel sits open.
@@ -680,6 +680,7 @@ function Dashboard({ onSignOut, onSessionLost }) {
       host={host}
       running={running}
       onSignOut={onSignOut}
+      user={user}
       projects={projects}
       project={section === 'projects' ? name : openedContainer?.project ?? null}
     >

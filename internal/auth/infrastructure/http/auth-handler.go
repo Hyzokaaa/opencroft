@@ -2,6 +2,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -135,16 +136,37 @@ func (h *Handler) state(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	authenticated := false
+	authenticated, username := false, ""
 	if cookie, err := r.Cookie(CookieName); err == nil {
 		session, _ := h.verify.Execute(r.Context(), cookie.Value)
 		authenticated = session != nil
+		if session != nil {
+			username = h.usernameOf(r.Context(), session.UserId)
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"hasUsers":      total > 0,
 		"authenticated": authenticated,
+		"username":      username,
 	})
+}
+
+// usernameOf is who a session belongs to, said in the panel so that on a
+// host with more than one user the person can see whose session this is.
+// Users are a handful, so they are read and matched rather than given a
+// lookup of their own; not finding one leaves the name out, nothing more.
+func (h *Handler) usernameOf(ctx context.Context, userId string) string {
+	all, err := h.users.FindAll(ctx)
+	if err != nil {
+		return ""
+	}
+	for _, u := range all {
+		if u.GetId() == userId {
+			return u.Username
+		}
+	}
+	return ""
 }
 
 // Guard refuses everything that is not login or a static asset. It fails

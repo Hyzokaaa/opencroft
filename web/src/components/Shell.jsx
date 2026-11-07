@@ -29,7 +29,7 @@ export { SECTIONS }
 // crumbs is where you are, from the section down: [{ label, href }], the
 // last one being this page.
 // projects hang under Home in the menu, project being the one open now.
-export default function Shell({ data, host, section, tab, crumbs, commandMode, onToggleCommands, freshness, onReload, stale, running, onSignOut, projects, project, children }) {
+export default function Shell({ data, host, section, tab, crumbs, commandMode, onToggleCommands, freshness, onReload, stale, running, onSignOut, user, projects, project, children }) {
   const [navOpen, setNavOpen] = useState(false)
   const [goingTo, setGoingTo] = useGoTo()
 
@@ -52,7 +52,7 @@ export default function Shell({ data, host, section, tab, crumbs, commandMode, o
       {navOpen && (
         <div className="fixed inset-0 z-10 bg-black/50 md:hidden" onClick={() => setNavOpen(false)} aria-hidden="true" />
       )}
-      <Rail data={data} host={host} commandMode={commandMode} section={section} tab={tab} open={navOpen} projects={projects} project={project} onSignOut={onSignOut} onGoTo={() => setGoingTo(true)} />
+      <Rail data={data} host={host} commandMode={commandMode} section={section} tab={tab} open={navOpen} projects={projects} project={project} user={user} onSignOut={onSignOut} onGoTo={() => setGoingTo(true)} />
       {goingTo && <GoTo data={data} onClose={() => setGoingTo(false)} />}
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -141,7 +141,7 @@ export default function Shell({ data, host, section, tab, crumbs, commandMode, o
   )
 }
 
-function Rail({ data, host, commandMode, section, tab, open, projects, project, onSignOut, onGoTo }) {
+function Rail({ data, host, commandMode, section, tab, open, projects, project, user, onSignOut, onGoTo }) {
   // Hidden off-screen on a phone is still reachable by Tab unless it is inert.
   const [narrow, setNarrow] = useState(() => matchMedia('(max-width: 767px)').matches)
   useEffect(() => {
@@ -266,10 +266,13 @@ function Rail({ data, host, commandMode, section, tab, open, projects, project, 
               demo data
             </span>
           )}
+          <a href={href('settings', 'about')} className="block font-mono transition hover:text-ink">
+            croft {data?.version ?? 'dev'} · {data?.runtime ?? '—'}
+          </a>
           <div className="flex items-center justify-between gap-2">
-            <a href={href('settings', 'about')} className="font-mono transition hover:text-ink">
-              croft {data?.version ?? 'dev'} · {data?.runtime ?? '—'}
-            </a>
+            {/* Whose session this is: on a host with more than one user,
+                acting in somebody else's should be seen before it is done. */}
+            <span className="truncate text-xs text-muted">{user ?? ''}</span>
             {/* Down here with the rest about this session, not beside the
                 page's own controls, where it sat one slip from Refresh. */}
             <button onClick={onSignOut} className="text-xs text-muted transition hover:text-ink">
