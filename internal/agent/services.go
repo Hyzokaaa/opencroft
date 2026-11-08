@@ -91,6 +91,11 @@ type ServiceDTO struct {
 	// last passed its check. Between them they are the two ways back.
 	Commit  string `json:"commit,omitempty"`
 	Healthy string `json:"healthy,omitempty"`
+	// Good is the last commit that passed its check, and GoodAt when. It is
+	// recorded with or without a snapshot, so it is never older than what
+	// runs when what runs worked.
+	Good   string `json:"good,omitempty"`
+	GoodAt string `json:"goodAt,omitempty"`
 
 	// NoSnapshot is shown, never accepted: it is changed through its own
 	// request, so a deployment cannot turn the way back off by saying so.
@@ -806,8 +811,18 @@ func (s *Server) runDeployment(w http.ResponseWriter, r *http.Request, name stri
 		// its check is the publish itself, which refuses a build with nothing
 		// to serve and swaps in the whole of one that has. With no snapshot
 		// taken there is nothing to name, and the last one named stays.
-		if (service.Health.Wanted() || service.IsSite()) && !deployment.NoSnapshot {
-			_ = s.instances.Annotate(ctx, name, annotation(service.Name, "healthy"), snapshot)
+		//
+		// The commit is named either way. Without snapshots it is the only
+		// way back, and leaving "known good" at the last snapshot showed a
+		// version weeks old beside a deployment that had just passed.
+		if service.Health.Wanted() || service.IsSite() {
+			if service.Source.Commit != "" {
+				_ = s.instances.Annotate(ctx, name, annotation(service.Name, "good"), service.Source.Commit)
+				_ = s.instances.Annotate(ctx, name, annotation(service.Name, "good-at"), deployment.At.UTC().Format(time.RFC3339))
+			}
+			if !deployment.NoSnapshot {
+				_ = s.instances.Annotate(ctx, name, annotation(service.Name, "healthy"), snapshot)
+			}
 		}
 		return nil
 	})
@@ -1110,6 +1125,8 @@ func fromConfig(config map[string]string, name string) ServiceDTO {
 		},
 		Commit:  read("commit"),
 		Healthy: read("healthy"),
+		Good:    read("good"),
+		GoodAt:  read("good-at"),
 
 		NoSnapshot: config[full(name, snapshotKey)] == snapshotOff,
 	}

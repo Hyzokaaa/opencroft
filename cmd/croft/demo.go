@@ -264,7 +264,10 @@ func seedDemo(ctx context.Context, instances *runtime.MemoryInstanceRepository,
 		"service.storefront.repo", "https://github.com/example/storefront.git",
 		"service.storefront.branch", "main", "service.storefront.path", "/srv/storefront", "service.storefront.commit", "4f2a9c1",
 		"service.storefront.runtime", "node", "service.storefront.build", "npm ci && npm run build",
-		"service.storefront.start", "npm run start", "service.storefront.port", "80")
+		"service.storefront.start", "npm run start", "service.storefront.port", "80",
+		// Recorded by commit, as every deployment that passes its check is.
+		"service.storefront.health", "/", "service.storefront.good", "4f2a9c1",
+		"service.storefront.good-at", time.Now().Add(-14*time.Hour).UTC().Format(time.RFC3339))
 	// A few weeks of history: two deployments (the later one known to work),
 	// the database being added, and one somebody took by hand.
 	h.snapshots["shop-api"] = []string{

@@ -173,3 +173,50 @@ func TestWithoutASnapshotNothingIsCalledKnownGood(t *testing.T) {
 		t.Errorf("known good is now %q", got)
 	}
 }
+
+// Without snapshots, a deployment that passed its check still leaves a way
+// back: its commit. Known good used to stay at the last snapshot, weeks old,
+// beside a deployment that had just worked.
+func TestADeploymentThatWorkedIsKnownGoodByItsCommit(t *testing.T) {
+	server, fake := testServer()
+	withBackend(t, server, map[string]string{"service.backend.snapshot": "off"})
+	fake.Responses["lxc config get helpdesk user.croft.service.backend.snapshot"] = "off"
+	fake.Responses["lxc exec helpdesk -- git -c safe.directory=/srv/backend -C /srv/backend rev-parse HEAD"] = "6d9447d0c1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6"
+
+	service := aService()
+	service.Health = HealthDTO{Path: "/health"}
+	encoded, _ := json.Marshal(service)
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder,
+		httptest.NewRequest(http.MethodPost, "/instances/helpdesk/services/deploy", bytes.NewReader(encoded)))
+	if strings.Contains(recorder.Body.String(), `"failed":true`) {
+		t.Fatalf("the deployment failed: %s", recorder.Body.String())
+	}
+
+	config, _ := server.instances.Annotations(context.Background(), "helpdesk")
+	if got := config[full("backend", "good")]; got != "6d9447d0c1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6" {
+		t.Errorf("the commit that worked is recorded as %q", got)
+	}
+	if config[full("backend", "good-at")] == "" {
+		t.Error("when it worked is not recorded")
+	}
+}
+
+// A deployment with nothing to check proves nothing, so it names no commit
+// as good either.
+func TestADeploymentWithNoCheckIsNotKnownGood(t *testing.T) {
+	server, fake := testServer()
+	withBackend(t, server, map[string]string{"service.backend.snapshot": "off"})
+	fake.Responses["lxc config get helpdesk user.croft.service.backend.snapshot"] = "off"
+	fake.Responses["lxc exec helpdesk -- git -c safe.directory=/srv/backend -C /srv/backend rev-parse HEAD"] = "6d9447d0c1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6"
+
+	encoded, _ := json.Marshal(aService())
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder,
+		httptest.NewRequest(http.MethodPost, "/instances/helpdesk/services/deploy", bytes.NewReader(encoded)))
+
+	config, _ := server.instances.Annotations(context.Background(), "helpdesk")
+	if got := config[full("backend", "good")]; got != "" {
+		t.Errorf("an unchecked deployment is called good: %q", got)
+	}
+}
