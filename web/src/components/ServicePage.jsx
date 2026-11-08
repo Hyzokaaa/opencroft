@@ -691,145 +691,168 @@ function Checkout({ path, onRepair }) {
   )
 }
 
-// Overview answers what is asked first, in four tiles: is it up, where is it
-// reached, how did the last deployment go, and what is the way back if the
-// next one breaks it. The facts for copying come after — they are looked up,
-// not read.
+// Overview reads top to bottom as answers, each on its own row with its
+// question on the left: where it is reached, how the last deployment went, what
+// checks it, and the way back. Whether it runs is already in the header; saying
+// it again here made two pills that could be read as two different things.
+// The facts for copying come after, split by what they are about — they are
+// looked up, not read.
 function Overview({ service, container, port, names, certificates, noPort, autoDeploy, jobs, subject, to, stoppedId, onAddDomain }) {
   const site = service.adopted?.site
-  const up = container.status === 'running'
-  const page = site ? servingOf(service) : null
   const last = jobs.find((j) => j.subject === subject && DEPLOYS.has(j.kind))
   const auto = autoDeploy.data?.enabled
   const whole = names.filter((n) => !n.prefix)
   const first = whole[0] ?? names[0]
   const covering = first?.ssl ? servedWith(first, certificates) : null
 
-  const facts = [
-    ['Repository', service.repo, { copy: true, wide: true }],
-    ['Branch', service.branch],
-    ['Deployed commit', service.commit ? service.commit.slice(0, 7) : null, { copy: service.commit }],
-    ['Internal address', port ? `${container.address}:${port}` : container.address, { copy: true }],
-    ['Runtime', service.runtime || null],
-    ['Where it lands', service.path, { copy: true }],
-    site ? ['Published to', site, { copy: true }] : service.adopted?.unit ? ['Runs as', service.adopted.unit] : null,
-    !site && ['Readiness check', service.health?.path || null, { none: 'none — ends when the unit starts' }],
-  ].filter(Boolean)
-
   return (
     <>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Tile label="Status">
-          <StatePill up={up} state={service.state} page={page} />
-          <p className="mt-1.5 text-xs text-muted">
-            {!up
-              ? `${container.name} is stopped.`
-              : page
-                ? `Its front page ${page.sentence}`
-                : service.state === 'active'
-                  ? !service.health?.path
-                    ? 'Its unit is up. Nothing checks that it answers.'
-                    : service.good
-                      ? `Its unit is up, and its readiness check (${service.health.path}) passed at the last deployment that worked.`
-                      : `Its unit is up. Its readiness check (${service.health.path}) is asked at each deployment.`
-                  : `Its unit is ${service.state || 'not running'}.`}
-          </p>
-        </Tile>
+      <Card title="At a glance">
+        <dl className="divide-y divide-edge">
+          <Row label="Reached at" action={<More href={to('domains')}>Manage</More>}>
+            {first ? (
+              <>
+                <a
+                  href={`${first.ssl ? 'https' : 'http'}://${first.domain}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-mono underline-offset-4 hover:underline"
+                >
+                  {first.domain}
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </a>
+                <Aside>
+                  {!first.ssl ? 'http only, nothing encrypted' : covering ? (
+                    <span className={covering.daysLeft < 7 ? 'text-problem' : covering.daysLeft < 21 ? 'text-caution' : ''}>
+                      {covering.daysLeft < 0 ? 'certificate expired' : `certificate valid ${covering.daysLeft} more days`}
+                    </span>
+                  ) : 'https'}
+                  {names.length > 1 && <>, and {names.length - 1} more</>}
+                </Aside>
+              </>
+            ) : (
+              <span className="text-muted">
+                {noPort ?? (
+                  <>
+                    No domain reaches it yet.{' '}
+                    <Gated reasonId={stoppedId} onClick={onAddDomain} className="text-ink underline underline-offset-4">
+                      Add one
+                    </Gated>
+                  </>
+                )}
+              </span>
+            )}
+          </Row>
 
-        <Tile label="Domain" action={<a href={to('domains')} className="text-xs text-muted hover:text-ink">Manage →</a>}>
-          {first ? (
-            <>
-              <a
-                href={`${first.ssl ? 'https' : 'http'}://${first.domain}`}
-                target="_blank"
-                rel="noreferrer"
-                className="block truncate font-mono text-sm underline-offset-4 hover:underline"
-                title={first.domain}
-              >
-                {first.domain}
-                <span className="sr-only"> (opens in a new tab)</span>
-              </a>
-              <p className="mt-1.5 text-xs text-muted">
-                {!first.ssl ? 'http only' : covering ? (
-                  <span className={covering.daysLeft < 7 ? 'text-problem' : covering.daysLeft < 21 ? 'text-caution' : ''}>
-                    https · certificate {covering.daysLeft < 0 ? 'expired' : `${covering.daysLeft} days`}
-                  </span>
-                ) : 'https'}
-                {names.length > 1 && <> · and {names.length - 1} more</>}
-              </p>
-            </>
-          ) : (
-            <p className="text-xs text-muted">
-              {noPort ?? (
+          <Row label="Last deployment" action={<More href={to('deployments')}>All</More>}>
+            {last ? (
+              <>
+                <Chip pill {...outcomePill(last)} />
+                <Aside>
+                  {last.kind === 'auto-deploy' ? 'automatic, after a new commit' : 'from the panel'}, {ago(new Date(last.started))}
+                </Aside>
+                {last.status === 'failed' && last.error && (
+                  <p className="mt-1 w-full text-problem">Stopped at step {last.reached} of {last.steps}: {last.error}</p>
+                )}
+              </>
+            ) : (
+              <span className="text-muted">
+                None from this panel yet{service.commit ? <> — <span className="font-mono text-ink">{service.commit.slice(0, 7)}</span> is what runs</> : ''}.
+              </span>
+            )}
+          </Row>
+
+          <Row label="Automatic deployments" action={<More href={to('deployments')}>Change</More>}>
+            {!autoDeploy.read ? (
+              <span className="text-faint">…</span>
+            ) : auto ? (
+              <>
+                On <Aside>every new commit on <span className="font-mono text-ink">{service.branch || 'its branch'}</span> is deployed</Aside>
+              </>
+            ) : (
+              <>
+                Off <Aside>deployed only from here</Aside>
+              </>
+            )}
+          </Row>
+
+          {!site && (
+            <Row label="Readiness check" action={<More href={to('configuration')}>{service.health?.path ? 'Change' : 'Set one'}</More>}>
+              {service.health?.path ? (
                 <>
-                  No domain reaches it yet.{' '}
-                  <Gated reasonId={stoppedId} onClick={onAddDomain} className="text-ink underline underline-offset-4">
-                    Add one
-                  </Gated>
+                  <span className="font-mono">{service.health.path}</span>
+                  <Aside>{service.good ? 'answered at the last deployment that worked' : 'asked at each deployment'}</Aside>
                 </>
+              ) : (
+                <span className="text-caution">None — a deployment counts as done when the unit starts, answering or not.</span>
               )}
-            </p>
+            </Row>
           )}
-        </Tile>
 
-        <Tile label="Last deployment" action={<a href={to('deployments')} className="text-xs text-muted hover:text-ink">All →</a>}>
-          {last ? (
-            <>
-              <Chip pill {...outcomePill(last)} />
-              <p className="mt-1.5 text-xs text-muted">
-                {last.kind === 'auto-deploy' ? 'After a new commit' : 'From the panel'} · {ago(new Date(last.started))}
-              </p>
-              {last.status === 'failed' && last.error && (
-                <p className="mt-1 text-xs text-problem">Stopped at step {last.reached} of {last.steps}: {last.error}</p>
-              )}
-            </>
-          ) : (
-            <p className="text-xs text-muted">
-              None from this panel yet{service.commit ? <> — <span className="font-mono">{service.commit.slice(0, 7)}</span> is what runs</> : ''}.
-            </p>
-          )}
-          <p className="mt-1 text-xs text-faint">
-            Automatic: {!autoDeploy.read ? '…' : auto ? `on, follows ${service.branch || 'its branch'}` : 'off'}
-          </p>
-        </Tile>
-
-        <Tile label="Way back">
-          <WayBack service={service} site={site} to={to} />
-        </Tile>
-      </div>
-
-      {/* The fact belongs here; what to do about it, beside it. */}
-      {service.noSnapshot && (
-        <p className="rounded-lg border border-caution/30 bg-panel px-4 py-2.5 text-xs text-caution">
-          Deployed without snapshots: a deployment that breaks something is undone by redeploying an older commit,
-          and the database or files have no way back.{' '}
-          <a href={to('deployments')} className="underline underline-offset-2">Snapshot settings</a>
-        </p>
-      )}
-
-      <Card
-        title="Details"
-        action={<a href={to('configuration')} className="text-xs text-muted transition hover:text-ink">Edit configuration →</a>}
-      >
-        <dl className="grid gap-x-6 gap-y-3 px-4 py-4 sm:grid-cols-2 xl:grid-cols-3">
-          {facts.map(([label, value, opts = {}]) => (
-            <Fact key={label} label={label} value={value} {...opts} />
-          ))}
+          <Row label="Way back">
+            <WayBack service={service} site={site} />
+          </Row>
         </dl>
+
+        {/* The fact belongs here; what to do about it, beside it. */}
+        {service.noSnapshot && (
+          <p className="border-t border-caution/30 bg-caution/5 px-4 py-3 text-sm text-caution">
+            Deployed without snapshots. A deployment that breaks something is undone by redeploying an older commit;
+            the database and files have no way back.{' '}
+            <a href={to('deployments')} className="underline underline-offset-2">Snapshot settings</a>
+          </p>
+        )}
       </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card title="Source" action={<More href={to('configuration')}>Edit</More>}>
+          <dl className="divide-y divide-edge">
+            <Fact label="Repository" value={service.repo} copy />
+            <Fact label="Branch" value={service.branch} />
+            <Fact label="Deployed commit" value={service.commit ? service.commit.slice(0, 7) : null} copy={service.commit} />
+          </dl>
+        </Card>
+        <Card title="On the container">
+          <dl className="divide-y divide-edge">
+            <Fact label="Runtime" value={service.runtime || null} />
+            {site ? (
+              <Fact label="Published to" value={site} copy />
+            ) : (
+              service.adopted?.unit && <Fact label="Runs as" value={service.adopted.unit} />
+            )}
+            <Fact label="Code in" value={service.path} copy />
+            <Fact label="Internal address" value={port ? `${container.address}:${port}` : container.address} copy />
+          </dl>
+        </Card>
+      </div>
     </>
   )
 }
 
-function Tile({ label, action, children }) {
+// One question and its answer. The question keeps a column of its own on a
+// wide screen so the answers line up and can be read down without the labels
+// in the way; on a phone it sits above.
+function Row({ label, action, children }) {
   return (
-    <section className="min-w-0 rounded-lg border border-edge bg-panel px-4 py-3">
-      <header className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="text-[11px] text-muted">{label}</h3>
-        {action}
-      </header>
-      {children}
-    </section>
+    <div className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:gap-4">
+      <dt className="shrink-0 text-sm text-muted sm:w-44">{label}</dt>
+      <dd className="flex min-w-0 flex-1 items-center justify-between gap-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm">{children}</div>
+        {action && <div className="shrink-0">{action}</div>}
+      </dd>
+    </div>
+  )
+}
+
+function Aside({ children }) {
+  return <span className="text-muted">· {children}</span>
+}
+
+function More({ href, children }) {
+  return (
+    <a href={href} className="text-xs text-muted transition hover:text-ink">
+      {children} →
+    </a>
   )
 }
 
@@ -844,47 +867,40 @@ function outcomePill(job) {
 // before croft recorded that, the snapshot named after it. A snapshot older
 // than what runs is said to be older: shown plainly as "known good", one from
 // weeks back read as the version to return to.
-function WayBack({ service, site, to }) {
+function WayBack({ service, site }) {
   if (service.good) {
     const current = service.commit && service.commit === service.good
     return (
       <>
-        <p className="flex items-center gap-1.5 font-mono text-sm">
-          {service.good.slice(0, 7)}
-          <CopyButton text={service.good} label="Copy the commit that last worked" />
-        </p>
-        <p className="mt-1.5 text-xs text-muted">
-          {current ? 'What runs now passed its check' : 'Last commit that passed its check'}
-          {service.goodAt ? ` · ${ago(new Date(service.goodAt))}` : ''}.
-          {!current && ' Redeploying it goes back to it.'}
-        </p>
+        <span className="font-mono">{service.good.slice(0, 7)}</span>
+        <CopyButton text={service.good} label="Copy the commit that last worked" />
+        <Aside>
+          {current ? 'what runs now, it passed its check' : 'the last commit that passed its check; redeploy it to go back'}
+          {service.goodAt ? `, ${ago(new Date(service.goodAt))}` : ''}
+        </Aside>
       </>
     )
   }
-  const taken = snapshotDate(service.healthy)
   if (service.healthy) {
+    const taken = snapshotDate(service.healthy)
     return (
       <>
-        <p className="truncate font-mono text-xs" title={service.healthy}>{service.healthy}</p>
-        <p className={`mt-1.5 text-xs ${service.noSnapshot ? 'text-caution' : 'text-muted'}`}>
-          The snapshot of the last deployment that worked{taken ? `, ${ago(taken)}` : ''}.
-          {service.noSnapshot && ' Snapshots are off, so it is older than what runs: restoring it loses everything since.'}
-        </p>
+        <span>Snapshot{taken ? ` from ${ago(taken)}` : ''}</span>
+        <CopyButton text={service.healthy} label="Copy the snapshot's name" />
+        <span className={service.noSnapshot ? 'text-caution' : 'text-muted'}>
+          ·{' '}
+          {service.noSnapshot
+            ? 'older than what runs — restoring it loses everything since'
+            : 'taken before the last deployment that worked'}
+        </span>
       </>
     )
   }
   return (
-    <p className="text-xs text-muted">
-      Nothing recorded yet.{' '}
-      {site ? (
-        'The next deployment that publishes is the first.'
-      ) : (
-        <>
-          <a href={to('configuration')} className="text-ink underline underline-offset-4">Set a readiness check</a>, and
-          the next deployment that passes it is recorded here.
-        </>
-      )}
-    </p>
+    <span className="text-muted">
+      Nothing recorded yet —{' '}
+      {site ? 'the next deployment that publishes is the first.' : 'the next deployment that passes its readiness check is.'}
+    </span>
   )
 }
 
@@ -894,24 +910,21 @@ function snapshotDate(name) {
   return m ? new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}`) : null
 }
 
-// One fact: a label, its value in full on hover, and a copy button when the
-// value is something pasted elsewhere.
-function Fact({ label, value, copy, none = 'none', wide }) {
+// One fact for copying: its value in full on hover, and a copy button when it
+// is something pasted elsewhere.
+function Fact({ label, value, copy, none = 'none' }) {
   const text = typeof copy === 'string' ? copy : value
   return (
-    <div className={`min-w-0 ${wide ? 'sm:col-span-2 xl:col-span-3' : ''}`}>
-      <dt className="text-[11px] text-muted">{label}</dt>
-      <dd className="mt-0.5 flex min-w-0 items-center gap-1.5">
-        {value ? (
-          <>
-            <span className="min-w-0 truncate font-mono text-xs" title={String(value)}>{value}</span>
-            {copy && <CopyButton text={String(text)} label={`Copy the ${label.toLowerCase()}`} className="shrink-0" />}
-          </>
-        ) : (
-          <span className="text-xs text-faint">{none}</span>
-        )}
-      </dd>
-    </div>
+    <Row label={label}>
+      {value ? (
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 truncate font-mono" title={String(value)}>{value}</span>
+          {copy && <CopyButton text={String(text)} label={`Copy the ${label.toLowerCase()}`} className="shrink-0" />}
+        </span>
+      ) : (
+        <span className="text-faint">{none}</span>
+      )}
+    </Row>
   )
 }
 
