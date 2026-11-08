@@ -14,6 +14,10 @@ descargó.
 
 ## No publicado
 
+### v0.41.0 — 2026-11-08
+- fix: known good is the last commit that passed its check, recorded with or without a snapshot
+- feat: a service opens on how it is, where it is reached, how its last deployment went and the way back
+
 ### v0.40.0 — 2026-11-07
 - feat: one look across the panel — status pills, kind icons, full-size buttons, the plan dialog fits the screen, and warnings coloured by how bad they are
 - feat: a warning says why on a phone too, certificates offer the fix Home does, and empty lists say what will be there
