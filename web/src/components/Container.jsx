@@ -248,7 +248,7 @@ export default function Container({
               Said once, about all of them, it says something the repetitions
               did not: that rolling the container back has nowhere safe to
               land. */}
-          {services.length > 1 && services.every((s) => !s.healthy) && (
+          {services.length > 1 && services.every((s) => !s.healthy && !s.good) && (
             <p className="text-xs text-caution">
               None of these services has a version recorded as having worked, so a rollback here cannot promise
               anything yet.

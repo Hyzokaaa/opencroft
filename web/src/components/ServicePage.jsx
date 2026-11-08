@@ -20,7 +20,7 @@ import {
 import { useServices, useDatabases } from '../lib/useContainer.js'
 import { href, serviceHref } from '../lib/useRoute.js'
 import { VERBS } from '../lib/vocabulary.js'
-import { portOf, reaching, stateOf } from '../lib/domains.js'
+import { portOf, reaching, servedWith, stateOf } from '../lib/domains.js'
 import { servingOf, toneOf } from '../lib/serving.js'
 import { readJSON } from '../lib/api.js'
 import { Status, Tabs } from './Listing.jsx'
@@ -691,10 +691,19 @@ function Checkout({ path, onRepair }) {
   )
 }
 
+// Overview answers what is asked first, in four tiles: is it up, where is it
+// reached, how did the last deployment go, and what is the way back if the
+// next one breaks it. The facts for copying come after — they are looked up,
+// not read.
 function Overview({ service, container, port, names, certificates, noPort, autoDeploy, jobs, subject, to, stoppedId, onAddDomain }) {
   const site = service.adopted?.site
+  const up = container.status === 'running'
+  const page = site ? servingOf(service) : null
   const last = jobs.find((j) => j.subject === subject && DEPLOYS.has(j.kind))
   const auto = autoDeploy.data?.enabled
+  const whole = names.filter((n) => !n.prefix)
+  const first = whole[0] ?? names[0]
+  const covering = first?.ssl ? servedWith(first, certificates) : null
 
   const facts = [
     ['Repository', service.repo, { copy: true, wide: true }],
@@ -705,11 +714,99 @@ function Overview({ service, container, port, names, certificates, noPort, autoD
     ['Where it lands', service.path, { copy: true }],
     site ? ['Published to', site, { copy: true }] : service.adopted?.unit ? ['Runs as', service.adopted.unit] : null,
     !site && ['Readiness check', service.health?.path || null, { none: 'none — ends when the unit starts' }],
-    ['Known good', service.healthy ?? null, { none: 'nothing recorded yet' }],
   ].filter(Boolean)
 
   return (
     <>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Tile label="Status">
+          <StatePill up={up} state={service.state} page={page} />
+          <p className="mt-1.5 text-xs text-muted">
+            {!up
+              ? `${container.name} is stopped.`
+              : page
+                ? `Its front page ${page.sentence}`
+                : service.state === 'active'
+                  ? !service.health?.path
+                    ? 'Its unit is up. Nothing checks that it answers.'
+                    : service.good
+                      ? `Its unit is up, and its readiness check (${service.health.path}) passed at the last deployment that worked.`
+                      : `Its unit is up. Its readiness check (${service.health.path}) is asked at each deployment.`
+                  : `Its unit is ${service.state || 'not running'}.`}
+          </p>
+        </Tile>
+
+        <Tile label="Domain" action={<a href={to('domains')} className="text-xs text-muted hover:text-ink">Manage →</a>}>
+          {first ? (
+            <>
+              <a
+                href={`${first.ssl ? 'https' : 'http'}://${first.domain}`}
+                target="_blank"
+                rel="noreferrer"
+                className="block truncate font-mono text-sm underline-offset-4 hover:underline"
+                title={first.domain}
+              >
+                {first.domain}
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
+              <p className="mt-1.5 text-xs text-muted">
+                {!first.ssl ? 'http only' : covering ? (
+                  <span className={covering.daysLeft < 7 ? 'text-problem' : covering.daysLeft < 21 ? 'text-caution' : ''}>
+                    https · certificate {covering.daysLeft < 0 ? 'expired' : `${covering.daysLeft} days`}
+                  </span>
+                ) : 'https'}
+                {names.length > 1 && <> · and {names.length - 1} more</>}
+              </p>
+            </>
+          ) : (
+            <p className="text-xs text-muted">
+              {noPort ?? (
+                <>
+                  No domain reaches it yet.{' '}
+                  <Gated reasonId={stoppedId} onClick={onAddDomain} className="text-ink underline underline-offset-4">
+                    Add one
+                  </Gated>
+                </>
+              )}
+            </p>
+          )}
+        </Tile>
+
+        <Tile label="Last deployment" action={<a href={to('deployments')} className="text-xs text-muted hover:text-ink">All →</a>}>
+          {last ? (
+            <>
+              <Chip pill {...outcomePill(last)} />
+              <p className="mt-1.5 text-xs text-muted">
+                {last.kind === 'auto-deploy' ? 'After a new commit' : 'From the panel'} · {ago(new Date(last.started))}
+              </p>
+              {last.status === 'failed' && last.error && (
+                <p className="mt-1 text-xs text-problem">Stopped at step {last.reached} of {last.steps}: {last.error}</p>
+              )}
+            </>
+          ) : (
+            <p className="text-xs text-muted">
+              None from this panel yet{service.commit ? <> — <span className="font-mono">{service.commit.slice(0, 7)}</span> is what runs</> : ''}.
+            </p>
+          )}
+          <p className="mt-1 text-xs text-faint">
+            Automatic: {!autoDeploy.read ? '…' : auto ? `on, follows ${service.branch || 'its branch'}` : 'off'}
+          </p>
+        </Tile>
+
+        <Tile label="Way back">
+          <WayBack service={service} site={site} to={to} />
+        </Tile>
+      </div>
+
+      {/* The fact belongs here; what to do about it, beside it. */}
+      {service.noSnapshot && (
+        <p className="rounded-lg border border-caution/30 bg-panel px-4 py-2.5 text-xs text-caution">
+          Deployed without snapshots: a deployment that breaks something is undone by redeploying an older commit,
+          and the database or files have no way back.{' '}
+          <a href={to('deployments')} className="underline underline-offset-2">Snapshot settings</a>
+        </p>
+      )}
+
       <Card
         title="Details"
         action={<a href={to('configuration')} className="text-xs text-muted transition hover:text-ink">Edit configuration →</a>}
@@ -718,102 +815,83 @@ function Overview({ service, container, port, names, certificates, noPort, autoD
           {facts.map(([label, value, opts = {}]) => (
             <Fact key={label} label={label} value={value} {...opts} />
           ))}
-          <div className="min-w-0">
-            <dt className="text-[11px] text-muted">Automatic deployments</dt>
-            <dd className="mt-0.5 text-xs">
-              <a href={to('deployments')} className="underline-offset-4 hover:underline">
-                {!autoDeploy.read ? '…' : auto ? `On — follows ${service.branch || 'its branch'}` : 'Off'}
-              </a>
-            </dd>
-          </div>
         </dl>
-        {/* The fact belongs here; what to do about it, beside it. */}
-        {service.noSnapshot ? (
-          <p className="border-t border-edge px-4 py-2.5 text-xs text-caution">
-            Deployed without snapshots: a deployment that breaks something is undone by redeploying an older
-            commit, and the database or files have no way back.{' '}
-            <a href={to('deployments')} className="underline underline-offset-2">Snapshot settings</a>
-          </p>
-        ) : !service.healthy && !site && (
-          <p className="border-t border-edge px-4 py-2.5 text-xs text-caution">
-            Nothing is recorded as having worked, so a rollback has no point to go back to.{' '}
-            <a href={to('configuration')} className="underline underline-offset-2">Set a readiness check</a> and deploy
-            again to get one.
-          </p>
-        )}
       </Card>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card
-          title="Reached at"
-          count={names.length}
-          action={<a href={to('domains')} className="text-xs text-muted transition hover:text-ink">Manage domains →</a>}
-        >
-          {names.length === 0 ? (
-            <div className="px-4 py-5 text-xs text-muted">
-              {noPort ?? (
-                <>
-                  No domain reaches it yet.{' '}
-                  <Gated reasonId={stoppedId} onClick={onAddDomain} className="text-ink underline underline-offset-4">
-                    Add a domain
-                  </Gated>
-                </>
-              )}
-            </div>
-          ) : (
-            <ul className="divide-y divide-edge">
-              {names.map((n) => {
-                const state = stateOf(n, certificates)
-                return (
-                  <li key={n.key} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 px-4 py-2">
-                    <a
-                      href={`${n.ssl ? 'https' : 'http'}://${n.domain}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="min-w-0 break-all font-mono text-xs underline-offset-4 hover:underline"
-                    >
-                      <span className="text-muted">{n.ssl ? 'https://' : 'http://'}</span>
-                      {n.domain}
-                      <span className="sr-only"> (opens in a new tab)</span>
-                    </a>
-                    <span className={`text-[11px] ${state.tone}`}>{state.label}</span>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-        </Card>
-
-        <Card
-          title="Last deployment"
-          action={<a href={to('deployments')} className="text-xs text-muted transition hover:text-ink">All deployments →</a>}
-        >
-          {!last ? (
-            <p className="px-4 py-5 text-xs text-muted">
-              None from this panel yet{service.commit ? <> — <span className="font-mono">{service.commit.slice(0, 7)}</span> is what runs</> : ''}.
-            </p>
-          ) : (
-            <div className="space-y-1 px-4 py-3 text-xs">
-              <p>
-                <span className={last.status === 'failed' ? 'text-problem' : last.status === 'running' ? 'text-caution' : ''}>
-                  {outcomeOf(last).label}
-                </span>
-                <span className="text-muted">
-                  {' '}· {last.kind === 'auto-deploy' ? 'automatic, after a new commit' : 'started from the panel'} ·{' '}
-                  {ago(new Date(last.started))}
-                </span>
-              </p>
-              {last.status === 'failed' && last.error && (
-                <p className="text-problem">
-                  Stopped at step {last.reached} of {last.steps}: {last.error}
-                </p>
-              )}
-            </div>
-          )}
-        </Card>
-      </div>
     </>
   )
+}
+
+function Tile({ label, action, children }) {
+  return (
+    <section className="min-w-0 rounded-lg border border-edge bg-panel px-4 py-3">
+      <header className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="text-[11px] text-muted">{label}</h3>
+        {action}
+      </header>
+      {children}
+    </section>
+  )
+}
+
+function outcomePill(job) {
+  const outcome = outcomeOf(job)
+  const dot = { running: 'bg-caution animate-pulse', failed: 'bg-problem' }[job.status]
+  return { label: outcome.label, tone: outcome.tone, explain: outcome.explain, dot }
+}
+
+// WayBack is what a broken deployment would be undone with. It is the last
+// commit that passed its check — recorded with or without snapshots — and,
+// before croft recorded that, the snapshot named after it. A snapshot older
+// than what runs is said to be older: shown plainly as "known good", one from
+// weeks back read as the version to return to.
+function WayBack({ service, site, to }) {
+  if (service.good) {
+    const current = service.commit && service.commit === service.good
+    return (
+      <>
+        <p className="flex items-center gap-1.5 font-mono text-sm">
+          {service.good.slice(0, 7)}
+          <CopyButton text={service.good} label="Copy the commit that last worked" />
+        </p>
+        <p className="mt-1.5 text-xs text-muted">
+          {current ? 'What runs now passed its check' : 'Last commit that passed its check'}
+          {service.goodAt ? ` · ${ago(new Date(service.goodAt))}` : ''}.
+          {!current && ' Redeploying it goes back to it.'}
+        </p>
+      </>
+    )
+  }
+  const taken = snapshotDate(service.healthy)
+  if (service.healthy) {
+    return (
+      <>
+        <p className="truncate font-mono text-xs" title={service.healthy}>{service.healthy}</p>
+        <p className={`mt-1.5 text-xs ${service.noSnapshot ? 'text-caution' : 'text-muted'}`}>
+          The snapshot of the last deployment that worked{taken ? `, ${ago(taken)}` : ''}.
+          {service.noSnapshot && ' Snapshots are off, so it is older than what runs: restoring it loses everything since.'}
+        </p>
+      </>
+    )
+  }
+  return (
+    <p className="text-xs text-muted">
+      Nothing recorded yet.{' '}
+      {site ? (
+        'The next deployment that publishes is the first.'
+      ) : (
+        <>
+          <a href={to('configuration')} className="text-ink underline underline-offset-4">Set a readiness check</a>, and
+          the next deployment that passes it is recorded here.
+        </>
+      )}
+    </p>
+  )
+}
+
+// snapshotDate reads the moment out of croft-deploy-<service>-YYYYMMDD-HHMMSS.
+function snapshotDate(name) {
+  const m = /-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/.exec(name ?? '')
+  return m ? new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}`) : null
 }
 
 // One fact: a label, its value in full on hover, and a copy button when the
