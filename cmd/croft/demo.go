@@ -285,7 +285,7 @@ func seedDemo(ctx context.Context, instances *runtime.MemoryInstanceRepository,
 		"service.api.runtime", "node", "service.api.install", "npm ci",
 		"service.api.start", "node dist/main.js", "service.api.port", "3000",
 		"service.api.health", "/health",
-		"service.api.healthy", "croft-deploy-api-20261001-090000",
+		"service.api.healthy", "croft-deploy-api-20261001-090000", "service.api.snapshot", "off",
 		"databases", "shop",
 		"database.shop.engine", "postgres", "database.shop.db", "shop",
 		"database.shop.user", "shop", "database.shop.port", "5432")

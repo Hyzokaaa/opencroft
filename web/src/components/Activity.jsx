@@ -270,7 +270,7 @@ export function ago(when) {
   return `${Math.round(minutes / 1440)}d ago`
 }
 
-function duration(from, to) {
+export function duration(from, to) {
   const seconds = Math.max(0, Math.round((to - from) / 1000))
   if (seconds < 60) return `${seconds}s`
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
