@@ -14,6 +14,9 @@ descargó.
 
 ## No publicado
 
+### v0.41.2 — 2026-11-09
+- fix: a service's overview fills the width of the page, its four facts in one row on a wide screen
+
 ### v0.41.1 — 2026-11-09
 - feat: a service's overview is what is in production and its latest deployments, after Vercel's project page
 

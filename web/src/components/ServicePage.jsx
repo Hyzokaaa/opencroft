@@ -725,7 +725,7 @@ function Overview({ service, container, names, certificates, noPort, jobs, subje
   const restorable = !service.noSnapshot && service.healthy
 
   return (
-    <div className="max-w-5xl space-y-4">
+    <div className="space-y-4">
       <Card
         title="In production"
         action={
@@ -736,7 +736,7 @@ function Overview({ service, container, names, certificates, noPort, jobs, subje
           )
         }
       >
-        <dl className="grid gap-x-8 gap-y-5 px-5 py-5 sm:grid-cols-2">
+        <dl className="grid gap-x-8 gap-y-5 px-5 py-5 sm:grid-cols-2 xl:grid-cols-4">
           <div className="min-w-0">
             <dt className="text-xs text-muted">Domain</dt>
             <dd className="mt-1">
