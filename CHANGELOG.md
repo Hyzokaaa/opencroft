@@ -14,6 +14,9 @@ descargó.
 
 ## No publicado
 
+### v0.41.1 — 2026-11-09
+- feat: a service's overview is what is in production and its latest deployments, after Vercel's project page
+
 ### v0.41.0 — 2026-11-08
 - fix: known good is the last commit that passed its check, recorded with or without a snapshot
 - feat: a service opens on how it is, where it is reached, how its last deployment went and the way back
